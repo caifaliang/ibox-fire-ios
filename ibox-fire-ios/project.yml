@@ -1,4 +1,4 @@
-name: ibox-fire
+name: IboxFire
 options:
   bundleIdPrefix: com.ibox
   deploymentTarget:
@@ -12,7 +12,7 @@ settings:
     TARGETED_DEVICE_FAMILY: "1,2"
     IPHONEOS_DEPLOYMENT_TARGET: "16.0"
     PRODUCT_BUNDLE_IDENTIFIER: com.ibox.fire
-    PRODUCT_NAME: ibox-fire
+    PRODUCT_NAME: IboxFire
     MARKETING_VERSION: "1.0.0"
     CURRENT_PROJECT_VERSION: "1"
     GENERATE_INFOPLIST_FILE: NO
@@ -23,7 +23,7 @@ settings:
     DEVELOPMENT_TEAM: ""
     ENABLE_BITCODE: NO
 targets:
-  ibox-fire:
+  IboxFire:
     type: application
     platform: iOS
     sources:
@@ -51,25 +51,25 @@ targets:
               NSIncludesSubdomains: true
             api3.ydaili.cn:
               NSExceptionAllowsInsecureHTTPLoads: true
-  ibox-fireTests:
+  IboxFireTests:
     type: bundle.unit-test
     platform: iOS
     sources:
       - path: Tests
     dependencies:
-      - target: ibox-fire
+      - target: IboxFire
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.ibox.fire.tests
         GENERATE_INFOPLIST_FILE: YES
 schemes:
-  ibox-fire:
+  IboxFire:
     build:
       targets:
-        ibox-fire: all
+        IboxFire: all
     test:
       targets:
-        - ibox-fireTests
+        - IboxFireTests
     run:
       config: Debug
     archive:

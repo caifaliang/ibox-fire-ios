@@ -25,21 +25,28 @@ jobs:
       - name: Show Xcode project
         run: |
           xcodebuild -version
-          xcodebuild -list -project "ibox-fire.xcodeproj"
+          xcodebuild -list -project IboxFire.xcodeproj
 
       - name: Build (unsigned)
         run: |
-          set -euo pipefail
-          xcodebuild \
-            -project "ibox-fire.xcodeproj" \
-            -target "ibox-fire" \
+          set -o pipefail
+          xcodebuild build \
+            -project IboxFire.xcodeproj \
+            -scheme IboxFire \
             -configuration Release \
             -sdk iphoneos \
             -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
-            DEVELOPMENT_TEAM="" \
-            build 2>&1 | tee build.log
+            2>&1 | tee build.log
+
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcodebuild-log
+          path: ibox-fire-ios/build.log
+          if-no-files-found: ignore
 
       - name: Package unsigned IPA
         run: |
@@ -62,11 +69,10 @@ jobs:
       - name: Unit tests (simulator)
         continue-on-error: true
         run: |
-          xcodebuild \
-            -project "ibox-fire.xcodeproj" \
-            -scheme "ibox-fire" \
+          xcodebuild test \
+            -project IboxFire.xcodeproj \
+            -scheme IboxFire \
             -configuration Debug \
             -destination 'platform=iOS Simulator,name=iPhone 16' \
             -derivedDataPath build-test \
-            CODE_SIGNING_ALLOWED=NO \
-            test
+            CODE_SIGNING_ALLOWED=NO
