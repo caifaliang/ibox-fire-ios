@@ -37,7 +37,11 @@ struct SiteLoginScreen: View {
 
 struct MainShell: View {
     @EnvironmentObject var vm: AppViewModel
-    @ObservedObject private var runner = TaskRunner.shared
+    @ObservedObject private var runner: TaskRunner
+
+    init() {
+        _runner = ObservedObject(wrappedValue: TaskRunner.shared)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -187,7 +191,11 @@ struct ProfileScreen: View {
 
 struct ModePane: View {
     @EnvironmentObject var vm: AppViewModel
-    @ObservedObject private var runner = TaskRunner.shared
+    @ObservedObject private var runner: TaskRunner
+
+    init() {
+        _runner = ObservedObject(wrappedValue: TaskRunner.shared)
+    }
 
     var body: some View {
         VStack(spacing: 0) {

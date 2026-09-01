@@ -20,7 +20,9 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
-        TaskRunner.shared.requestNotificationPermission()
+        Task { @MainActor in
+            TaskRunner.shared.requestNotificationPermission()
+        }
         return true
     }
 
