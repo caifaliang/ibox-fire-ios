@@ -1,5 +1,4 @@
 import Foundation
-import CommonCrypto
 
 struct PayOutcome {
     var ok: Bool

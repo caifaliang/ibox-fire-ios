@@ -1,6 +1,5 @@
 import Foundation
 import Security
-import CommonCrypto
 
 /// 与 Android `IboxCrypto` / backend ibox3 兼容：RSA-PKCS1 + AES-ECB。
 enum IboxCrypto {
