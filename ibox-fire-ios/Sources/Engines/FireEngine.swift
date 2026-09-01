@@ -124,7 +124,7 @@ final class FireEngine: @unchecked Sendable {
                         if !first {
                             first = true
                             let d = Date().timeIntervalSince1970 - Double(self.cfg.fireAtEpochSec)
-                            self.onLog(String(format: "首包 %dms code=%lld %@ 相对定点%+.3fs", ms, code, String(msg.prefix(40)), d))
+                            self.onLog("首包 \(ms)ms code=\(code) \(msg.prefix(40)) 相对定点\(String(format: "%+.3f", d))s")
                         }
                         if code == 0 && !msg.contains("超过") {
                             lock.lock(); self.success += 1; let sc2 = self.success; lock.unlock()

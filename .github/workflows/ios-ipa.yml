@@ -9,7 +9,7 @@ on:
 
 jobs:
   build:
-    runs-on: macos-14
+    runs-on: macos-15
     defaults:
       run:
         working-directory: ibox-fire-ios
@@ -22,20 +22,25 @@ jobs:
       - name: Generate Xcode project
         run: xcodegen generate
 
+      - name: Show Xcode project
+        run: |
+          xcodebuild -version
+          xcodebuild -list -project ibox-fire.xcodeproj
+
       - name: Build (unsigned)
         run: |
           set -euo pipefail
           xcodebuild \
             -project ibox-fire.xcodeproj \
-            -scheme ibox-fire \
+            -target ibox-fire \
             -configuration Release \
-            -destination 'generic/platform=iOS' \
+            -sdk iphoneos \
             -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY="" \
+            CODE_SIGN_IDENTITY=- \
             DEVELOPMENT_TEAM="" \
-            build
+            build 2>&1 | tee build.log
 
       - name: Package unsigned IPA
         run: |
