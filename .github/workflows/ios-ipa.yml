@@ -39,6 +39,11 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             2>&1 | tee build.log
+          if [ "${PIPESTATUS[0]}" -ne 0 ]; then
+            echo "=== xcodebuild failed, last 80 lines ==="
+            tail -n 80 build.log
+            exit 1
+          fi
 
       - name: Upload build log on failure
         if: failure()

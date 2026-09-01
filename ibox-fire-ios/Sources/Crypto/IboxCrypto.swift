@@ -95,7 +95,7 @@ enum IboxCrypto {
         let data = Data(plain.utf8)
         var error: Unmanaged<CFError>?
         guard let enc = SecKeyCreateEncryptedData(
-            publicKey, .pkcs1, data as CFData, &error
+            publicKey, .rsaEncryptionPKCS1, data as CFData, &error
         ) as Data? else {
             fatalError("rsa encrypt: \(String(describing: error?.takeRetainedValue()))")
         }
@@ -106,7 +106,7 @@ enum IboxCrypto {
         guard let raw = Data(base64Encoded: b64) else { return "" }
         var error: Unmanaged<CFError>?
         guard let dec = SecKeyCreateDecryptedData(
-            privateKey, .pkcs1, raw as CFData, &error
+            privateKey, .rsaEncryptionPKCS1, raw as CFData, &error
         ) as Data? else {
             return ""
         }
