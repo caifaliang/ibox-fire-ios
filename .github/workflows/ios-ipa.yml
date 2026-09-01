@@ -25,20 +25,19 @@ jobs:
       - name: Show Xcode project
         run: |
           xcodebuild -version
-          xcodebuild -list -project ibox-fire.xcodeproj
+          xcodebuild -list -project "ibox-fire.xcodeproj"
 
       - name: Build (unsigned)
         run: |
           set -euo pipefail
           xcodebuild \
-            -project ibox-fire.xcodeproj \
-            -target ibox-fire \
+            -project "ibox-fire.xcodeproj" \
+            -target "ibox-fire" \
             -configuration Release \
             -sdk iphoneos \
             -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY=- \
             DEVELOPMENT_TEAM="" \
             build 2>&1 | tee build.log
 
@@ -64,8 +63,8 @@ jobs:
         continue-on-error: true
         run: |
           xcodebuild \
-            -project ibox-fire.xcodeproj \
-            -scheme ibox-fire \
+            -project "ibox-fire.xcodeproj" \
+            -scheme "ibox-fire" \
             -configuration Debug \
             -destination 'platform=iOS Simulator,name=iPhone 16' \
             -derivedDataPath build-test \

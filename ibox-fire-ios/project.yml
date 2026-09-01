@@ -19,7 +19,7 @@ settings:
     INFOPLIST_FILE: Resources/Info.plist
     CODE_SIGNING_ALLOWED: NO
     CODE_SIGNING_REQUIRED: NO
-    CODE_SIGN_IDENTITY: "-"
+    CODE_SIGN_IDENTITY: ""
     DEVELOPMENT_TEAM: ""
     ENABLE_BITCODE: NO
 targets:
