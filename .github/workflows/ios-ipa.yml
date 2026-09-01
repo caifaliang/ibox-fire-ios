@@ -1,0 +1,68 @@
+name: iOS unsigned IPA
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "ibox-fire-ios/**"
+      - ".github/workflows/ios-ipa.yml"
+
+jobs:
+  build:
+    runs-on: macos-14
+    defaults:
+      run:
+        working-directory: ibox-fire-ios
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Build (unsigned)
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project ibox-fire.xcodeproj \
+            -scheme ibox-fire \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM="" \
+            build
+
+      - name: Package unsigned IPA
+        run: |
+          set -euo pipefail
+          APP=$(find build/Build/Products/Release-iphoneos -name '*.app' | head -1)
+          echo "APP=$APP"
+          test -n "$APP"
+          mkdir -p Payload
+          cp -R "$APP" Payload/
+          zip -r ibox-fire-unsigned.ipa Payload
+          ls -lh ibox-fire-unsigned.ipa
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: ibox-fire-unsigned-ipa
+          path: ibox-fire-ios/ibox-fire-unsigned.ipa
+          if-no-files-found: error
+
+      - name: Unit tests (simulator)
+        continue-on-error: true
+        run: |
+          xcodebuild \
+            -project ibox-fire.xcodeproj \
+            -scheme ibox-fire \
+            -configuration Debug \
+            -destination 'platform=iOS Simulator,name=iPhone 16' \
+            -derivedDataPath build-test \
+            CODE_SIGNING_ALLOWED=NO \
+            test
