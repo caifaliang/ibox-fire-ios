@@ -9,7 +9,7 @@ Build settings from command line:
 
 --- xcodebuild: WARNING: Using the first of multiple matching destinations:
 { platform:iOS, id:dvtdevice-DVTiPhonePlaceholder-iphoneos:placeholder, name:Any iOS Device }
-{ platform:macOS, arch:arm64, variant:Designed for [iPad,iPhone], id:73303816ac6aad5fee5af7b69a4c8a0f88bffcdd, name:My Mac }
+{ platform:macOS, arch:arm64, variant:Designed for [iPad,iPhone], id:2b8a1bff7d8279707acd31348c1a44c060f04f3a, name:My Mac }
 { platform:iOS Simulator, id:dvtdevice-DVTiOSDeviceSimulatorPlaceholder-iphonesimulator:placeholder, name:Any iOS Simulator Device }
 note: Using codesigning identity override: -
 ComputePackagePrebuildTargetDependencyGraph
@@ -37,12 +37,8 @@ ExecuteExternalTool /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/X
 
 ExecuteExternalTool /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/ld -version_details
 
-Build description signature: 8620e2e4ec9225e7708b9830e53cf437
-Build description path: /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/XCBuildData/8620e2e4ec9225e7708b9830e53cf437.xcbuilddata
-ClangStatCache /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang-stat-cache /Applications/Xcode_16.4.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.5.sdk /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/SDKStatCaches.noindex/iphoneos18.5-22F76-a529daf784b3616c7c04a36aeb7f5c05.sdkstatcache
-    cd /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/IboxFire.xcodeproj
-    /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang-stat-cache /Applications/Xcode_16.4.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.5.sdk -o /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/SDKStatCaches.noindex/iphoneos18.5-22F76-a529daf784b3616c7c04a36aeb7f5c05.sdkstatcache
-
+Build description signature: 604f39f1aef7acc3710816e8ce293f15
+Build description path: /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/XCBuildData/604f39f1aef7acc3710816e8ce293f15.xcbuilddata
 CreateBuildDirectory /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Products
     cd /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/IboxFire.xcodeproj
     builtin-create-build-directory /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Products
@@ -50,6 +46,10 @@ CreateBuildDirectory /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-io
 CreateBuildDirectory /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex
     cd /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/IboxFire.xcodeproj
     builtin-create-build-directory /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex
+
+ClangStatCache /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang-stat-cache /Applications/Xcode_16.4.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.5.sdk /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/SDKStatCaches.noindex/iphoneos18.5-22F76-a529daf784b3616c7c04a36aeb7f5c05.sdkstatcache
+    cd /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/IboxFire.xcodeproj
+    /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang-stat-cache /Applications/Xcode_16.4.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.5.sdk -o /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/SDKStatCaches.noindex/iphoneos18.5-22F76-a529daf784b3616c7c04a36aeb7f5c05.sdkstatcache
 
 CreateBuildDirectory /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Products/Release-iphoneos
     cd /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/IboxFire.xcodeproj
@@ -389,7 +389,7 @@ open func lock()}
 Foundation.NSLock.unlock:2:11: note: 'unlock()' declared here
 open func unlock()}
           ^
-/Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Net/ProxyURLSession.swift:52:33: error: cannot find 'NSURLAuthenticationMethodHTTPProxy' in scope
+/Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Net/ProxyURLSession.swift:53:33: error: cannot find 'NSURLAuthenticationMethodHTTPProxy' in scope
         let isProxy = method == NSURLAuthenticationMethodHTTPProxy
                                 ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Engines/SellEngine.swift:107:107: warning: string interpolation produces a debug description for an optional value; did you mean to make this explicit?
