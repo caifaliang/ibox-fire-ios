@@ -13,8 +13,8 @@ final class ConsignGate: @unchecked Sendable {
     func wait(
         uid: Int64,
         gapS: Double? = nil,
-        isStopped: @escaping @Sendable () -> Bool,
-        addLog: @escaping @Sendable (String) -> Void,
+        isStopped: @escaping () -> Bool,
+        addLog: @escaping (String) -> Void,
         floorS: Double = listMinGapS
     ) async -> Bool {
         let floor = floorS

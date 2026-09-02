@@ -68,6 +68,8 @@ jobs:
               echo '```'
             } >> "$GITHUB_STEP_SUMMARY"
             tail -n 80 build.log
+            echo "=== FULL build.log ==="
+            cat build.log
             exit "$xcode_status"
           fi
 

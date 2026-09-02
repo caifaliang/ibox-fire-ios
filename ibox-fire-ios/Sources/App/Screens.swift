@@ -35,7 +35,6 @@ struct SiteLoginScreen: View {
     }
 }
 
-@MainActor
 struct MainShell: View {
     @EnvironmentObject var vm: AppViewModel
     @EnvironmentObject var runner: TaskRunner
@@ -186,7 +185,6 @@ struct ProfileScreen: View {
     }
 }
 
-@MainActor
 struct ModePane: View {
     @EnvironmentObject var vm: AppViewModel
     @EnvironmentObject var runner: TaskRunner
