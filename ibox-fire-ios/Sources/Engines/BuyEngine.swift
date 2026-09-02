@@ -108,7 +108,7 @@ final class BuyEngine: @unchecked Sendable {
                 return false
             }
             onLog("支付中...")
-            let pay = await payer.pay(ibox: client!, orderId: oid, payPassword: cfg.payPassword)
+            let pay = await payer.pay(ibox: client, orderId: oid, payPassword: cfg.payPassword)
             if pay.ok {
                 unpaid = 0
                 if isBatch { batchBought += count } else { normalBought += 1 }
@@ -143,7 +143,7 @@ final class BuyEngine: @unchecked Sendable {
                 "maxSinglePrice": cfg.targetPrice,
                 "paymentPlatformCode": 30
             ]
-            let r = await client!.postJson("/order-create-service/batch-purchase-consignment-orders?uid=\(uid)", body: body)
+            let r = await client.postJson("/order-create-service/batch-purchase-consignment-orders?uid=\(uid)", body: body)
             let code = JSONX.code(r)
             let msg = JSONX.message(r)
             if code == 0 {
@@ -151,7 +151,7 @@ final class BuyEngine: @unchecked Sendable {
                 let oid = extractOrderId(r)
                 var count = maxCount
                 if !oid.isEmpty {
-                    let detail = await client!.get("/order-service/orders/\(oid)")
+                    let detail = await client.get("/order-service/orders/\(oid)")
                     if JSONX.code(detail) == 0 {
                         let od = JSONX.dataDict(detail)
                         if let n = od["quantity"] as? Int, n > 0 { count = n }
@@ -188,7 +188,7 @@ final class BuyEngine: @unchecked Sendable {
 
         func runNormalStep() async -> Bool {
             let path = "/public-market-service/digital-collection-groups/\(cfg.groupId)/consignment-orders?pageNo=1&pageSize=20&sortField=1&sortType=1&uid=\(uid)"
-            let page = await client!.get(path)
+            let page = await client.get(path)
             let code = JSONX.code(page)
             let msg = JSONX.message(page)
             if await handleFatal(code: code, msg: msg) { return true }
@@ -219,7 +219,7 @@ final class BuyEngine: @unchecked Sendable {
             for (ni, pair) in targets.enumerated() {
                 if stop || normalBought >= qty || total() >= qty { break }
                 let (did, price) = pair
-                let buy = await client!.postJson(
+                let buy = await client.postJson(
                     "/order-create-service/purchase-consignment-orders",
                     body: ["digitalCollectionId": did, "paymentPlatformCode": 30]
                 )
