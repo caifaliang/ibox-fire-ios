@@ -1,0 +1,317 @@
+Command line invocation:
+    /Applications/Xcode_16.4.app/Contents/Developer/usr/bin/xcodebuild -project IboxFire.xcodeproj -scheme IboxFire -configuration Release -sdk iphoneos -derivedDataPath build CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=- build
+
+Build settings from command line:
+    CODE_SIGN_IDENTITY = -
+    CODE_SIGNING_ALLOWED = NO
+    CODE_SIGNING_REQUIRED = NO
+    SDKROOT = iphoneos18.5
+
+--- xcodebuild: WARNING: Using the first of multiple matching destinations:
+{ platform:iOS, id:dvtdevice-DVTiPhonePlaceholder-iphoneos:placeholder, name:Any iOS Device }
+{ platform:macOS, arch:arm64, variant:Designed for [iPad,iPhone], id:b7ca977c1ee5b6782d0cbcfaf157c38d597a6dc2, name:My Mac }
+{ platform:iOS Simulator, id:dvtdevice-DVTiOSDeviceSimulatorPlaceholder-iphonesimulator:placeholder, name:Any iOS Simulator Device }
+note: Using codesigning identity override: -
+ComputePackagePrebuildTargetDependencyGraph
+
+Prepare packages
+
+CreateBuildRequest
+
+SendProjectDescription
+
+CreateBuildOperation
+
+ComputeTargetDependencyGraph
+note: Building targets in dependency order
+note: Target dependency graph (1 target)
+    Target 'IboxFire' in project 'IboxFire' (no dependencies)
+
+GatherProvisioningInputs
+
+CreateBuildDescription
+
+ExecuteExternalTool /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc --version
+
+ExecuteExternalTool /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -v -E -dM -isysroot /Applications/Xcode_16.4.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.5.sdk -x c -c /dev/null
+
+ExecuteExternalTool /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/ld -version_details
+
+Build description signature: 71a5a15588d74010156bafe7bd25a8f5
+Build description path: /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/XCBuildData/71a5a15588d74010156bafe7bd25a8f5.xcbuilddata
+ClangStatCache /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang-stat-cache /Applications/Xcode_16.4.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.5.sdk /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/SDKStatCaches.noindex/iphoneos18.5-22F76-a529daf784b3616c7c04a36aeb7f5c05.sdkstatcache
+    cd /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/IboxFire.xcodeproj
+    /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang-stat-cache /Applications/Xcode_16.4.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.5.sdk -o /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/SDKStatCaches.noindex/iphoneos18.5-22F76-a529daf784b3616c7c04a36aeb7f5c05.sdkstatcache
+
+CreateBuildDirectory /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Products
+    cd /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/IboxFire.xcodeproj
+    builtin-create-build-directory /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Products
+
+CreateBuildDirectory /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex
+    cd /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/IboxFire.xcodeproj
+    builtin-create-build-directory /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex
+
+WriteAuxiliaryFile /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire-9eb7678e903cd9a342a7786c7662aab3-VFS-iphoneos/all-product-headers.yaml
+    cd /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/IboxFire.xcodeproj
+    write-file /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire-9eb7678e903cd9a342a7786c7662aab3-VFS-iphoneos/all-product-headers.yaml
+
+CreateBuildDirectory /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Products/Release-iphoneos
+    cd /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/IboxFire.xcodeproj
+    builtin-create-build-directory /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Products/Release-iphoneos
+
+CreateBuildDirectory /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/EagerLinkingTBDs/Release-iphoneos
+    cd /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/IboxFire.xcodeproj
+    builtin-create-build-directory /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/EagerLinkingTBDs/Release-iphoneos
+
+WriteAuxiliaryFile /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/Objects-normal/arm64/IboxFire_const_extract_protocols.json (in target 'IboxFire' from project 'IboxFire')
+    cd /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios
+    write-file /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/Objects-normal/arm64/IboxFire_const_extract_protocols.json
+
+WriteAuxiliaryFile /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/Objects-normal/arm64/IboxFire.SwiftFileList (in target 'IboxFire' from project 'IboxFire')
+    cd /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios
+    write-file /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/Objects-normal/arm64/IboxFire.SwiftFileList
+
+WriteAuxiliaryFile /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/Objects-normal/arm64/IboxFire.SwiftConstValuesFileList (in target 'IboxFire' from project 'IboxFire')
+    cd /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios
+    write-file /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/Objects-normal/arm64/IboxFire.SwiftConstValuesFileList
+
+WriteAuxiliaryFile /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/Objects-normal/arm64/IboxFire.LinkFileList (in target 'IboxFire' from project 'IboxFire')
+    cd /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios
+    write-file /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/Objects-normal/arm64/IboxFire.LinkFileList
+
+WriteAuxiliaryFile /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/Objects-normal/arm64/IboxFire-OutputFileMap.json (in target 'IboxFire' from project 'IboxFire')
+    cd /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios
+    write-file /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/Objects-normal/arm64/IboxFire-OutputFileMap.json
+
+WriteAuxiliaryFile /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/IboxFire.hmap (in target 'IboxFire' from project 'IboxFire')
+    cd /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios
+    write-file /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/IboxFire.hmap
+
+WriteAuxiliaryFile /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/IboxFire.DependencyStaticMetadataFileList (in target 'IboxFire' from project 'IboxFire')
+    cd /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios
+    write-file /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/IboxFire.DependencyStaticMetadataFileList
+
+WriteAuxiliaryFile /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/IboxFire.DependencyMetadataFileList (in target 'IboxFire' from project 'IboxFire')
+    cd /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios
+    write-file /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/IboxFire.DependencyMetadataFileList
+
+WriteAuxiliaryFile /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/IboxFire-project-headers.hmap (in target 'IboxFire' from project 'IboxFire')
+    cd /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios
+    write-file /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/IboxFire-project-headers.hmap
+
+WriteAuxiliaryFile /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/IboxFire-own-target-headers.hmap (in target 'IboxFire' from project 'IboxFire')
+    cd /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios
+    write-file /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/IboxFire-own-target-headers.hmap
+
+WriteAuxiliaryFile /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/IboxFire-generated-files.hmap (in target 'IboxFire' from project 'IboxFire')
+    cd /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios
+    write-file /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/IboxFire-generated-files.hmap
+
+WriteAuxiliaryFile /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/IboxFire-all-target-headers.hmap (in target 'IboxFire' from project 'IboxFire')
+    cd /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios
+    write-file /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/IboxFire-all-target-headers.hmap
+
+WriteAuxiliaryFile /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/IboxFire-all-non-framework-target-headers.hmap (in target 'IboxFire' from project 'IboxFire')
+    cd /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios
+    write-file /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/IboxFire-all-non-framework-target-headers.hmap
+
+MkDir /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Products/Release-iphoneos/IboxFire.app (in target 'IboxFire' from project 'IboxFire')
+    cd /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios
+    /bin/mkdir -p /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Products/Release-iphoneos/IboxFire.app
+
+ProcessInfoPlistFile /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Products/Release-iphoneos/IboxFire.app/Info.plist /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Resources/Info.plist (in target 'IboxFire' from project 'IboxFire')
+    cd /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios
+    builtin-infoPlistUtility /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Resources/Info.plist -producttype com.apple.product-type.application -genpkginfo /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Products/Release-iphoneos/IboxFire.app/PkgInfo -expandbuildsettings -format binary -platform iphoneos -requiredArchitecture arm64 -o /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Products/Release-iphoneos/IboxFire.app/Info.plist
+
+SwiftDriver IboxFire normal arm64 com.apple.xcode.tools.swift.compiler (in target 'IboxFire' from project 'IboxFire')
+    cd /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios
+    builtin-SwiftDriver -- /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc -module-name ibox_fire -O -whole-module-optimization -enforce-exclusivity\=checked @/Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/Objects-normal/arm64/IboxFire.SwiftFileList -enable-bare-slash-regex -enable-experimental-feature DebugDescriptionMacro -sdk /Applications/Xcode_16.4.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.5.sdk -target arm64-apple-ios16.0 -g -module-cache-path /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/ModuleCache.noindex -Xfrontend -serialize-debugging-options -enable-testing -swift-version 5 -I /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Products/Release-iphoneos -F /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Products/Release-iphoneos -c -num-threads 3 -Xcc -ivfsstatcache -Xcc /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/SDKStatCaches.noindex/iphoneos18.5-22F76-a529daf784b3616c7c04a36aeb7f5c05.sdkstatcache -output-file-map /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/Objects-normal/arm64/IboxFire-OutputFileMap.json -use-frontend-parseable-output -save-temps -no-color-diagnostics -serialize-diagnostics -emit-dependencies -emit-module -emit-module-path /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/Objects-normal/arm64/ibox_fire.swiftmodule -validate-clang-modules-once -clang-build-session-file /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/ModuleCache.noindex/Session.modulevalidation -Xcc -I/Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/swift-overrides.hmap -emit-const-values -Xfrontend -const-gather-protocols-file -Xfrontend /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/Objects-normal/arm64/IboxFire_const_extract_protocols.json -Xcc -iquote -Xcc /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/IboxFire-generated-files.hmap -Xcc -I/Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/IboxFire-own-target-headers.hmap -Xcc -I/Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/IboxFire-all-target-headers.hmap -Xcc -iquote -Xcc /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/IboxFire-project-headers.hmap -Xcc -I/Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Products/Release-iphoneos/include -Xcc -I/Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/DerivedSources-normal/arm64 -Xcc -I/Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/DerivedSources/arm64 -Xcc -I/Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/DerivedSources -emit-objc-header -emit-objc-header-path /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/Objects-normal/arm64/ibox_fire-Swift.h -import-objc-header /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Resources/ibox-fire-bridging-header.h -pch-output-dir /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/PrecompiledHeaders -working-directory /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios -no-emit-module-separately-wmo
+
+SwiftDriver\ Compilation IboxFire normal arm64 com.apple.xcode.tools.swift.compiler (in target 'IboxFire' from project 'IboxFire')
+    cd /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios
+    builtin-Swift-Compilation -- /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc -module-name ibox_fire -O -whole-module-optimization -enforce-exclusivity\=checked @/Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/Objects-normal/arm64/IboxFire.SwiftFileList -enable-bare-slash-regex -enable-experimental-feature DebugDescriptionMacro -sdk /Applications/Xcode_16.4.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.5.sdk -target arm64-apple-ios16.0 -g -module-cache-path /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/ModuleCache.noindex -Xfrontend -serialize-debugging-options -enable-testing -swift-version 5 -I /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Products/Release-iphoneos -F /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Products/Release-iphoneos -c -num-threads 3 -Xcc -ivfsstatcache -Xcc /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/SDKStatCaches.noindex/iphoneos18.5-22F76-a529daf784b3616c7c04a36aeb7f5c05.sdkstatcache -output-file-map /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/Objects-normal/arm64/IboxFire-OutputFileMap.json -use-frontend-parseable-output -save-temps -no-color-diagnostics -serialize-diagnostics -emit-dependencies -emit-module -emit-module-path /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/Objects-normal/arm64/ibox_fire.swiftmodule -validate-clang-modules-once -clang-build-session-file /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/ModuleCache.noindex/Session.modulevalidation -Xcc -I/Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/swift-overrides.hmap -emit-const-values -Xfrontend -const-gather-protocols-file -Xfrontend /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/Objects-normal/arm64/IboxFire_const_extract_protocols.json -Xcc -iquote -Xcc /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/IboxFire-generated-files.hmap -Xcc -I/Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/IboxFire-own-target-headers.hmap -Xcc -I/Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/IboxFire-all-target-headers.hmap -Xcc -iquote -Xcc /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/IboxFire-project-headers.hmap -Xcc -I/Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Products/Release-iphoneos/include -Xcc -I/Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/DerivedSources-normal/arm64 -Xcc -I/Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/DerivedSources/arm64 -Xcc -I/Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/DerivedSources -emit-objc-header -emit-objc-header-path /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/Objects-normal/arm64/ibox_fire-Swift.h -import-objc-header /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Resources/ibox-fire-bridging-header.h -pch-output-dir /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/PrecompiledHeaders -working-directory /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios -no-emit-module-separately-wmo
+
+SwiftGeneratePch normal arm64 Compiling\ bridging\ header (in target 'IboxFire' from project 'IboxFire')
+
+PrecompileSwiftBridgingHeader normal arm64 (in target 'IboxFire' from project 'IboxFire')
+    cd /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios
+    
+
+SwiftDriverJobDiscovery normal arm64 Compiling bridging header (in target 'IboxFire' from project 'IboxFire')
+
+SwiftCompile normal arm64 Compiling\ AnnounceEngine.swift,\ ApiRepository.swift,\ AppViewModel.swift,\ BatchEngine.swift,\ BuyEngine.swift,\ ConsignGate.swift,\ FireEngine.swift,\ Geetest4Solver.swift,\ HfpayPayer.swift,\ IboxClient.swift,\ IboxCrypto.swift,\ JSONHelpers.swift,\ JwtUtil.swift,\ LogClock.swift,\ NbEngines.swift,\ NewbeeClient.swift,\ PresaleEngine.swift,\ ProxyPool.swift,\ QueryEngine.swift,\ Screens.swift,\ SellEngine.swift,\ TaskRunner.swift,\ ibox_fireApp.swift /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Engines/AnnounceEngine.swift /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Net/ApiRepository.swift /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Core/AppViewModel.swift /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Engines/BatchEngine.swift /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Engines/BuyEngine.swift /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Engines/ConsignGate.swift /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Engines/FireEngine.swift /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Geetest/Geetest4Solver.swift /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Engines/HfpayPayer.swift /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Net/IboxClient.swift /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Crypto/IboxCrypto.swift /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Util/JSONHelpers.swift /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Util/JwtUtil.swift /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Util/LogClock.swift /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Engines/NbEngines.swift /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Net/NewbeeClient.swift /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Engines/PresaleEngine.swift /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Proxy/ProxyPool.swift /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Engines/QueryEngine.swift /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/App/Screens.swift /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Engines/SellEngine.swift /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Core/TaskRunner.swift /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/App/ibox_fireApp.swift /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/PrecompiledHeaders/ibox-fire-bridging-header.pch (in target 'IboxFire' from project 'IboxFire')
+
+CompileSwift normal arm64 (in target 'IboxFire' from project 'IboxFire')
+    cd /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios
+    
+/Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Core/AppViewModel.swift:73:5: error: property wrapper can only apply to a single variable
+    @Published var fireH = 20, fireM = 0, fireS = 0
+    ^
+/Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Core/AppViewModel.swift:73:5: error: property wrapper can only apply to a single variable
+    @Published var fireH = 20, fireM = 0, fireS = 0
+    ^
+/Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Core/AppViewModel.swift:73:5: error: property wrapper can only apply to a single variable
+    @Published var fireH = 20, fireM = 0, fireS = 0
+    ^
+/Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Engines/BatchEngine.swift:103:13: warning: no 'async' operations occur within 'await' expression
+            await ConsignGate.shared.mark(uid: uid)
+            ^
+/Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Engines/FireEngine.swift:93:30: warning: instance method 'lock' is unavailable from asynchronous contexts; Use async-safe scoped locking instead; this is an error in the Swift 6 language mode
+                        lock.lock(); let sc = self.success; lock.unlock()
+                             ^
+Foundation.NSLock.lock:2:11: note: 'lock()' declared here
+open func lock()}
+          ^
+/Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Engines/FireEngine.swift:93:66: warning: instance method 'unlock' is unavailable from asynchronous contexts; Use async-safe scoped locking instead; this is an error in the Swift 6 language mode
+                        lock.lock(); let sc = self.success; lock.unlock()
+                                                                 ^
+Foundation.NSLock.unlock:2:11: note: 'unlock()' declared here
+open func unlock()}
+          ^
+/Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Engines/FireEngine.swift:98:30: warning: instance method 'lock' is unavailable from asynchronous contexts; Use async-safe scoped locking instead; this is an error in the Swift 6 language mode
+                        lock.lock()
+                             ^
+Foundation.NSLock.lock:2:11: note: 'lock()' declared here
+open func lock()}
+          ^
+/Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Engines/FireEngine.swift:104:30: warning: instance method 'unlock' is unavailable from asynchronous contexts; Use async-safe scoped locking instead; this is an error in the Swift 6 language mode
+                        lock.unlock()
+                             ^
+Foundation.NSLock.unlock:2:11: note: 'unlock()' declared here
+open func unlock()}
+          ^
+/Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Engines/FireEngine.swift:115:30: warning: instance method 'lock' is unavailable from asynchronous contexts; Use async-safe scoped locking instead; this is an error in the Swift 6 language mode
+                        lock.lock(); self.sent += 1; let n = self.sent; lock.unlock()
+                             ^
+Foundation.NSLock.lock:2:11: note: 'lock()' declared here
+open func lock()}
+          ^
+/Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Engines/FireEngine.swift:115:78: warning: instance method 'unlock' is unavailable from asynchronous contexts; Use async-safe scoped locking instead; this is an error in the Swift 6 language mode
+                        lock.lock(); self.sent += 1; let n = self.sent; lock.unlock()
+                                                                             ^
+Foundation.NSLock.unlock:2:11: note: 'unlock()' declared here
+open func unlock()}
+          ^
+/Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Engines/FireEngine.swift:120:38: warning: instance method 'lock' is unavailable from asynchronous contexts; Use async-safe scoped locking instead; this is an error in the Swift 6 language mode
+                                lock.lock(); cooldownUntil[pxI] = nowMs + 1500; lock.unlock()
+                                     ^
+Foundation.NSLock.lock:2:11: note: 'lock()' declared here
+open func lock()}
+          ^
+/Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Engines/FireEngine.swift:120:86: warning: instance method 'unlock' is unavailable from asynchronous contexts; Use async-safe scoped locking instead; this is an error in the Swift 6 language mode
+                                lock.lock(); cooldownUntil[pxI] = nowMs + 1500; lock.unlock()
+                                                                                     ^
+Foundation.NSLock.unlock:2:11: note: 'unlock()' declared here
+open func unlock()}
+          ^
+/Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Engines/FireEngine.swift:130:34: warning: instance method 'lock' is unavailable from asynchronous contexts; Use async-safe scoped locking instead; this is an error in the Swift 6 language mode
+                            lock.lock(); self.success += 1; let sc2 = self.success; lock.unlock()
+                                 ^
+Foundation.NSLock.lock:2:11: note: 'lock()' declared here
+open func lock()}
+          ^
+/Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Engines/FireEngine.swift:130:90: warning: instance method 'unlock' is unavailable from asynchronous contexts; Use async-safe scoped locking instead; this is an error in the Swift 6 language mode
+                            lock.lock(); self.success += 1; let sc2 = self.success; lock.unlock()
+                                                                                         ^
+Foundation.NSLock.unlock:2:11: note: 'unlock()' declared here
+open func unlock()}
+          ^
+/Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Engines/NbEngines.swift:50:30: warning: instance method 'lock' is unavailable from asynchronous contexts; Use async-safe scoped locking instead; this is an error in the Swift 6 language mode
+                        lock.lock(); let sc = success; lock.unlock()
+                             ^
+Foundation.NSLock.lock:2:11: note: 'lock()' declared here
+open func lock()}
+          ^
+/Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Engines/NbEngines.swift:50:61: warning: instance method 'unlock' is unavailable from asynchronous contexts; Use async-safe scoped locking instead; this is an error in the Swift 6 language mode
+                        lock.lock(); let sc = success; lock.unlock()
+                                                            ^
+Foundation.NSLock.unlock:2:11: note: 'unlock()' declared here
+open func unlock()}
+          ^
+/Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Engines/NbEngines.swift:55:34: warning: instance method 'lock' is unavailable from asynchronous contexts; Use async-safe scoped locking instead; this is an error in the Swift 6 language mode
+                            lock.lock(); success += 1; let s = success; lock.unlock()
+                                 ^
+Foundation.NSLock.lock:2:11: note: 'lock()' declared here
+open func lock()}
+          ^
+/Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Engines/NbEngines.swift:55:78: warning: instance method 'unlock' is unavailable from asynchronous contexts; Use async-safe scoped locking instead; this is an error in the Swift 6 language mode
+                            lock.lock(); success += 1; let s = success; lock.unlock()
+                                                                             ^
+Foundation.NSLock.unlock:2:11: note: 'unlock()' declared here
+open func unlock()}
+          ^
+/Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Engines/PresaleEngine.swift:67:30: warning: instance method 'lock' is unavailable from asynchronous contexts; Use async-safe scoped locking instead; this is an error in the Swift 6 language mode
+                        lock.lock(); let b = bought; lock.unlock()
+                             ^
+Foundation.NSLock.lock:2:11: note: 'lock()' declared here
+open func lock()}
+          ^
+/Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Engines/PresaleEngine.swift:67:59: warning: instance method 'unlock' is unavailable from asynchronous contexts; Use async-safe scoped locking instead; this is an error in the Swift 6 language mode
+                        lock.lock(); let b = bought; lock.unlock()
+                                                          ^
+Foundation.NSLock.unlock:2:11: note: 'unlock()' declared here
+open func unlock()}
+          ^
+/Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Engines/PresaleEngine.swift:84:34: warning: instance method 'lock' is unavailable from asynchronous contexts; Use async-safe scoped locking instead; this is an error in the Swift 6 language mode
+                            lock.lock(); bought += 1; let b2 = bought; lock.unlock()
+                                 ^
+Foundation.NSLock.lock:2:11: note: 'lock()' declared here
+open func lock()}
+          ^
+/Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Engines/PresaleEngine.swift:84:77: warning: instance method 'unlock' is unavailable from asynchronous contexts; Use async-safe scoped locking instead; this is an error in the Swift 6 language mode
+                            lock.lock(); bought += 1; let b2 = bought; lock.unlock()
+                                                                            ^
+Foundation.NSLock.unlock:2:11: note: 'unlock()' declared here
+open func unlock()}
+          ^
+/Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Engines/PresaleEngine.swift:100:14: warning: instance method 'lock' is unavailable from asynchronous contexts; Use async-safe scoped locking instead; this is an error in the Swift 6 language mode
+        lock.lock(); let finalBought = bought; lock.unlock()
+             ^
+Foundation.NSLock.lock:2:11: note: 'lock()' declared here
+open func lock()}
+          ^
+/Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Engines/PresaleEngine.swift:100:53: warning: instance method 'unlock' is unavailable from asynchronous contexts; Use async-safe scoped locking instead; this is an error in the Swift 6 language mode
+        lock.lock(); let finalBought = bought; lock.unlock()
+                                                    ^
+Foundation.NSLock.unlock:2:11: note: 'unlock()' declared here
+open func unlock()}
+          ^
+/Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Proxy/ProxyPool.swift:155:22: warning: instance method 'lock' is unavailable from asynchronous contexts; Use async-safe scoped locking instead; this is an error in the Swift 6 language mode
+                lock.lock()
+                     ^
+Foundation.NSLock.lock:2:11: note: 'lock()' declared here
+open func lock()}
+          ^
+/Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Proxy/ProxyPool.swift:157:22: warning: instance method 'unlock' is unavailable from asynchronous contexts; Use async-safe scoped locking instead; this is an error in the Swift 6 language mode
+                lock.unlock()
+                     ^
+Foundation.NSLock.unlock:2:11: note: 'unlock()' declared here
+open func unlock()}
+          ^
+/Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Engines/SellEngine.swift:80:107: warning: string interpolation produces a debug description for an optional value; did you mean to make this explicit?
+                let deal = await client.postJson("/order-create-service/advance-orders/\(poId)/relation/\(poRel)/deal?uid=\(uid)", body: body)
+                                                                                                          ^~~~~
+/Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Engines/SellEngine.swift:80:107: note: use 'String(describing:)' to silence this warning
+                let deal = await client.postJson("/order-create-service/advance-orders/\(poId)/relation/\(poRel)/deal?uid=\(uid)", body: body)
+                                                                                                          ^~~~~
+                                                                                                          String(describing:  )
+/Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Engines/SellEngine.swift:80:107: note: provide a default value to avoid this warning
+                let deal = await client.postJson("/order-create-service/advance-orders/\(poId)/relation/\(poRel)/deal?uid=\(uid)", body: body)
+                                                                                                          ^~~~~
+                                                                                                                ?? <#default value#>
+/Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Engines/SellEngine.swift:55:17: warning: variable 'candidates' was never mutated; consider changing to 'let' constant
+            var candidates = poItems.filter { row in
+            ~~~ ^
+            let
+
+Failed frontend command:
+/Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift-frontend -frontend -c /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Engines/AnnounceEngine.swift /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Net/ApiRepository.swift /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Core/AppViewModel.swift /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Engines/BatchEngine.swift /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Engines/BuyEngine.swift /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Engines/ConsignGate.swift /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Engines/FireEngine.swift /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Geetest/Geetest4Solver.swift /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Engines/HfpayPayer.swift /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Net/IboxClient.swift /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Crypto/IboxCrypto.swift /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Util/JSONHelpers.swift /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Util/JwtUtil.swift /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Util/LogClock.swift /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Engines/NbEngines.swift /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Net/NewbeeClient.swift /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Engines/PresaleEngine.swift /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Proxy/ProxyPool.swift /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Engines/QueryEngine.swift /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/App/Screens.swift /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Engines/SellEngine.swift /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Core/TaskRunner.swift /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/App/ibox_fireApp.swift -supplementary-output-file-map /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/Objects-normal/arm64/supplementaryOutputs-1 -target arm64-apple-ios16.0 -Xllvm -aarch64-use-tbi -enable-objc-interop -stack-check -sdk /Applications/Xcode_16.4.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.5.sdk -I /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Products/Release-iphoneos -F /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Products/Release-iphoneos -no-color-diagnostics -enable-testing -g -debug-info-format\=dwarf -dwarf-version\=4 -module-cache-path /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/ModuleCache.noindex -swift-version 5 -enforce-exclusivity\=checked -O -serialize-debugging-options -const-gather-protocols-file /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/Objects-normal/arm64/IboxFire_const_extract_protocols.json -enable-experimental-feature DebugDescriptionMacro -enable-bare-slash-regex -empty-abi-descriptor -validate-clang-modules-once -clang-build-session-file /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/ModuleCache.noindex/Session.modulevalidation -Xcc -working-directory -Xcc /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios -resource-dir /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift -file-compilation-dir /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios -Xcc -ivfsstatcache -Xcc /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/SDKStatCaches.noindex/iphoneos18.5-22F76-a529daf784b3616c7c04a36aeb7f5c05.sdkstatcache -Xcc -I/Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/swift-overrides.hmap -Xcc -iquote -Xcc /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/IboxFire-generated-files.hmap -Xcc -I/Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/IboxFire-own-target-headers.hmap -Xcc -I/Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/IboxFire-all-target-headers.hmap -Xcc -iquote -Xcc /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/IboxFire-project-headers.hmap -Xcc -I/Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Products/Release-iphoneos/include -Xcc -I/Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/DerivedSources-normal/arm64 -Xcc -I/Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/DerivedSources/arm64 -Xcc -I/Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/DerivedSources -import-objc-header /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Resources/ibox-fire-bridging-header.h -pch-output-dir /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/PrecompiledHeaders -module-name ibox_fire -frontend-parseable-output -disable-clang-spi -target-sdk-version 18.5 -target-sdk-name iphoneos18.5 -external-plugin-path /Applications/Xcode_16.4.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/usr/lib/swift/host/plugins\#/Applications/Xcode_16.4.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/usr/bin/swift-plugin-server -external-plugin-path /Applications/Xcode_16.4.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/usr/local/lib/swift/host/plugins\#/Applications/Xcode_16.4.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/usr/bin/swift-plugin-server -in-process-plugin-server-path /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/libSwiftInProcPluginServer.dylib -plugin-path /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins -plugin-path /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/local/lib/swift/host/plugins -enable-default-cmo -num-threads 3 -o /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/Objects-normal/arm64/AnnounceEngine.o -o /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/Objects-normal/arm64/ApiRepository.o -o /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/Objects-normal/arm64/AppViewModel.o -o /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/Objects-normal/arm64/BatchEngine.o -o /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/Objects-normal/arm64/BuyEngine.o -o /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/Objects-normal/arm64/ConsignGate.o -o /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/Objects-normal/arm64/FireEngine.o -o /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/Objects-normal/arm64/Geetest4Solver.o -o /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/Objects-normal/arm64/HfpayPayer.o -o /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/Objects-normal/arm64/IboxClient.o -o /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/Objects-normal/arm64/IboxCrypto.o -o /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/Objects-normal/arm64/JSONHelpers.o -o /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/Objects-normal/arm64/JwtUtil.o -o /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/Objects-normal/arm64/LogClock.o -o /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/Objects-normal/arm64/NbEngines.o -o /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/Objects-normal/arm64/NewbeeClient.o -o /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/Objects-normal/arm64/PresaleEngine.o -o /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/Objects-normal/arm64/ProxyPool.o -o /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/Objects-normal/arm64/QueryEngine.o -o /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/Objects-normal/arm64/Screens.o -o /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/Objects-normal/arm64/SellEngine.o -o /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/Objects-normal/arm64/TaskRunner.o -o /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/IboxFire.build/Release-iphoneos/IboxFire.build/Objects-normal/arm64/ibox_fireApp.o -index-unit-output-path /IboxFire.build/Release-iphoneos/IboxFire.build/Objects-normal/arm64/AnnounceEngine.o -index-unit-output-path /IboxFire.build/Release-iphoneos/IboxFire.build/Objects-normal/arm64/ApiRepository.o -index-unit-output-path /IboxFire.build/Release-iphoneos/IboxFire.build/Objects-normal/arm64/AppViewModel.o -index-unit-output-path /IboxFire.build/Release-iphoneos/IboxFire.build/Objects-normal/arm64/BatchEngine.o -index-unit-output-path /IboxFire.build/Release-iphoneos/IboxFire.build/Objects-normal/arm64/BuyEngine.o -index-unit-output-path /IboxFire.build/Release-iphoneos/IboxFire.build/Objects-normal/arm64/ConsignGate.o -index-unit-output-path /IboxFire.build/Release-iphoneos/IboxFire.build/Objects-normal/arm64/FireEngine.o -index-unit-output-path /IboxFire.build/Release-iphoneos/IboxFire.build/Objects-normal/arm64/Geetest4Solver.o -index-unit-output-path /IboxFire.build/Release-iphoneos/IboxFire.build/Objects-normal/arm64/HfpayPayer.o -index-unit-output-path /IboxFire.build/Release-iphoneos/IboxFire.build/Objects-normal/arm64/IboxClient.o -index-unit-output-path /IboxFire.build/Release-iphoneos/IboxFire.build/Objects-normal/arm64/IboxCrypto.o -index-unit-output-path /IboxFire.build/Release-iphoneos/IboxFire.build/Objects-normal/arm64/JSONHelpers.o -index-unit-output-path /IboxFire.build/Release-iphoneos/IboxFire.build/Objects-normal/arm64/JwtUtil.o -index-unit-output-path /IboxFire.build/Release-iphoneos/IboxFire.build/Objects-normal/arm64/LogClock.o -index-unit-output-path /IboxFire.build/Release-iphoneos/IboxFire.build/Objects-normal/arm64/NbEngines.o -index-unit-output-path /IboxFire.build/Release-iphoneos/IboxFire.build/Objects-normal/arm64/NewbeeClient.o -index-unit-output-path /IboxFire.build/Release-iphoneos/IboxFire.build/Objects-normal/arm64/PresaleEngine.o -index-unit-output-path /IboxFire.build/Release-iphoneos/IboxFire.build/Objects-normal/arm64/ProxyPool.o -index-unit-output-path /IboxFire.build/Release-iphoneos/IboxFire.build/Objects-normal/arm64/QueryEngine.o -index-unit-output-path /IboxFire.build/Release-iphoneos/IboxFire.build/Objects-normal/arm64/Screens.o -index-unit-output-path /IboxFire.build/Release-iphoneos/IboxFire.build/Objects-normal/arm64/SellEngine.o -index-unit-output-path /IboxFire.build/Release-iphoneos/IboxFire.build/Objects-normal/arm64/TaskRunner.o -index-unit-output-path /IboxFire.build/Release-iphoneos/IboxFire.build/Objects-normal/arm64/ibox_fireApp.o
+note: Disabling previews because SWIFT_VERSION is set and SWIFT_OPTIMIZATION_LEVEL=-O, expected -Onone (in target 'IboxFire' from project 'IboxFire')
+** BUILD FAILED **
+
+
+The following build commands failed:
+	CompileSwift normal arm64 (in target 'IboxFire' from project 'IboxFire')
+	SwiftCompile normal arm64 Compiling\ AnnounceEngine.swift,\ ApiRepository.swift,\ AppViewModel.swift,\ BatchEngine.swift,\ BuyEngine.swift,\ ConsignGate.swift,\ FireEngine.swift,\ Geetest4Solver.swift,\ HfpayPayer.swift,\ IboxClient.swift,\ IboxCrypto.swift,\ JSONHelpers.swift,\ JwtUtil.swift,\ LogClock.swift,\ NbEngines.swift,\ NewbeeClient.swift,\ PresaleEngine.swift,\ ProxyPool.swift,\ QueryEngine.swift,\ Screens.swift,\ SellEngine.swift,\ TaskRunner.swift,\ ibox_fireApp.swift /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Engines/AnnounceEngine.swift /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Net/ApiRepository.swift /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Core/AppViewModel.swift /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Engines/BatchEngine.swift /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Engines/BuyEngine.swift /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Engines/ConsignGate.swift /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Engines/FireEngine.swift /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Geetest/Geetest4Solver.swift /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Engines/HfpayPayer.swift /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Net/IboxClient.swift /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Crypto/IboxCrypto.swift /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Util/JSONHelpers.swift /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Util/JwtUtil.swift /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Util/LogClock.swift /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Engines/NbEngines.swift /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Net/NewbeeClient.swift /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Engines/PresaleEngine.swift /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Proxy/ProxyPool.swift /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Engines/QueryEngine.swift /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/App/Screens.swift /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Engines/SellEngine.swift /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/Core/TaskRunner.swift /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/Sources/App/ibox_fireApp.swift /Users/runner/work/ibox-fire-ios/ibox-fire-ios/ibox-fire-ios/build/Build/Intermediates.noindex/PrecompiledHeaders/ibox-fire-bridging-header.pch (in target 'IboxFire' from project 'IboxFire')
+	Building project IboxFire with scheme IboxFire and configuration Release
+(3 failures)
