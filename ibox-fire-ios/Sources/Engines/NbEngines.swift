@@ -147,6 +147,7 @@ final class NbPresaleEngine: @unchecked Sendable {
     private func runPeak(proxies: [String], workers: Int, qty: Int, peakEnd: Double, deadline: Double, success: inout Int, sent: inout Int64, lock: NSLock) async {
         let nPx = proxies.count
         var cooldown = [Int64](repeating: 0, count: nPx)
+        var failStreak = [Int](repeating: 0, count: nPx)
         let rrLock = NSLock()
         var rr: Int64 = 0
         await withTaskGroup(of: Void.self) { group in
@@ -170,7 +171,7 @@ final class NbPresaleEngine: @unchecked Sendable {
                             if cooldown[i] <= nowMs { idx = i; break }
                         }
                         guard let pxI = idx else { try? await Task.sleep(nanoseconds: 20_000_000); continue }
-                        let died = await self.fireOnce(proxy: proxies[pxI], pxI: pxI, qty: qty, inPeak: true, intervalMs: 0, cooldown: &cooldown, success: &success, sent: &sent, lock: lock)
+                        let died = await self.fireOnce(proxy: proxies[pxI], pxI: pxI, qty: qty, inPeak: true, intervalMs: 0, cooldown: &cooldown, failStreak: &failStreak, success: &success, sent: &sent, lock: lock)
                         if died { /* peak 不标记死亡 */ }
                     }
                 }
@@ -203,7 +204,7 @@ final class NbPresaleEngine: @unchecked Sendable {
                 continue
             }
             let pxI = idx!
-            let markDead = await fireOnce(proxy: proxies[pxI], pxI: pxI, qty: qty, inPeak: false, intervalMs: cfg.postPeakIntervalMs, cooldown: &cooldown, success: &success, sent: &sent, lock: lock, failStreak: &failStreak)
+            let markDead = await fireOnce(proxy: proxies[pxI], pxI: pxI, qty: qty, inPeak: false, intervalMs: cfg.postPeakIntervalMs, cooldown: &cooldown, failStreak: &failStreak, success: &success, sent: &sent, lock: lock)
             if markDead && !dead[pxI] {
                 dead[pxI] = true
                 aliveLeft -= 1
@@ -216,52 +217,37 @@ final class NbPresaleEngine: @unchecked Sendable {
 
     private func fireOnce(
         proxy: String, pxI: Int, qty: Int, inPeak: Bool, intervalMs: UInt64,
-        cooldown: inout [Int64], success: inout Int, sent: inout Int64, lock: NSLock,
-        failStreak: inout [Int]? = nil
+        cooldown: inout [Int64], failStreak: inout [Int], success: inout Int, sent: inout Int64, lock: NSLock
     ) async -> Bool {
         let t0 = Date()
         var markDead = false
-        do {
-            let client = NewbeeClient(token: cfg.token, proxyUrl: proxy, readMs: inPeak ? 1.8 : 8)
-            let buy = await client.buy(pid: cfg.pid, qty: 1)
-            let ms = Int(Date().timeIntervalSince(t0) * 1000)
-            lock.lock(); sent += 1; lock.unlock()
-            let code = buy.ok ? 1 : -1
-            if !inPeak, var fs = failStreak {
-                if buy.ok { fs[pxI] = 0 } else { fs[pxI] += 1; failStreak = fs }
-            }
-            if buy.ok {
-                lock.lock(); success += 1; let sc = success; lock.unlock()
-                let oid = nbExtractOrderId(buy.data)
-                onLog("OK #\(sc)/\(qty) \(ms)ms oid=\(oid.isEmpty ? "-" : oid)")
-                if cfg.autoPay && !cfg.payPassword.isEmpty {
-                    onLog("支付中…")
-                    let pay = await nbRunAutopay(api: api, cfg: cfg, orderId: oid, buyMsg: buy.message, buyData: buy.data)
-                    onLog(pay.0 ? "自动支付成功 \(pay.1.prefix(40))" : "支付失败: \(pay.1.prefix(60))")
-                    if nbPayPwdError(pay.1) { stop = true }
-                }
-                if sc >= qty { stop = true }
-            } else if sent <= 3 || sent % 25 == 0 {
-                onLog("#\(sent) \(ms)ms code=\(code) \(buy.message.prefix(60))")
-            }
-            if !inPeak, let fs = failStreak, fs[pxI] >= cfg.deadFailStreak {
-                markDead = true
-            }
-            if !inPeak && intervalMs > 0 { try? await Task.sleep(nanoseconds: intervalMs * 1_000_000) }
-        } catch {
-            let ms = Int(Date().timeIntervalSince(t0) * 1000)
-            lock.lock(); sent += 1; lock.unlock()
-            if !inPeak {
-                if var fs = failStreak {
-                    fs[pxI] += 1
-                    if fs[pxI] >= cfg.deadFailStreak { markDead = true; fs[pxI] = 0 }
-                    failStreak = fs
-                }
-                cooldown[pxI] = Int64(Date().timeIntervalSince1970 * 1000) + 500
-            }
-            if sent <= 3 { onLog("#\(sent) \(ms)ms ERR \(error.localizedDescription.prefix(80))") }
-            if !inPeak && intervalMs > 0 { try? await Task.sleep(nanoseconds: intervalMs * 1_000_000) }
+        let client = NewbeeClient(token: cfg.token, proxyUrl: proxy, readMs: inPeak ? 1.8 : 8)
+        let buy = await client.buy(pid: cfg.pid, qty: 1)
+        let ms = Int(Date().timeIntervalSince(t0) * 1000)
+        lock.lock(); sent += 1; lock.unlock()
+        let code = buy.ok ? 1 : -1
+        if !inPeak {
+            if buy.ok { failStreak[pxI] = 0 } else { failStreak[pxI] += 1 }
         }
+        if buy.ok {
+            lock.lock(); success += 1; let sc = success; lock.unlock()
+            let oid = nbExtractOrderId(buy.data)
+            onLog("OK #\(sc)/\(qty) \(ms)ms oid=\(oid.isEmpty ? "-" : oid)")
+            if cfg.autoPay && !cfg.payPassword.isEmpty {
+                onLog("支付中…")
+                let pay = await nbRunAutopay(api: api, cfg: cfg, orderId: oid, buyMsg: buy.message, buyData: buy.data)
+                onLog(pay.0 ? "自动支付成功 \(pay.1.prefix(40))" : "支付失败: \(pay.1.prefix(60))")
+                if nbPayPwdError(pay.1) { stop = true }
+            }
+            if sc >= qty { stop = true }
+        } else if sent <= 3 || sent % 25 == 0 {
+            onLog("#\(sent) \(ms)ms code=\(code) \(buy.message.prefix(60))")
+        }
+        if !inPeak && failStreak[pxI] >= cfg.deadFailStreak {
+            markDead = true
+            failStreak[pxI] = 0
+        }
+        if !inPeak && intervalMs > 0 { try? await Task.sleep(nanoseconds: intervalMs * 1_000_000) }
         return markDead
     }
 
@@ -349,10 +335,16 @@ final class NbSnipeEngine: @unchecked Sendable {
                     payData["batch"] = true
                     if payData["buy_num"] == nil { payData["buy_num"] = buyNumReq }
                 }
-                let pay = await (try? api.newbeeAutopay(
-                    nbToken: cfg.token, payPassword: cfg.payPassword, orderId: "",
-                    buyMessage: buy.message, buyData: payData, proxy: cfg.proxy
-                ).map { ($0.paid, $0.message) }) ?? (false, "支付请求失败")
+                let pay: (Bool, String)
+                do {
+                    let r = try await api.newbeeAutopay(
+                        nbToken: cfg.token, payPassword: cfg.payPassword, orderId: "",
+                        buyMessage: buy.message, buyData: payData, proxy: cfg.proxy
+                    )
+                    pay = (r.paid, r.message)
+                } catch {
+                    pay = (false, error.localizedDescription)
+                }
                 if nbPayPwdError(pay.1) {
                     onLog("支付密码错误，捡漏已停止: \(pay.1.prefix(80))")
                     break

@@ -474,7 +474,9 @@ struct AnnouncePane: View {
             if !vm.announceQuota.openNow {
                 Text("当前时段已关闭（\(vm.announceQuota.openHours)）").font(.caption).foregroundStyle(.orange)
             }
-            if !vm.iboxLoggedIn { IboxLoginCard(); return }
+            if !vm.iboxLoggedIn {
+                IboxLoginCard()
+            } else {
             HStack(spacing: 8) {
                 ModeChip(title: "普通下单", selected: vm.announceOrderMode == "single") { vm.announceOrderMode = "single" }
                 ModeChip(title: "批量下单", selected: vm.announceOrderMode == "batch") { vm.announceOrderMode = "batch" }
@@ -493,6 +495,7 @@ struct AnnouncePane: View {
                 onStart: { vm.startAnnounce() },
                 onStop: { runner.stop(.announce) }
             )
+            }
         }
     }
 }
@@ -505,7 +508,9 @@ struct SynthPane: View {
         VStack(alignment: .leading, spacing: 10) {
             QuotaBanner(q: vm.synthQuota, label: "抢合")
             Text("本地开火 · 抢合/抢购已内置易代理").font(.caption).foregroundStyle(.secondary)
-            if !vm.iboxLoggedIn { IboxLoginCard(); return }
+            if !vm.iboxLoggedIn {
+                IboxLoginCard()
+            } else {
 
             if let sel = vm.selectedActivity, !listExpanded {
                 PickedBar(title: sel.name, subtitle: "#\(sel.id) · \(sel.startTime)", onClear: {
@@ -577,6 +582,7 @@ struct SynthPane: View {
                     onStop: { runner.stop(.synth) }
                 )
             }
+            }
         }
         .onAppear { if vm.activities.isEmpty { Task { await vm.refreshActivities("") } } }
     }
@@ -589,9 +595,9 @@ struct PresalePane: View {
         VStack(alignment: .leading, spacing: 10) {
             QuotaBanner(q: vm.presaleQuota, label: "抢购")
             Text("本地开火 · T-160预存极验 · sales下单\(vm.presaleAutoPay ? " · 自动支付" : "")").font(.caption).foregroundStyle(.secondary)
-            if !vm.iboxLoggedIn { IboxLoginCard(); return }
-
-            if let item = vm.presaleSelected {
+            if !vm.iboxLoggedIn {
+                IboxLoginCard()
+            } else if let item = vm.presaleSelected {
                 PickedBar(title: item.name, subtitle: "¥\(item.price) · #\(item.saleId)", onClear: { vm.clearPresaleSelection() })
                 TimeFields(h: $vm.fireH, m: $vm.fireM, s: $vm.fireS)
                 TextField("数量", text: $vm.presaleQty).keyboardType(.numberPad).fieldStyle()
@@ -637,8 +643,9 @@ struct BuyPane: View {
         VStack(alignment: .leading, spacing: 10) {
             Text(vm.buyAutoPay ? "本地开火 · 自动支付已开启" : "本地开火 · 下单后请自行支付")
                 .font(.caption).foregroundStyle(.secondary)
-            if !vm.iboxLoggedIn { IboxLoginCard(); return }
-            if vm.buyGid <= 0 {
+            if !vm.iboxLoggedIn {
+                IboxLoginCard()
+            } else if vm.buyGid <= 0 {
                 CollSearchBox(query: Binding(get: { vm.collSearch }, set: { vm.searchColl($0) }), hits: vm.collHits, label: "搜索藏品", onPick: { vm.pickColl($0, target: "buy") })
             } else {
                 PickedBar(title: vm.buyCname, subtitle: "GID \(vm.buyGid)", onClear: { vm.buyGid = 0; vm.buyCname = "" })
@@ -669,8 +676,9 @@ struct SellPane: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("本地开火 · 需寄售密码").font(.caption).foregroundStyle(.secondary)
-            if !vm.iboxLoggedIn { IboxLoginCard(); return }
-            if vm.sellGid <= 0 {
+            if !vm.iboxLoggedIn {
+                IboxLoginCard()
+            } else if vm.sellGid <= 0 {
                 CollSearchBox(query: Binding(get: { vm.collSearch }, set: { vm.searchColl($0) }), hits: vm.collHits, label: "搜索藏品", onPick: { vm.pickColl($0, target: "sell") })
             } else {
                 PickedBar(title: vm.sellCname, subtitle: "GID \(vm.sellGid)", onClear: { vm.sellGid = 0; vm.sellCname = "" })
@@ -689,8 +697,9 @@ struct BatchPane: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("上架固定3.5s · 安全模式=随机顺序").font(.caption).foregroundStyle(.secondary)
-            if !vm.iboxLoggedIn { IboxLoginCard(); return }
-            if vm.batchGid <= 0 {
+            if !vm.iboxLoggedIn {
+                IboxLoginCard()
+            } else if vm.batchGid <= 0 {
                 CollSearchBox(query: Binding(get: { vm.collSearch }, set: { vm.searchColl($0) }), hits: vm.collHits, label: "搜索藏品", onPick: { vm.pickColl($0, target: "batch") })
             } else {
                 PickedBar(title: vm.batchCname, subtitle: "GID \(vm.batchGid)", onClear: { vm.batchGid = 0; vm.batchCname = "" })
@@ -723,8 +732,9 @@ struct QueryPane: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("查求购数 / 挂单数 · 深度翻页 + 价格分布").font(.caption).foregroundStyle(.secondary)
-            if !vm.iboxLoggedIn { IboxLoginCard(); return }
-            if vm.queryGid <= 0 {
+            if !vm.iboxLoggedIn {
+                IboxLoginCard()
+            } else if vm.queryGid <= 0 {
                 CollSearchBox(query: Binding(get: { vm.collSearch }, set: { vm.searchColl($0) }), hits: vm.collHits, label: "搜索藏品", onPick: { vm.pickColl($0, target: "query") })
             } else {
                 PickedBar(title: vm.queryCname, subtitle: "GID \(vm.queryGid)", onClear: {
