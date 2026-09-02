@@ -29,6 +29,8 @@ targets:
     platform: iOS
     sources:
       - path: Sources
+        excludes:
+          - "**/*.h"
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.ibox.fire

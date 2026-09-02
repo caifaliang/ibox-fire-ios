@@ -52,7 +52,13 @@ final class QueryEngine: @unchecked Sendable {
 
         while !stop && prices.count < depth && pages < maxPages {
             if pages > 0 {
-                let gap = afterLimitBoost > 0 ? { afterLimitBoost -= 1; return UInt64(900) }() : pageGapMs
+                let gap: UInt64
+                if afterLimitBoost > 0 {
+                    afterLimitBoost -= 1
+                    gap = 900
+                } else {
+                    gap = pageGapMs
+                }
                 try await Task.sleep(nanoseconds: (gap + UInt64.random(in: 0...200)) * 1_000_000)
             }
             if stop { break }

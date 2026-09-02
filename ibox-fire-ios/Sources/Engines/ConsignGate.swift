@@ -1,11 +1,12 @@
 import Foundation
 
-/// 本机寄售硬间隔 — 对齐 Android `ConsignGate`（单进程 Actor）。
-actor ConsignGate {
+/// 本机寄售硬间隔 — 对齐 Android `ConsignGate`（单进程 + 锁）。
+final class ConsignGate: @unchecked Sendable {
     static let shared = ConsignGate()
     static let listMinGapS = 5.0
     static let batchListGapS = 3.5
 
+    private let lock = NSLock()
     private var lastMarkMs: [Int64: Int64] = [:]
     private var locks: [Int64: Bool] = [:]
 
@@ -18,16 +19,16 @@ actor ConsignGate {
     ) async -> Bool {
         let floor = floorS
         let gap = max(floor, gapS ?? floor)
-        while locks[uid] == true {
+        while isLocked(uid) {
             if isStopped() { return false }
             try? await Task.sleep(nanoseconds: 200_000_000)
         }
-        locks[uid] = true
+        setLocked(uid, true)
         if isStopped() {
-            locks[uid] = false
+            setLocked(uid, false)
             return false
         }
-        let last = lastMarkMs[uid] ?? 0
+        let last = getLastMark(uid)
         let now = Int64(Date().timeIntervalSince1970 * 1000)
         var needMs = last > 0 ? Int64(gap * 1000) - (now - last) : 0
         if needMs > 0 {
@@ -35,7 +36,7 @@ actor ConsignGate {
         }
         while needMs > 0 {
             if isStopped() {
-                locks[uid] = false
+                setLocked(uid, false)
                 return false
             }
             let slice = min(500, needMs)
@@ -47,11 +48,31 @@ actor ConsignGate {
     }
 
     func mark(uid: Int64) {
+        lock.lock()
         lastMarkMs[uid] = Int64(Date().timeIntervalSince1970 * 1000)
         locks[uid] = false
+        lock.unlock()
     }
 
     func release(uid: Int64) {
-        locks[uid] = false
+        setLocked(uid, false)
+    }
+
+    private func isLocked(_ uid: Int64) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return locks[uid] == true
+    }
+
+    private func setLocked(_ uid: Int64, _ value: Bool) {
+        lock.lock()
+        locks[uid] = value
+        lock.unlock()
+    }
+
+    private func getLastMark(_ uid: Int64) -> Int64 {
+        lock.lock()
+        defer { lock.unlock() }
+        return lastMarkMs[uid] ?? 0
     }
 }
