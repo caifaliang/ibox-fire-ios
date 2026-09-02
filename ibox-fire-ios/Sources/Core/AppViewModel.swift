@@ -70,7 +70,9 @@ final class AppViewModel: ObservableObject {
     @Published var batchActionList = true
     @Published var queryKind = "consignment"
     @Published var queryDepth = "200"
-    @Published var fireH = 20, fireM = 0, fireS = 0
+    @Published var fireH = 20
+    @Published var fireM = 0
+    @Published var fireS = 0
     @Published var synthIdText = ""
     @Published var synthNumText = "1"
     @Published var albumIdsText = ""
