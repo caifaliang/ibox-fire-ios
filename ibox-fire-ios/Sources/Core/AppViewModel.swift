@@ -158,6 +158,8 @@ final class AppViewModel: ObservableObject {
     private let kProxy = "ibox.proxy_api"
     private let kWorkers = "ibox.workers"
     private var nbSnipeSearchTask: Task<Void, Never>?
+    private var lastQuotaRefreshAt: TimeInterval = 0
+    private var activePrep: String?
 
     init() {
         iboxPhone = prefs.string(forKey: kPhone) ?? ""
@@ -214,7 +216,7 @@ final class AppViewModel: ObservableObject {
             siteLoggedIn = true
             vipPreviewBanner = !u.isVip && !u.isAdmin
             await syncUserProxyFromSite()
-            await refreshAllQuotas()
+            await refreshAllQuotas(force: true)
         } catch {
             prefs.removeObject(forKey: kSite)
         }
@@ -223,7 +225,7 @@ final class AppViewModel: ObservableObject {
     private func onIboxReady() async {
         await refreshActivities("")
         await refreshPresaleList(silent: true)
-        await refreshAllQuotas()
+        await refreshAllQuotas(force: true)
     }
 
     func saveProxyExtractUrl() {
@@ -247,6 +249,8 @@ final class AppViewModel: ObservableObject {
 
     func siteLogin() async {
         siteError = ""
+        loginLoading = true
+        defer { loginLoading = false }
         do {
             let u = try await api.siteLogin(username: siteUserName, password: sitePassword)
             siteUser = u
@@ -254,7 +258,7 @@ final class AppViewModel: ObservableObject {
             vipPreviewBanner = !u.isVip && !u.isAdmin
             prefs.set(u.token, forKey: kSite)
             await syncUserProxyFromSite()
-            await refreshAllQuotas()
+            await refreshAllQuotas(force: true)
         } catch {
             siteError = error.localizedDescription
         }
@@ -267,13 +271,55 @@ final class AppViewModel: ObservableObject {
         runner.stopAll()
     }
 
-    func refreshAllQuotas() async {
+    func refreshAllQuotas(force: Bool = false) async {
         guard let pt = siteUser?.token else { return }
+        let now = Date().timeIntervalSince1970
+        if !force, now - lastQuotaRefreshAt < 12 { return }
+        lastQuotaRefreshAt = now
         if let q = try? await api.fetchSynthQuota(platformToken: pt) { synthQuota = q }
         if let q = try? await api.fetchPresaleQuota(platformToken: pt) { presaleQuota = q }
         if isYearVip || isMonthVip || isVip {
             if let q = try? await api.fetchAnnounceQuota(platformToken: pt) { announceQuota = q }
         }
+    }
+
+    /// 对齐 Android setTechMode：切 Tab 后延迟刷新，12s 节流。
+    func onTechModeChanged(_ mode: TechMode) {
+        Task {
+            try? await Task.sleep(nanoseconds: 120_000_000)
+            guard techMode == mode else { return }
+            switch mode {
+            case .announce, .synth:
+                await refreshAllQuotas(force: true)
+            case .presale:
+                await refreshAllQuotas(force: true)
+                if iboxLoggedIn { await refreshPresaleList(silent: true) }
+            case .nb_presale:
+                if nbLoggedIn { await refreshNbPresaleList(silent: true) }
+            default:
+                break
+            }
+        }
+    }
+
+    private func prepBusy(_ kind: String, _ msg: String) -> Bool {
+        if activePrep != nil { return false }
+        activePrep = kind
+        busyMsg = msg
+        return true
+    }
+
+    private func clearPrep() {
+        activePrep = nil
+        busyMsg = ""
+    }
+
+    private func guardNotRunning(_ kind: TaskKind, prepKey: String) -> Bool {
+        if runner.isRunning(kind) || activePrep == prepKey {
+            if activePrep == prepKey { appendLog("准备中，请稍候…", type: "error") }
+            return false
+        }
+        return true
     }
 
     func loginToken() {
@@ -480,6 +526,7 @@ final class AppViewModel: ObservableObject {
     }
 
     func clearSynthSelection() {
+        guard !runner.isRunning(.synth), activePrep != "synth" else { return }
         selectedActivity = nil
         channels = []
         materials = []
@@ -508,7 +555,10 @@ final class AppViewModel: ObservableObject {
         }
     }
 
-    func clearPresaleSelection() { presaleSelected = nil }
+    func clearPresaleSelection() {
+        guard !runner.isRunning(.presale), activePrep != "presale" else { return }
+        presaleSelected = nil
+    }
 
     func refreshNbPresaleList(silent: Bool = false) async {
         guard nbLoggedIn, !nbToken.isEmpty else { return }
@@ -538,7 +588,10 @@ final class AppViewModel: ObservableObject {
         }
     }
 
-    func clearNbPresaleSelection() { nbPresaleSelected = nil }
+    func clearNbPresaleSelection() {
+        guard !runner.isRunning(.nbPresale), activePrep != "nb_presale" else { return }
+        nbPresaleSelected = nil
+    }
 
     func searchNbSnipe(_ q: String) {
         nbSnipeSearch = q
@@ -630,6 +683,7 @@ final class AppViewModel: ObservableObject {
         guard requireVip(), iboxLoggedIn, queryGid > 0 else {
             appendLog("请搜索并选择藏品", type: "error", mode: .query); return
         }
+        guard guardNotRunning(.query, prepKey: "query") else { return }
         queryTiers = []; queryScanned = 0; queryApiTotal = 0; queryProgressMsg = "查询中…"
         let engine = QueryEngine(cfg: QueryConfig(token: iboxToken, groupId: queryGid, collectionName: queryCname, kind: queryKind, depth: queryDepth), onLog: { [weak self] m in
             Task { @MainActor in self?.appendLog(m, mode: .query) }
@@ -661,6 +715,7 @@ final class AppViewModel: ObservableObject {
 
     func startBuy() {
         guard requireVip(), iboxLoggedIn, buyGid > 0 else { appendLog("请搜索并选择藏品", type: "error", mode: .buy); return }
+        guard guardNotRunning(.buy, prepKey: "buy") else { return }
         let price = Double(buyPrice) ?? 0
         let qty = Int(buyQty) ?? 0
         guard price > 0 else { appendLog("请填写目标价", type: "error", mode: .buy); return }
@@ -677,6 +732,7 @@ final class AppViewModel: ObservableObject {
 
     func startSell() {
         guard requireVip(), iboxLoggedIn, sellGid > 0 else { appendLog("请搜索并选择藏品", type: "error", mode: .sell); return }
+        guard guardNotRunning(.sell, prepKey: "sell") else { return }
         let price = Double(sellPrice) ?? 0
         let qty = Int(sellQty) ?? 0
         guard price > 0 else { appendLog("请填写最低接受价", type: "error", mode: .sell); return }
@@ -692,6 +748,7 @@ final class AppViewModel: ObservableObject {
 
     func startBatch() {
         guard requireVip(), iboxLoggedIn, batchGid > 0 else { appendLog("请搜索并选择藏品", type: "error", mode: .batch); return }
+        guard guardNotRunning(.batch, prepKey: "batch") else { return }
         let list = batchAction == "list"
         if list {
             if (Double(batchPrice) ?? 0) <= 0 { appendLog("请填写上架价", type: "error", mode: .batch); return }
@@ -708,6 +765,7 @@ final class AppViewModel: ObservableObject {
             if iboxLoggedIn == false { appendLog("请先登录 iBox", type: "error", mode: .announce) }
             return
         }
+        guard guardNotRunning(.announce, prepKey: "announce") else { return }
         guard let pt = siteUser?.token else { return }
         if !announceQuota.openNow {
             appendLog("仅北京时间 \(announceQuota.openHours.isEmpty ? "09:00-23:59" : announceQuota.openHours) 可用", type: "error", mode: .announce)
@@ -718,8 +776,10 @@ final class AppViewModel: ObservableObject {
             if (Double(announceMaxPrice) ?? 0) <= 0 { appendLog("批量模式请填写钱包余额", type: "error", mode: .announce); return }
             if (Int(announceMaxCount) ?? 0) < 1 { appendLog("批量模式请填写数量", type: "error", mode: .announce); return }
         }
+        guard prepBusy("announce", "扣次中…") else { return }
         Task { [weak self] in
             guard let self else { return }
+            defer { clearPrep() }
             do {
                 let q = try await api.consumeLocal(platformToken: pt, kind: "announce_lock")
                 announceQuota = q
@@ -728,11 +788,13 @@ final class AppViewModel: ObservableObject {
                 appendLog("扣次失败: \(error.localizedDescription)", type: "error", mode: .announce)
                 return
             }
+            busyMsg = "本地监听中"
             let cfg = AnnounceConfig(token: iboxToken, orderMode: announceOrderMode, maxSinglePrice: Double(announceMaxPrice) ?? 0, maxCount: Int(announceMaxCount) ?? 1, s1SearchBase: api.siteBase)
             appendLog("公告发现本机直连（不走代理）", mode: .announce)
             let engine = AnnounceEngine(cfg: cfg, onLog: { [weak self] m in
                 Task { @MainActor in self?.appendLog(m, mode: .announce) }
             })
+            clearPrep()
             runner.start(kind: .announce, stop: { engine.requestStop() }) { _ = await engine.run() }
         }
     }
@@ -744,8 +806,11 @@ final class AppViewModel: ObservableObject {
         guard sid > 0 else { appendLog("请先选择活动", type: "error", mode: .synth); return }
         guard quotaOk(synthQuota, label: "抢合") else { return }
         guard fireTimeNotTooLate() else { return }
+        guard guardNotRunning(.synth, prepKey: "synth") else { return }
+        guard prepBusy("synth", "扣次中…") else { return }
         Task { [weak self] in
             guard let self else { return }
+            defer { if activePrep == "synth" { clearPrep() } }
             if let pt = siteUser?.token {
                 do {
                     let q = try await api.consumeLocal(platformToken: pt, kind: "synth")
@@ -756,6 +821,7 @@ final class AppViewModel: ObservableObject {
                     return
                 }
             }
+            busyMsg = "提取+验活中…"
             appendLog("抽取代理中…", mode: .synth)
             let url = resolveProxyUrl()
             do {
@@ -768,10 +834,12 @@ final class AppViewModel: ObservableObject {
                 if pool.needMore { appendLog("存活代理不足", type: "error", mode: .synth); return }
                 let fireAt = todayFireAtEpochSec(h: fireH, m: fireM, s: fireS)
                 let w = max(1, min(20, min(workers, pool.proxies.count)))
+                busyMsg = "本地开火中"
                 appendLog("启动本地抢合 ID=\(sid) workers=\(w)", mode: .synth)
                 let engine = FireEngine(cfg: FireConfig(token: iboxToken, syntheticId: sid, syntheticNum: Int(synthQty) ?? 1, albumIds: Array(checkedAlbums), fireAtEpochSec: fireAt, workers: w, proxies: pool.proxies), onLog: { [weak self] m in
                     Task { @MainActor in self?.appendLog(m, mode: .synth) }
                 })
+                clearPrep()
                 runner.start(kind: .synth, stop: { engine.requestStop() }) { _ = try? await engine.run() }
             } catch {
                 appendLog("代理失败 \(error.localizedDescription)", type: "error", mode: .synth)
@@ -784,11 +852,14 @@ final class AppViewModel: ObservableObject {
         guard let item = presaleSelected else { appendLog("请选择发售", type: "error", mode: .presale); return }
         guard quotaOk(presaleQuota, label: "抢购") else { return }
         guard fireTimeNotTooLate() else { return }
+        guard guardNotRunning(.presale, prepKey: "presale") else { return }
         if presaleAutoPay && consignPwd.trimmingCharacters(in: .whitespaces).isEmpty {
             appendLog("开启自动支付需填写支付密码", type: "error", mode: .presale); return
         }
+        guard prepBusy("presale", "扣次中…") else { return }
         Task { [weak self] in
             guard let self else { return }
+            defer { if activePrep == "presale" { clearPrep() } }
             if let pt = siteUser?.token {
                 do {
                     let q = try await api.consumeLocal(platformToken: pt, kind: "presale")
@@ -804,9 +875,11 @@ final class AppViewModel: ObservableObject {
             let prestoreLead = 160.0
             if Double(fireAt) - nowSec > prestoreLead {
                 let waitSec = max(1, Int64(Double(fireAt) - prestoreLead - nowSec))
+                busyMsg = "等待预存窗口 \(waitSec)s"
                 appendLog("等待至预存窗口 \(waitSec)s (极验~3min有效)", mode: .presale)
                 try? await Task.sleep(nanoseconds: UInt64(waitSec) * 1_000_000_000)
             }
+            busyMsg = "提取+验活中…"
             appendLog("抽取代理中…", mode: .presale)
             do {
                 let pool = try await ProxyPool.extractAlivePool(resolveProxyUrl())
@@ -815,6 +888,7 @@ final class AppViewModel: ObservableObject {
                     appendLog("存活过少(\(pool.proxies.count)<\(ProxyPool.minAlive))，放弃", type: "error", mode: .presale)
                     return
                 }
+                busyMsg = "预存极验中…"
                 appendLog("预存极验…", mode: .presale)
                 let caps = await PresaleCaptchas.prestored(proxies: pool.proxies, iboxToken: iboxToken) { [weak self] m in
                     Task { @MainActor in self?.appendLog(m, mode: .presale) }
@@ -823,6 +897,7 @@ final class AppViewModel: ObservableObject {
                     appendLog("极验码为 0，放弃", type: "error", mode: .presale)
                     return
                 }
+                busyMsg = "本地开火中"
                 let payProxy = pool.proxies.first ?? ""
                 let engine = PresaleEngine(cfg: PresaleConfig(
                     token: iboxToken,
@@ -839,6 +914,7 @@ final class AppViewModel: ObservableObject {
                 ), onLog: { [weak self] m in
                     Task { @MainActor in self?.appendLog(m, mode: .presale) }
                 })
+                clearPrep()
                 runner.start(kind: .presale, stop: { engine.requestStop() }) { await engine.run() }
             } catch {
                 appendLog("代理失败 \(error.localizedDescription)", type: "error", mode: .presale)
@@ -850,11 +926,14 @@ final class AppViewModel: ObservableObject {
         guard requireVip(), nbLoggedIn else { return }
         guard let item = nbPresaleSelected else { appendLog("请选择发售", type: "error", mode: .nb_presale); return }
         guard fireTimeNotTooLate() else { return }
+        guard guardNotRunning(.nbPresale, prepKey: "nb_presale") else { return }
         if nbPresaleAutoPay && nbPresalePayPwd.trimmingCharacters(in: .whitespaces).isEmpty {
             appendLog("开启自动支付需填写支付密码", type: "error", mode: .nb_presale); return
         }
+        guard prepBusy("nb_presale", "提取+验活中…") else { return }
         Task { [weak self] in
             guard let self else { return }
+            defer { if activePrep == "nb_presale" { clearPrep() } }
             appendLog("提取+验活中…", mode: .nb_presale)
             do {
                 let pool = try await ProxyPool.extractAlivePool(resolveProxyUrl())
@@ -865,6 +944,7 @@ final class AppViewModel: ObservableObject {
                 }
                 let fireAt = todayFireAtEpochSec(h: fireH, m: fireM, s: fireS)
                 let w = max(1, min(20, min(workers, pool.proxies.count)))
+                busyMsg = "本地开火中"
                 appendLog("启动 NB抢购 pid=\(item.pid) 高峰\(w)线程×60s→单线程300ms→最长20min\(nbPresaleAutoPay ? " · 自动支付" : "")", mode: .nb_presale)
                 let engine = NbPresaleEngine(cfg: NbPresaleConfig(
                     token: nbToken,
@@ -881,6 +961,7 @@ final class AppViewModel: ObservableObject {
                 ), onLog: { [weak self] m in
                     Task { @MainActor in self?.appendLog(m, mode: .nb_presale) }
                 })
+                clearPrep()
                 runner.start(kind: .nbPresale, stop: { engine.requestStop() }) { await engine.run() }
             } catch {
                 appendLog(error.localizedDescription, type: "error", mode: .nb_presale)
@@ -890,6 +971,7 @@ final class AppViewModel: ObservableObject {
 
     func startNbSnipe() {
         guard requireVip(), nbLoggedIn else { return }
+        guard guardNotRunning(.nbSnipe, prepKey: "nb_snipe") else { return }
         guard nbSnipePid > 0 else { appendLog("请搜索并选择商品", type: "error", mode: .nb_snipe); return }
         let price = Double(nbSnipePrice) ?? 0
         let qty = Int(nbSnipeQty) ?? 0

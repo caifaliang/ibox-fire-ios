@@ -22,8 +22,9 @@ struct SiteLoginScreen: View {
                 .fieldStyle()
             SecureField("密码", text: $vm.sitePassword).fieldStyle()
             if !vm.siteError.isEmpty { Text(vm.siteError).foregroundStyle(.red).font(.caption) }
-            Button("登录") { Task { await vm.siteLogin() } }
+            Button(vm.loginLoading ? "登录中…" : "登录") { Task { await vm.siteLogin() } }
                 .buttonStyle(.borderedProminent).frame(maxWidth: .infinity)
+                .disabled(vm.loginLoading)
         }
         .padding(24)
         .dismissKeyboardOnTap()
@@ -72,15 +73,20 @@ struct MainShell: View {
                 }.padding(.vertical, 4)
             }
 
+            if !vm.busyMsg.isEmpty {
+                Text(vm.busyMsg)
+                    .font(.caption.bold()).foregroundStyle(.blue)
+                    .frame(maxWidth: .infinity).padding(.vertical, 6)
+                    .background(Color.blue.opacity(0.08))
+            }
+
             if vm.techMode != .profile {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
                         ForEach(vm.appPlatform == .ibox ? vm.iboxTabs : vm.nbTabs) { t in
                             Button(t.label) {
                                 vm.techMode = t
-                                if t == .announce || t == .synth || t == .presale {
-                                    Task { await vm.refreshAllQuotas() }
-                                }
+                                vm.onTechModeChanged(t)
                             }
                             .font(.caption.bold())
                             .padding(.horizontal, 12).padding(.vertical, 8)
@@ -385,7 +391,7 @@ struct ProfileScreen: View {
                 Text(vm.siteUser?.username ?? "-")
                 Text(vipLabel)
                 if let e = vm.siteUser?.vipExpiresAt, !e.isEmpty { Text("到期 \(e)").font(.caption) }
-                Button("刷新额度") { Task { await vm.refreshAllQuotas() } }
+                Button("刷新额度") { Task { await vm.refreshAllQuotas(force: true) } }
                 Button("退出网站", role: .destructive) { vm.siteLogout() }
             }
             Section("额度") {
