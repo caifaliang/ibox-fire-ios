@@ -81,7 +81,7 @@ enum IboxCrypto {
                         keyBytes.baseAddress, keyData.count,
                         nil,
                         inBytes.baseAddress, data.count,
-                        outBytes.baseAddress, outLength,
+                        outBytes.baseAddress, outBytes.count,
                         &moved
                     )
                 }

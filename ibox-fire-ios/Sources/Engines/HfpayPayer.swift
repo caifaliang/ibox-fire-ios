@@ -86,6 +86,7 @@ final class HfpayPayer: @unchecked Sendable {
         let data = Data(pwd.utf8)
         var out = Data(count: data.count + kCCBlockSizeAES128)
         var moved: size_t = 0
+        let outLength = out.count
         let st = out.withUnsafeMutableBytes { ob in
             data.withUnsafeBytes { ib in
                 key.withUnsafeBytes { kb in
@@ -94,7 +95,7 @@ final class HfpayPayer: @unchecked Sendable {
                                 CCOptions(kCCOptionPKCS7Padding),
                                 kb.baseAddress, 16, ivb.baseAddress,
                                 ib.baseAddress, data.count,
-                                ob.baseAddress, out.count, &moved)
+                                ob.baseAddress, outLength, &moved)
                     }
                 }
             }
