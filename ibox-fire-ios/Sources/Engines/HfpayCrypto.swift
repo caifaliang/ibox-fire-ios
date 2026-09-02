@@ -12,10 +12,11 @@ enum HfpayCrypto {
         let padLen = 8 - (raw.count % 8)
         let inData = Data(raw + Array(repeating: UInt8(padLen), count: padLen))
         let keyData = Data(key)
-        var out = Data(count: inData.count + 8)
+        let outLength = inData.count + 8
+        var out = Data(count: outLength)
         var moved: size_t = 0
-        let status = iv.withUnsafeBytes { ivb in
-            out.withUnsafeMutableBytes { outBytes in
+        let status = out.withUnsafeMutableBytes { outBytes in
+            iv.withUnsafeBytes { ivb in
                 inData.withUnsafeBytes { inBytes in
                     keyData.withUnsafeBytes { kb in
                         CCCrypt(
@@ -25,7 +26,7 @@ enum HfpayCrypto {
                             kb.baseAddress, 24,
                             ivb.baseAddress,
                             inBytes.baseAddress, inData.count,
-                            outBytes.baseAddress, outBytes.count,
+                            outBytes.baseAddress, outLength,
                             &moved
                         )
                     }

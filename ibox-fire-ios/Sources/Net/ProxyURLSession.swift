@@ -4,7 +4,8 @@ import CFNetwork
 /// 带代理账号密码的 URLSession，避免 iOS 弹出「需要代理鉴定」系统对话框。
 final class ProxyURLSession: NSObject, URLSessionDelegate, URLSessionTaskDelegate, @unchecked Sendable {
     private let credentials: (user: String, pass: String)?
-    private var session: URLSession!
+    private let configuration: URLSessionConfiguration
+    private lazy var session: URLSession = URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
 
     init(proxyLine: String?, timeout: TimeInterval = 12) {
         let cfg = URLSessionConfiguration.ephemeral
@@ -31,8 +32,8 @@ final class ProxyURLSession: NSObject, URLSessionDelegate, URLSessionTaskDelegat
             cfg.connectionProxyDictionary = dict
         }
         credentials = creds
+        configuration = cfg
         super.init()
-        session = URLSession(configuration: cfg, delegate: self, delegateQueue: nil)
     }
 
     func data(for request: URLRequest) async throws -> (Data, URLResponse) {
