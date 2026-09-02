@@ -223,15 +223,16 @@ final class AppViewModel: ObservableObject {
         let engine = QueryEngine(cfg: QueryConfig(token: iboxToken, groupId: selectedGid, collectionName: selectedName, kind: queryKind, depth: depth), onLog: { [weak self] m in
             Task { @MainActor in self?.appendLog(m) }
         })
-        runner.start(kind: .query, stop: { engine.requestStop() }) {
+        runner.start(kind: .query, stop: { engine.requestStop() }) { [weak self] in
             do {
                 let r = try await engine.run()
                 await MainActor.run {
+                    guard let self else { return }
                     self.queryTiers = r.tiers
                     self.appendLog("查询完成 扫描\(r.scanned)", type: "buy")
                 }
             } catch {
-                await MainActor.run { self.appendLog(error.localizedDescription, type: "error") }
+                await MainActor.run { self?.appendLog(error.localizedDescription, type: "error") }
             }
         }
     }
@@ -280,7 +281,8 @@ final class AppViewModel: ObservableObject {
 
     func startSynth() {
         guard requireVip(), iboxLoggedIn else { return }
-        Task {
+        Task { [weak self] in
+            guard let self else { return }
             if let pt = siteUser?.token { _ = try? await api.consumeLocal(platformToken: pt, kind: "synth") }
             appendLog("抽取代理中…")
             let url = await resolveProxyUrl()
@@ -304,7 +306,8 @@ final class AppViewModel: ObservableObject {
 
     func startPresale() {
         guard requireVip(), iboxLoggedIn else { return }
-        Task {
+        Task { [weak self] in
+            guard let self else { return }
             appendLog("抽取代理中…")
             let url = await resolveProxyUrl()
             do {
@@ -325,7 +328,8 @@ final class AppViewModel: ObservableObject {
 
     func startNbPresale() {
         guard requireVip(), nbLoggedIn else { return }
-        Task {
+        Task { [weak self] in
+            guard let self else { return }
             let url = await resolveProxyUrl()
             do {
                 let pool = try await ProxyPool.extractAlivePool(url)

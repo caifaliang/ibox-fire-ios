@@ -65,11 +65,13 @@ final class IboxClient: @unchecked Sendable {
         var hasher = Hasher()
         hasher.combine(raw)
         let h1 = UInt32(bitPattern: Int32(truncatingIfNeeded: hasher.finalize()))
+        let h2 = md5Hex(String(raw.prefix(16)))
+        let h3 = md5Hex(String(raw.suffix(16)))
         let parts = [
             String(h1, radix: 16).leftPad(to: 8, with: "0"),
             String(raw.count, radix: 16).leftPad(to: 8, with: "0"),
-            String(UInt32(bitPattern: Int32(truncatingIfNeeded: String(raw.prefix(16)).hashValue)), radix: 16).leftPad(to: 8, with: "0"),
-            String(UInt32(bitPattern: Int32(truncatingIfNeeded: String(raw.suffix(16)).hashValue)), radix: 16).leftPad(to: 8, with: "0")
+            String(h2.prefix(8)),
+            String(h3.prefix(8))
         ].joined()
         let p = parts.padding(toLength: 32, withPad: "0", startingAt: 0)
         return "\(p.prefix(8))-\(p.dropFirst(8).prefix(4))-\(p.dropFirst(12).prefix(4))-\(p.dropFirst(16).prefix(4))-\(p.dropFirst(20).prefix(12))"

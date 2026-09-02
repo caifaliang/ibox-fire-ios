@@ -38,33 +38,36 @@ jobs:
             -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY=- \
             build 2>&1 | tee build.log
           xcode_status=${PIPESTATUS[0]}
           if [ "$xcode_status" -ne 0 ]; then
             echo "=== xcodebuild failed (exit $xcode_status) ==="
-            errors=$(grep -E ": error:| error:" build.log | head -50 || true)
+            errors=$(grep -E ": error:|^error:| error: |fatal error:" build.log | head -80 || true)
+            warnings=$(grep -E ": warning:" build.log | head -20 || true)
             if [ -n "$errors" ]; then
               echo "$errors"
               while IFS= read -r line; do
                 echo "::error::$line"
               done <<< "$errors"
-              {
-                echo "### xcodebuild errors"
-                echo '```'
-                echo "$errors"
-                echo '```'
-              } >> "$GITHUB_STEP_SUMMARY"
-            else
-              echo "=== full build.log ==="
-              cat build.log
-              {
-                echo "### full build.log"
-                echo '```'
-                cat build.log
-                echo '```'
-              } >> "$GITHUB_STEP_SUMMARY"
             fi
-            tail -n 60 build.log
+            {
+              echo "### xcodebuild errors"
+              echo '```'
+              if [ -n "$errors" ]; then echo "$errors"; else echo "(no : error: lines — see full log below)"; fi
+              echo '```'
+              if [ -n "$warnings" ]; then
+                echo "### warnings (first 20)"
+                echo '```'
+                echo "$warnings"
+                echo '```'
+              fi
+              echo "### full build.log"
+              echo '```'
+              cat build.log
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            tail -n 80 build.log
             exit "$xcode_status"
           fi
 
