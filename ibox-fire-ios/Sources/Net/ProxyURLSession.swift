@@ -49,11 +49,12 @@ final class ProxyURLSession: NSObject, URLSessionDelegate, URLSessionTaskDelegat
         _ challenge: URLAuthenticationChallenge,
         completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
     ) {
-        let method = challenge.protectionSpace.authenticationMethod
-        let isProxy = method == NSURLAuthenticationMethodHTTPProxy
+        let space = challenge.protectionSpace
+        let method = space.authenticationMethod
+        let needsProxyCred = space.isProxy
             || method == NSURLAuthenticationMethodHTTPBasic
             || method == NSURLAuthenticationMethodHTTPDigest
-        if isProxy, let cred = credentials {
+        if needsProxyCred, let cred = credentials {
             completionHandler(.useCredential, URLCredential(user: cred.0, password: cred.1, persistence: .forSession))
             return
         }
