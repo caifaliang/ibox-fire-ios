@@ -67,6 +67,11 @@ final class NbPresaleEngine: @unchecked Sendable {
     private let onLog: (String) -> Void
     private var stop = false
     private let api = ApiRepository()
+    private var runSuccess = 0
+    private var runSent: Int64 = 0
+    private let runLock = NSLock()
+    private var peakCooldown: [Int64] = []
+    private var peakRR: Int64 = 0
 
     init(cfg: NbPresaleConfig, onLog: @escaping (String) -> Void) {
         self.cfg = cfg
@@ -111,18 +116,17 @@ final class NbPresaleEngine: @unchecked Sendable {
         let deadline = Double(cfg.fireAtEpochSec) + cfg.durationS
         onLog("开火! 高峰至+\(Int(cfg.peakAfterS))s")
 
-        let lock = NSLock()
-        var success = 0
-        var sent: Int64 = 0
+        runSuccess = 0
+        runSent = 0
 
-        await runPeak(proxies: proxies, workers: workers, qty: qty, peakEnd: peakEnd, deadline: deadline, success: &success, sent: &sent, lock: lock)
+        await runPeak(proxies: proxies, workers: workers, qty: qty, peakEnd: peakEnd, deadline: deadline)
 
-        if !stop && success < qty && Date().timeIntervalSince1970 < deadline {
+        if !stop && runSuccess < qty && Date().timeIntervalSince1970 < deadline {
             onLog("高峰结束 → 单线程拖尾")
             var batchNo = 1
-            while !stop && success < qty && Date().timeIntervalSince1970 < deadline {
-                let drained = await runSingleBatch(proxies: proxies, qty: qty, deadline: deadline, success: &success, sent: &sent, lock: lock, batchNo: batchNo)
-                if stop || success >= qty || Date().timeIntervalSince1970 >= deadline { break }
+            while !stop && runSuccess < qty && Date().timeIntervalSince1970 < deadline {
+                let drained = await runSingleBatch(proxies: proxies, qty: qty, deadline: deadline, batchNo: batchNo)
+                if stop || runSuccess >= qty || Date().timeIntervalSince1970 >= deadline { break }
                 if !drained { break }
                 onLog("批#\(batchNo) 代理耗尽，补抽…")
                 do {
@@ -140,16 +144,14 @@ final class NbPresaleEngine: @unchecked Sendable {
                 }
             }
         }
-        lock.lock(); let sc = success; lock.unlock()
-        onLog("结束: 成功 \(sc)/\(qty) 总发\(sent)")
+        runLock.lock(); let sc = runSuccess; let totalSent = runSent; runLock.unlock()
+        onLog("结束: 成功 \(sc)/\(qty) 总发\(totalSent)")
     }
 
-    private func runPeak(proxies: [String], workers: Int, qty: Int, peakEnd: Double, deadline: Double, success: inout Int, sent: inout Int64, lock: NSLock) async {
+    private func runPeak(proxies: [String], workers: Int, qty: Int, peakEnd: Double, deadline: Double) async {
         let nPx = proxies.count
-        var cooldown = [Int64](repeating: 0, count: nPx)
-        var failStreak = [Int](repeating: 0, count: nPx)
-        let rrLock = NSLock()
-        var rr: Int64 = 0
+        peakCooldown = Array(repeating: 0, count: nPx)
+        peakRR = 0
         await withTaskGroup(of: Void.self) { group in
             for wid in 0..<workers {
                 group.addTask {
@@ -158,28 +160,26 @@ final class NbPresaleEngine: @unchecked Sendable {
                         let nowMs = Int64(Date().timeIntervalSince1970 * 1000)
                         let nowSec = Double(nowMs) / 1000.0
                         if nowSec >= peakEnd || nowSec >= deadline { break }
-                        lock.lock(); let sc = success; lock.unlock()
-                        if sc >= qty { break }
+                        self.runLock.lock()
+                        let sc = self.runSuccess
                         var idx: Int?
                         for _ in 0..<nPx {
-                            let i: Int = rrLock.withLock {
-                                let v = (rr + local) % Int64(nPx)
-                                rr += 1
-                                local += 1
-                                return Int(v)
-                            }
-                            if cooldown[i] <= nowMs { idx = i; break }
+                            let i = Int((self.peakRR + local) % Int64(nPx))
+                            self.peakRR += 1
+                            local += 1
+                            if self.peakCooldown[i] <= nowMs { idx = i; break }
                         }
+                        self.runLock.unlock()
+                        if sc >= qty { break }
                         guard let pxI = idx else { try? await Task.sleep(nanoseconds: 20_000_000); continue }
-                        let died = await self.fireOnce(proxy: proxies[pxI], pxI: pxI, qty: qty, inPeak: true, intervalMs: 0, cooldown: &cooldown, failStreak: &failStreak, success: &success, sent: &sent, lock: lock)
-                        if died { /* peak 不标记死亡 */ }
+                        await self.fireOncePeak(proxy: proxies[pxI], pxI: pxI, qty: qty)
                     }
                 }
             }
         }
     }
 
-    private func runSingleBatch(proxies: [String], qty: Int, deadline: Double, success: inout Int, sent: inout Int64, lock: NSLock, batchNo: Int) async -> Bool {
+    private func runSingleBatch(proxies: [String], qty: Int, deadline: Double, batchNo: Int) async -> Bool {
         let nPx = proxies.count
         guard nPx > 0 else { return true }
         var dead = [Bool](repeating: false, count: nPx)
@@ -189,7 +189,7 @@ final class NbPresaleEngine: @unchecked Sendable {
         var rr = 0
         onLog("单线程拖尾 批#\(batchNo)(\(nPx)IP)")
         while !stop {
-            lock.lock(); let sc = success; lock.unlock()
+            runLock.lock(); let sc = runSuccess; runLock.unlock()
             if sc >= qty { return false }
             if Date().timeIntervalSince1970 >= deadline { return false }
             let nowMs = Int64(Date().timeIntervalSince1970 * 1000)
@@ -204,33 +204,26 @@ final class NbPresaleEngine: @unchecked Sendable {
                 continue
             }
             let pxI = idx!
-            let markDead = await fireOnce(proxy: proxies[pxI], pxI: pxI, qty: qty, inPeak: false, intervalMs: cfg.postPeakIntervalMs, cooldown: &cooldown, failStreak: &failStreak, success: &success, sent: &sent, lock: lock)
+            let markDead = await fireOnceTail(proxy: proxies[pxI], pxI: pxI, qty: qty, intervalMs: cfg.postPeakIntervalMs, failStreak: &failStreak)
             if markDead && !dead[pxI] {
                 dead[pxI] = true
                 aliveLeft -= 1
                 onLog("代理死 #\(pxI) 剩余活\(aliveLeft)/\(nPx)")
             }
         }
-        lock.lock(); let sc = success; lock.unlock()
+        runLock.lock(); let sc = runSuccess; runLock.unlock()
         return (dead.allSatisfy { $0 } || aliveLeft <= 0) && sc < qty && !stop
     }
 
-    private func fireOnce(
-        proxy: String, pxI: Int, qty: Int, inPeak: Bool, intervalMs: UInt64,
-        cooldown: inout [Int64], failStreak: inout [Int], success: inout Int, sent: inout Int64, lock: NSLock
-    ) async -> Bool {
+    private func fireOncePeak(proxy: String, pxI: Int, qty: Int) async {
         let t0 = Date()
-        var markDead = false
-        let client = NewbeeClient(token: cfg.token, proxyUrl: proxy, readMs: inPeak ? 1.8 : 8)
+        let client = NewbeeClient(token: cfg.token, proxyUrl: proxy, readMs: 1.8)
         let buy = await client.buy(pid: cfg.pid, qty: 1)
         let ms = Int(Date().timeIntervalSince(t0) * 1000)
-        lock.lock(); sent += 1; lock.unlock()
+        runLock.lock(); runSent += 1; let n = runSent; runLock.unlock()
         let code = buy.ok ? 1 : -1
-        if !inPeak {
-            if buy.ok { failStreak[pxI] = 0 } else { failStreak[pxI] += 1 }
-        }
         if buy.ok {
-            lock.lock(); success += 1; let sc = success; lock.unlock()
+            runLock.lock(); runSuccess += 1; let sc = runSuccess; runLock.unlock()
             let oid = nbExtractOrderId(buy.data)
             onLog("OK #\(sc)/\(qty) \(ms)ms oid=\(oid.isEmpty ? "-" : oid)")
             if cfg.autoPay && !cfg.payPassword.isEmpty {
@@ -240,14 +233,39 @@ final class NbPresaleEngine: @unchecked Sendable {
                 if nbPayPwdError(pay.1) { stop = true }
             }
             if sc >= qty { stop = true }
-        } else if sent <= 3 || sent % 25 == 0 {
-            onLog("#\(sent) \(ms)ms code=\(code) \(buy.message.prefix(60))")
+        } else if n <= 3 || n % 25 == 0 {
+            onLog("#\(n) \(ms)ms code=\(code) \(buy.message.prefix(60))")
         }
-        if !inPeak && failStreak[pxI] >= cfg.deadFailStreak {
+    }
+
+    private func fireOnceTail(proxy: String, pxI: Int, qty: Int, intervalMs: UInt64, failStreak: inout [Int]) async -> Bool {
+        let t0 = Date()
+        var markDead = false
+        let client = NewbeeClient(token: cfg.token, proxyUrl: proxy, readMs: 8)
+        let buy = await client.buy(pid: cfg.pid, qty: 1)
+        let ms = Int(Date().timeIntervalSince(t0) * 1000)
+        runLock.lock(); runSent += 1; let n = runSent; runLock.unlock()
+        let code = buy.ok ? 1 : -1
+        if buy.ok { failStreak[pxI] = 0 } else { failStreak[pxI] += 1 }
+        if buy.ok {
+            runLock.lock(); runSuccess += 1; let sc = runSuccess; runLock.unlock()
+            let oid = nbExtractOrderId(buy.data)
+            onLog("OK #\(sc)/\(qty) \(ms)ms oid=\(oid.isEmpty ? "-" : oid)")
+            if cfg.autoPay && !cfg.payPassword.isEmpty {
+                onLog("支付中…")
+                let pay = await nbRunAutopay(api: api, cfg: cfg, orderId: oid, buyMsg: buy.message, buyData: buy.data)
+                onLog(pay.0 ? "自动支付成功 \(pay.1.prefix(40))" : "支付失败: \(pay.1.prefix(60))")
+                if nbPayPwdError(pay.1) { stop = true }
+            }
+            if sc >= qty { stop = true }
+        } else if n <= 3 || n % 25 == 0 {
+            onLog("#\(n) \(ms)ms code=\(code) \(buy.message.prefix(60))")
+        }
+        if failStreak[pxI] >= cfg.deadFailStreak {
             markDead = true
             failStreak[pxI] = 0
         }
-        if !inPeak && intervalMs > 0 { try? await Task.sleep(nanoseconds: intervalMs * 1_000_000) }
+        if intervalMs > 0 { try? await Task.sleep(nanoseconds: intervalMs * 1_000_000) }
         return markDead
     }
 
