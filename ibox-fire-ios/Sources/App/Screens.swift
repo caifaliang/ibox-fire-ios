@@ -647,7 +647,13 @@ struct BuyPane: View {
     @EnvironmentObject var runner: TaskRunner
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(vm.buyAutoPay ? "本地开火 · 自动支付已开启" : "本地开火 · 下单后请自行支付")
+            HStack {
+                ModeChip(title: "云端", selected: vm.buyCloudMode) { vm.buyCloudMode = true }
+                ModeChip(title: "本地", selected: !vm.buyCloudMode) { vm.buyCloudMode = false }
+            }
+            Text(vm.buyCloudMode
+                 ? "☁️ 云端捡漏（服务器跑，可切后台/锁屏）"
+                 : (vm.buyAutoPay ? "⚡ 本地开火 · 自动支付 · 需保持前台" : "⚡ 本地开火 · 需保持前台"))
                 .font(.caption).foregroundStyle(.secondary)
             if !vm.iboxLoggedIn {
                 IboxLoginCard()
@@ -670,7 +676,14 @@ struct BuyPane: View {
                 }
                 Toggle("自动支付（汇付钱包）", isOn: $vm.buyAutoPay)
                 if vm.buyAutoPay { SecureField("支付密码", text: $vm.buyPayPwd).fieldStyle() }
-                StopStartButton(running: runner.isRunning(.buy), startTitle: "开始捡漏（本地）", stopTitle: "停止捡漏", enabled: vm.isVip, onStart: { vm.startBuy() }, onStop: { runner.stop(.buy) })
+                StopStartButton(
+                    running: runner.isRunning(.buy),
+                    startTitle: vm.buyCloudMode ? "开始捡漏（云端）" : "开始捡漏（本地）",
+                    stopTitle: "停止捡漏",
+                    enabled: vm.isVip,
+                    onStart: { vm.startBuy() },
+                    onStop: { runner.stop(.buy) }
+                )
             }
         }
     }

@@ -670,6 +670,91 @@ private extension Array {
         for e in self { out.append(try await transform(e)) }
         return out
     }
+
+    struct SnipeLoopStart {
+        let taskId: String
+        let celery: Bool
+        let message: String
+    }
+
+    struct SnipeTaskStatus {
+        let status: String
+        let logs: [[String: Any]]
+        let bought: Int
+    }
+
+    func startSnipeLoop(
+        iboxToken: String,
+        platformToken: String,
+        groupId: Int64,
+        targetPrice: Double,
+        quantity: Int,
+        collectionName: String,
+        buyMode: String,
+        batchInterval: Double,
+        autoPay: Bool,
+        payPassword: String,
+        proxy: String = ""
+    ) async throws -> SnipeLoopStart {
+        let body: [String: Any] = [
+            "token": iboxToken,
+            "platform_token": platformToken,
+            "group_id": groupId,
+            "target_price": targetPrice,
+            "quantity": quantity,
+            "collection_name": collectionName,
+            "buy_mode": buyMode,
+            "batch_interval": batchInterval,
+            "auto_pay": autoPay,
+            "pay_password": autoPay ? payPassword : "",
+            "wxpusher_uid": "",
+            "proxy": proxy,
+        ]
+        let data = try JSONSerialization.data(withJSONObject: body)
+        var req = URLRequest(url: URL(string: "\(base())/snipe/start-loop")!)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = data
+        req.timeoutInterval = 45
+        let (raw, resp) = try await siteSession(timeout: 45).data(for: req)
+        let o = jsonObject(raw)
+        let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+        if code == 401 || code == 403 {
+            throw NSError(domain: "snipe", code: code, userInfo: [NSLocalizedDescriptionKey: (o["detail"] as? String) ?? "无权限或登录过期"])
+        }
+        if o["status"] as? String != "ok" {
+            throw NSError(domain: "snipe", code: 1, userInfo: [NSLocalizedDescriptionKey: o["message"] as? String ?? "启动失败"])
+        }
+        let tid = o["task_id"] as? String ?? ""
+        if tid.isEmpty { throw NSError(domain: "snipe", code: 2, userInfo: [NSLocalizedDescriptionKey: "无 task_id"]) }
+        return SnipeLoopStart(
+            taskId: tid,
+            celery: o["celery"] as? Bool ?? false,
+            message: o["message"] as? String ?? ""
+        )
+    }
+
+    func snipeStatus(taskId: String) async throws -> SnipeTaskStatus {
+        let enc = taskId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? taskId
+        var req = URLRequest(url: URL(string: "\(base())/snipe/status?task_id=\(enc)&_t=\(Int(Date().timeIntervalSince1970))")!)
+        req.timeoutInterval = 15
+        let (raw, _) = try await siteSession(timeout: 15).data(for: req)
+        let o = jsonObject(raw)
+        let logs = o["logs"] as? [[String: Any]] ?? []
+        let bought = o["bought"] as? Int ?? (o["bought"] as? NSNumber)?.intValue ?? 0
+        return SnipeTaskStatus(
+            status: o["status"] as? String ?? "running",
+            logs: logs,
+            bought: bought
+        )
+    }
+
+    func stopSnipeLoop(taskId: String) async {
+        let enc = taskId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? taskId
+        var req = URLRequest(url: URL(string: "\(base())/snipe/stop-loop?task_id=\(enc)")!)
+        req.httpMethod = "POST"
+        _ = try? await siteSession().data(for: req)
+    }
 }
 
 private extension Optional {

@@ -30,7 +30,10 @@ final class TaskRunner: ObservableObject {
         runningKinds.remove(kind.rawValue)
         stops.removeValue(forKey: kind.rawValue)
         tasks.removeValue(forKey: kind.rawValue)
-        if runningKinds.isEmpty { setIdleTimerDisabled(false) }
+        if runningKinds.isEmpty {
+            setIdleTimerDisabled(false)
+            BackgroundKeepAlive.shared.end()
+        }
         notify(title: "已停止", body: kind.rawValue)
     }
 
@@ -40,19 +43,23 @@ final class TaskRunner: ObservableObject {
         }
     }
 
-    func start(kind: TaskKind, stop: @escaping () -> Void, work: @escaping () async -> Void) {
+    func start(kind: TaskKind, stop: @escaping () -> Void, keepAlive: Bool = false, work: @escaping () async -> Void) {
         stopAllMatching(kind)
         runningKinds.insert(kind.rawValue)
         stops[kind.rawValue] = stop
         setIdleTimerDisabled(true)
-        notify(title: "任务运行中", body: "请保持 App 在前台：\(kind.rawValue)")
+        if keepAlive { BackgroundKeepAlive.shared.begin() }
+        notify(title: "任务运行中", body: keepAlive ? "本地任务请尽量保持前台" : "云端任务已在服务器运行，可切后台")
         tasks[kind.rawValue] = Task {
             await work()
             await MainActor.run {
                 self.runningKinds.remove(kind.rawValue)
                 self.stops.removeValue(forKey: kind.rawValue)
                 self.tasks.removeValue(forKey: kind.rawValue)
-                if self.runningKinds.isEmpty { self.setIdleTimerDisabled(false) }
+                if self.runningKinds.isEmpty {
+                    self.setIdleTimerDisabled(false)
+                    BackgroundKeepAlive.shared.end()
+                }
                 self.notify(title: "任务结束", body: kind.rawValue)
             }
         }

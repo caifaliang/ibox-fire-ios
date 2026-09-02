@@ -73,6 +73,7 @@ final class AppViewModel: ObservableObject {
     @Published var buyPrice = ""
     @Published var buyQty = "1"
     @Published var buyMode = "cross"
+    @Published var buyCloudMode = true
     @Published var buyBatchInterval = "6"
     @Published var buyAutoPay = false
     @Published var buyPayPwd = ""
@@ -203,6 +204,18 @@ final class AppViewModel: ObservableObject {
 
     func clearLogs(_ mode: TechMode? = nil) {
         modeLogs[(mode ?? techMode).rawValue] = []
+    }
+
+    func syncServerLogs(_ entries: [[String: Any]], mode: TechMode) {
+        var list: [LogLine] = []
+        for e in entries {
+            let msg = JSONX.stringVal(e["msg"])
+            if msg.isEmpty { continue }
+            let t = JSONX.stringVal(e["time"])
+            let typ = JSONX.stringVal(e["type"])
+            list.append(LogLine(time: t.isEmpty ? bjTimeString() : t, msg: msg, type: typ.isEmpty ? "info" : typ))
+        }
+        modeLogs[mode.rawValue] = Array(list.prefix(300))
     }
 
     func logsText(_ mode: TechMode? = nil) -> String {
@@ -714,6 +727,11 @@ final class AppViewModel: ObservableObject {
     }
 
     func startBuy() {
+        if buyCloudMode { startBuyCloud(); return }
+        startBuyLocal()
+    }
+
+    private func startBuyLocal() {
         guard requireVip(), iboxLoggedIn, buyGid > 0 else { appendLog("请搜索并选择藏品", type: "error", mode: .buy); return }
         guard guardNotRunning(.buy, prepKey: "buy") else { return }
         let price = Double(buyPrice) ?? 0
@@ -723,11 +741,92 @@ final class AppViewModel: ObservableObject {
         if buyAutoPay && buyPayPwd.trimmingCharacters(in: .whitespaces).isEmpty {
             appendLog("开启自动支付需填写支付密码", type: "error", mode: .buy); return
         }
+        appendLog("⚡本地模式（请保持前台，切后台约2分钟后会暂停）", mode: .buy)
         let interval = (Double(buyBatchInterval) ?? 6).clamped(to: 1...60)
         let engine = BuyEngine(cfg: BuyConfig(token: iboxToken, groupId: buyGid, collectionName: buyCname, targetPrice: price, quantity: qty, buyMode: buyMode, batchIntervalS: interval, autoPay: buyAutoPay, payPassword: buyPayPwd), onLog: { [weak self] m in
             Task { @MainActor in self?.appendLog(m, type: m.contains("成功") ? "buy" : "info", mode: .buy) }
         })
-        runner.start(kind: .buy, stop: { engine.requestStop() }) { _ = await engine.run() }
+        runner.start(kind: .buy, stop: { engine.requestStop() }, keepAlive: true) { _ = await engine.run() }
+    }
+
+    func startBuyCloud() {
+        guard requireVip(), siteLoggedIn, let pt = siteUser?.token else {
+            appendLog("云端捡漏需先登录网站账号", type: "error", mode: .buy); return
+        }
+        guard iboxLoggedIn, buyGid > 0 else { appendLog("请搜索并选择藏品", type: "error", mode: .buy); return }
+        guard guardNotRunning(.buy, prepKey: "buy") else { return }
+        let price = Double(buyPrice) ?? 0
+        let qty = Int(buyQty) ?? 0
+        guard price > 0 else { appendLog("请填写目标价", type: "error", mode: .buy); return }
+        guard qty >= 1 else { appendLog("请填写数量", type: "error", mode: .buy); return }
+        if buyAutoPay && buyPayPwd.trimmingCharacters(in: .whitespaces).isEmpty {
+            appendLog("开启自动支付需填写支付密码", type: "error", mode: .buy); return
+        }
+        let interval = (Double(buyBatchInterval) ?? 6).clamped(to: 1...60)
+        final class TaskBox: @unchecked Sendable { var id = "" }
+        let taskBox = TaskBox()
+        runner.start(kind: .buy, stop: {
+            Task { await self.api.stopSnipeLoop(taskId: taskBox.id) }
+        }, keepAlive: false) { [weak self] in
+            guard let self else { return }
+            var retry = 0
+            while retry < 30 && !Task.isCancelled {
+                do {
+                    let start = try await self.api.startSnipeLoop(
+                        iboxToken: self.iboxToken,
+                        platformToken: pt,
+                        groupId: self.buyGid,
+                        targetPrice: price,
+                        quantity: qty,
+                        collectionName: self.buyCname,
+                        buyMode: self.buyMode,
+                        batchInterval: interval,
+                        autoPay: self.buyAutoPay,
+                        payPassword: self.buyPayPwd,
+                        proxy: ""
+                    )
+                    taskBox.id = start.taskId
+                    let engine = start.celery ? "Celery" : "线程"
+                    await MainActor.run {
+                        self.appendLog("☁️云端捡漏[\(self.modeLabelBuy(self.buyMode))/\(engine)] ≤¥\(price) x\(qty)", type: "buy", mode: .buy)
+                        if !start.message.isEmpty { self.appendLog(start.message, mode: .buy) }
+                    }
+                    break
+                } catch {
+                    let msg = error.localizedDescription
+                    if msg.contains("繁忙") || msg.contains("排队") {
+                        retry += 1
+                        await MainActor.run { self.appendLog("排队中...(\(retry)/30)", mode: .buy) }
+                        try? await Task.sleep(nanoseconds: 2_000_000_000)
+                        continue
+                    }
+                    await MainActor.run { self.appendLog("启动失败: \(msg)", type: "error", mode: .buy) }
+                    return
+                }
+            }
+            if taskBox.id.isEmpty { return }
+            while !Task.isCancelled {
+                do {
+                    let st = try await self.api.snipeStatus(taskId: taskBox.id)
+                    await MainActor.run { self.syncServerLogs(st.logs, mode: .buy) }
+                    if st.status == "stopped" || st.status == "SUCCESS" || st.status == "FAILURE" {
+                        await MainActor.run {
+                            self.appendLog("云端任务结束 成交 \(st.bought)/\(qty)", mode: .buy)
+                        }
+                        break
+                    }
+                } catch { }
+                try? await Task.sleep(nanoseconds: 1_500_000_000)
+            }
+        }
+    }
+
+    private func modeLabelBuy(_ m: String) -> String {
+        switch m {
+        case "normal": return "普通"
+        case "batch": return "纯批量"
+        default: return "批量+普通"
+        }
     }
 
     func startSell() {
