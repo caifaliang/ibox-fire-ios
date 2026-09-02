@@ -3,7 +3,7 @@ import Foundation
 /// 带代理账号密码的 URLSession，避免 iOS 弹出「需要代理鉴定」系统对话框。
 final class ProxyURLSession: NSObject, URLSessionDelegate, URLSessionTaskDelegate, @unchecked Sendable {
     private let credentials: (user: String, pass: String)?
-    private let session: URLSession
+    private var session: URLSession!
 
     init(proxyLine: String?, timeout: TimeInterval = 12) {
         let cfg = URLSessionConfiguration.ephemeral

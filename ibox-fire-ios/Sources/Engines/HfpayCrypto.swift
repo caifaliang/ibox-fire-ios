@@ -7,32 +7,33 @@ enum HfpayCrypto {
         let keyBytes = Array(payUuid.utf8.prefix(24))
         var key = keyBytes
         while key.count < 24 { key.append(0) }
-        let iv = Array("chinapnr".utf8)
+        let iv = Data("chinapnr".utf8)
         let raw = Array(pwd.utf8)
         let padLen = 8 - (raw.count % 8)
-        let padded = raw + Array(repeating: UInt8(padLen), count: padLen)
-        var out = [UInt8](repeating: 0, count: padded.count + 8)
+        let inData = Data(raw + Array(repeating: UInt8(padLen), count: padLen))
+        let keyData = Data(key)
+        var out = Data(count: inData.count + 8)
         var moved: size_t = 0
-        let st = key.withUnsafeBytes { kb in
-            iv.withUnsafeBytes { ivb in
-                padded.withUnsafeBytes { pb in
-                    out.withUnsafeMutableBytes { ob in
+        let status = iv.withUnsafeBytes { ivb in
+            out.withUnsafeMutableBytes { outBytes in
+                inData.withUnsafeBytes { inBytes in
+                    keyData.withUnsafeBytes { kb in
                         CCCrypt(
                             CCOperation(kCCEncrypt),
                             CCAlgorithm(kCCAlgorithm3DES),
                             CCOptions(0),
                             kb.baseAddress, 24,
                             ivb.baseAddress,
-                            pb.baseAddress, padded.count,
-                            ob.baseAddress, out.count,
+                            inBytes.baseAddress, inData.count,
+                            outBytes.baseAddress, outBytes.count,
                             &moved
                         )
                     }
                 }
             }
         }
-        guard st == kCCSuccess else { return Data(pwd.utf8).base64EncodedString() }
-        return Data(out.prefix(moved)).base64EncodedString()
+        guard status == kCCSuccess else { return Data(pwd.utf8).base64EncodedString() }
+        return out.prefix(moved).base64EncodedString()
     }
 
     static func makeBalancePayBody(encPwd: String, randomFactor: String) -> ([String: Any], String) {
