@@ -35,10 +35,9 @@ struct SiteLoginScreen: View {
     }
 }
 
-@MainActor
 struct MainShell: View {
     @EnvironmentObject var vm: AppViewModel
-    @ObservedObject private var runner = TaskRunner.shared
+    @EnvironmentObject var runner: TaskRunner
 
     var body: some View {
         VStack(spacing: 0) {
@@ -186,10 +185,9 @@ struct ProfileScreen: View {
     }
 }
 
-@MainActor
 struct ModePane: View {
     @EnvironmentObject var vm: AppViewModel
-    @ObservedObject private var runner = TaskRunner.shared
+    @EnvironmentObject var runner: TaskRunner
 
     var body: some View {
         VStack(spacing: 0) {

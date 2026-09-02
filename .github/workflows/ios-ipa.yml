@@ -32,7 +32,7 @@ jobs:
           set -o pipefail
           xcodebuild build \
             -project IboxFire.xcodeproj \
-            -scheme IboxFire \
+            -target IboxFire \
             -configuration Release \
             -sdk iphoneos \
             -derivedDataPath build \

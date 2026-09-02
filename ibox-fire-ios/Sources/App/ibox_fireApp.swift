@@ -10,6 +10,7 @@ struct ibox_fireApp: App {
         WindowGroup {
             RootView()
                 .environmentObject(vm)
+                .environmentObject(TaskRunner.shared)
                 .preferredColorScheme(.light)
         }
     }

@@ -8,7 +8,6 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.9"
-    SWIFT_STRICT_CONCURRENCY: minimal
     TARGETED_DEVICE_FAMILY: "1,2"
     IPHONEOS_DEPLOYMENT_TARGET: "16.0"
     PRODUCT_BUNDLE_IDENTIFIER: com.ibox.fire
@@ -38,22 +37,6 @@ targets:
         INFOPLIST_FILE: Resources/Info.plist
         TARGETED_DEVICE_FAMILY: "1,2"
         ENABLE_TESTABILITY: YES
-    info:
-      path: Resources/Info.plist
-      properties:
-        CFBundleDisplayName: iBox Fire
-        UILaunchScreen: {}
-        UIBackgroundModes:
-          - processing
-          - fetch
-        NSAppTransportSecurity:
-          NSAllowsArbitraryLoads: false
-          NSExceptionDomains:
-            ydaili.cn:
-              NSExceptionAllowsInsecureHTTPLoads: true
-              NSIncludesSubdomains: true
-            api3.ydaili.cn:
-              NSExceptionAllowsInsecureHTTPLoads: true
   IboxFireTests:
     type: bundle.unit-test
     platform: iOS

@@ -84,7 +84,7 @@ final class FireEngine: @unchecked Sendable {
 
         await withTaskGroup(of: Void.self) { group in
             for wid in 0..<workers {
-                group.addTask { [self] in
+                group.addTask {
                     var first = false
                     var localRr = wid
                     while !self.stop {

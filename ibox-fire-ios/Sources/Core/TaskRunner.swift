@@ -40,7 +40,7 @@ final class TaskRunner: ObservableObject {
         }
     }
 
-    func start(kind: TaskKind, stop: @Sendable @escaping () -> Void, work: @Sendable @escaping () async -> Void) {
+    func start(kind: TaskKind, stop: @escaping () -> Void, work: @escaping () async -> Void) {
         stopAllMatching(kind)
         runningKinds.insert(kind.rawValue)
         stops[kind.rawValue] = stop
