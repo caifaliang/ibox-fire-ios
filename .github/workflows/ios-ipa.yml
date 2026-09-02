@@ -30,15 +30,15 @@ jobs:
       - name: Build (unsigned)
         run: |
           set -o pipefail
-          xcodebuild build \
+          xcodebuild \
             -project IboxFire.xcodeproj \
-            -target IboxFire \
+            -scheme IboxFire \
             -configuration Release \
             -sdk iphoneos \
             -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
-            2>&1 | tee build.log
+            build 2>&1 | tee build.log
           xcode_status=${PIPESTATUS[0]}
           if [ "$xcode_status" -ne 0 ]; then
             echo "=== xcodebuild failed (exit $xcode_status) ==="
