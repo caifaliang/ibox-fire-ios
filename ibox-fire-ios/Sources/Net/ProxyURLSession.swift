@@ -51,7 +51,7 @@ final class ProxyURLSession: NSObject, URLSessionDelegate, URLSessionTaskDelegat
     ) {
         let space = challenge.protectionSpace
         let method = space.authenticationMethod
-        let needsProxyCred = space.isProxy
+        let needsProxyCred = space.isProxy()
             || method == NSURLAuthenticationMethodHTTPBasic
             || method == NSURLAuthenticationMethodHTTPDigest
         if needsProxyCred, let cred = credentials {
