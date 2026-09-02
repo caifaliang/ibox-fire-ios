@@ -203,17 +203,9 @@ final class PresaleEngine: @unchecked Sendable {
             "Content-Type": "application/json"
         ] { req.setValue(v, forHTTPHeaderField: k) }
 
-        let cfg = URLSessionConfiguration.ephemeral
-        cfg.timeoutIntervalForRequest = 1.8
-        if let ep = ProxyPool.parseEndpoint(ProxyPool.normalizeProxyUrl(proxy)) {
-            cfg.connectionProxyDictionary = [
-                "HTTPEnable": 1, "HTTPProxy": ep.host, "HTTPPort": ep.port,
-                "HTTPSEnable": 1, "HTTPSProxy": ep.host, "HTTPSPort": ep.port
-            ] as [AnyHashable: Any]
-        }
-        let session = URLSession(configuration: cfg)
+        let http = ProxyURLSession(proxyLine: proxy, timeout: 1.8)
         do {
-            let (data, resp) = try await session.data(for: req)
+            let (data, resp) = try await http.data(for: req)
             let status = (resp as? HTTPURLResponse)?.statusCode ?? 0
             let text = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             guard !text.isEmpty else { return (status, -1, "empty", "") }

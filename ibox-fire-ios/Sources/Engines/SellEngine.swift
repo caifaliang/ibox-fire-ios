@@ -39,31 +39,58 @@ final class SellEngine: @unchecked Sendable {
         var soldOrderIds = Set<Int64>()
         let deadline = Date().timeIntervalSince1970 + cfg.durationS
         var lastBest = -1.0
+        var lastPoLog = 0.0
 
         while !stop && sold < qty && !holdings.isEmpty && Date().timeIntervalSince1970 < deadline {
             let poPath = "/public-market-service/digital-collection-groups/\(cfg.groupId)/purchase-orders?pageNo=1&pageSize=20&uid=\(uid)"
             let poData = await client.get(poPath)
             let poCode = JSONX.code(poData)
-            if poCode == 401 { onLog("Token 失效"); break }
-            if poCode == 403 || poCode == 429 {
+            let poMsg = JSONX.message(poData)
+            switch poCode {
+            case 401:
+                onLog("Token 失效(401)，请到「我的」重新登录"); return sold
+            case 403:
+                onLog("求购接口 403 风控/限流，稍后重试")
                 try await Task.sleep(nanoseconds: 2_000_000_000); continue
+            case 429:
+                onLog("求购限流 429")
+                try await Task.sleep(nanoseconds: 2_000_000_000); continue
+            case -1, -2:
+                try await Task.sleep(nanoseconds: 1_000_000_000); continue
+            case 0:
+                break
+            default:
+                onLog("求购列表 c=\(poCode) \(poMsg.prefix(60))")
+                try await Task.sleep(nanoseconds: 1_000_000_000); continue
             }
+
             let poItems = JSONX.dataList(poData)
             if poItems.isEmpty {
+                let now = Date().timeIntervalSince1970
+                if now - lastPoLog > 10 {
+                    onLog("求购:无订单/等待中")
+                    lastPoLog = now
+                }
                 try await Task.sleep(nanoseconds: 200_000_000); continue
             }
-            var candidates = poItems.filter { row in
+
+            let candidates = poItems.compactMap { row -> [String: Any]? in
                 let id = JSONX.int64Val(row["id"]) ?? 0
                 let price = JSONX.doubleVal(row["price"]) ?? 0
-                return id > 0 && price >= cfg.targetPrice && !soldOrderIds.contains(id)
+                guard id > 0, price >= cfg.targetPrice, !soldOrderIds.contains(id) else { return nil }
+                return row
             }.sorted { (JSONX.doubleVal($0["price"]) ?? 0) > (JSONX.doubleVal($1["price"]) ?? 0) }
 
             if candidates.isEmpty {
                 let best = poItems.compactMap { JSONX.doubleVal($0["price"]) }.max() ?? 0
-                if best != lastBest { onLog("求购最高¥\(best) 未达目标"); lastBest = best }
+                if best != lastBest {
+                    onLog("求购最高¥\(best) 未达目标¥\(cfg.targetPrice)")
+                    lastBest = best
+                }
                 try await Task.sleep(nanoseconds: 500_000_000); continue
             }
 
+            var consecSkip = 0
             for po in candidates {
                 if stop || sold >= qty || holdings.isEmpty { break }
                 let poId = JSONX.int64Val(po["id"]) ?? 0
@@ -90,10 +117,18 @@ final class SellEngine: @unchecked Sendable {
                     onLog("Token 失效"); return sold
                 } else if msg.contains("密码") {
                     onLog("寄售密码错误"); return sold
+                } else if [3_600_000, 3_600_002].contains(Int(dc)) {
+                    soldOrderIds.insert(poId)
+                    consecSkip += 1
+                    onLog("跳过 c=\(dc)")
+                    if consecSkip >= 2 { break }
+                } else if dc == 2100001 {
+                    onLog("操作频繁,重新拉取"); break
+                } else if dc == 429 || dc == 403 {
+                    onLog("卖出 \(dc) 限流，等2s"); try await Task.sleep(nanoseconds: 2_000_000_000); break
                 } else {
                     onLog("卖出失败 c=\(dc) \(msg.prefix(40))")
-                    try await Task.sleep(nanoseconds: 1_000_000_000)
-                    break
+                    try await Task.sleep(nanoseconds: 1_000_000_000); break
                 }
             }
         }
@@ -123,11 +158,11 @@ final class SellEngine: @unchecked Sendable {
                 for it in list {
                     if let id = JSONX.int64Val(it["id"]), id > 0 { out.append(id) }
                 }
-                let hasMore = JSONX.dataDict(data)["hasMore"] as? Bool ?? false
-                if !hasMore { break }
+                if !(JSONX.dataDict(data)["hasMore"] as? Bool ?? false) { break }
                 hp += 1
             }
-            if !failed { return out }
+            if !failed && !out.isEmpty { return out }
+            if !failed { onLog("持仓接口返回空列表（lockStatus=0）") }
         }
         return []
     }

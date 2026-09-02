@@ -33,21 +33,13 @@ final class NewbeeClient: @unchecked Sendable {
 
     private let base = "https://api.newbee.net.cn"
     private let token: String
-    private let session: URLSession
+    private let http: ProxyURLSession
     private let readMs: TimeInterval
 
     init(token: String, proxyUrl: String = "", readMs: TimeInterval = 8) {
         self.token = token
         self.readMs = readMs
-        let cfg = URLSessionConfiguration.ephemeral
-        cfg.timeoutIntervalForRequest = readMs
-        if !proxyUrl.isEmpty, let ep = ProxyPool.parseEndpoint(ProxyPool.normalizeProxyUrl(proxyUrl)) {
-            cfg.connectionProxyDictionary = [
-                "HTTPEnable": 1, "HTTPProxy": ep.host, "HTTPPort": ep.port,
-                "HTTPSEnable": 1, "HTTPSProxy": ep.host, "HTTPSPort": ep.port
-            ]
-        }
-        session = URLSession(configuration: cfg)
+        http = ProxyURLSession(proxyLine: proxyUrl.isEmpty ? nil : proxyUrl, timeout: readMs)
     }
 
     static func xToken(path: String, params: [String: String]) -> String {
@@ -90,7 +82,7 @@ final class NewbeeClient: @unchecked Sendable {
         req.httpMethod = "GET"
         headers(xt: xt).forEach { req.setValue($0.value, forHTTPHeaderField: $0.key) }
         do {
-            let (data, resp) = try await session.data(for: req)
+            let (data, resp) = try await http.data(for: req)
             let status = (resp as? HTTPURLResponse)?.statusCode ?? 0
             let o = try parseJSON(data, status: status)
             let code = (o["code"] as? NSNumber)?.intValue ?? (o["code"] as? Int) ?? -1
@@ -114,7 +106,7 @@ final class NewbeeClient: @unchecked Sendable {
         req.setValue("application/json; charset=UTF-8", forHTTPHeaderField: "Content-Type")
         req.httpBody = try JSONSerialization.data(withJSONObject: jo)
         headers(xt: xt).forEach { req.setValue($0.value, forHTTPHeaderField: $0.key) }
-        let (data, resp) = try await session.data(for: req)
+        let (data, resp) = try await http.data(for: req)
         let status = (resp as? HTTPURLResponse)?.statusCode ?? 0
         return try parseJSON(data, status: status)
     }

@@ -1,32 +1,28 @@
 import Foundation
 
-/// 对齐 Android `prestoredCaptchas`：每个活代理预解一条极验（服务端 presale-verify 降级）。
+/// 对齐 Android prestoredCaptchas：iOS 无本地 ONNX 时走网站 presale-verify（服务器代理池解极验）。
 enum PresaleCaptchas {
     static func prestored(proxies: [String], iboxToken: String, onLog: @escaping (String) -> Void) async -> [CaptchaToken] {
-        guard !proxies.isEmpty else {
-            onLog("无活代理，无法预存极验")
-            return []
-        }
-        let need = proxies.count
-        let concurrency = min(32, max(16, (need + 2) / 3))
-        onLog("极验预存 目标\(need)/\(proxies.count)代理 并发\(concurrency) …")
+        let need = max(1, proxies.count)
+        let concurrency = min(16, need)
+        onLog("极验预存 目标\(need) 并发\(concurrency)（网站代理池）…")
         let api = ApiRepository()
-        var queue = proxies
-        let lock = NSLock()
         var results: [CaptchaToken] = []
-        var ok = 0
-        var fail = 0
+        let lock = NSLock()
+        var ok = 0, fail = 0
 
         await withTaskGroup(of: Void.self) { group in
             for _ in 0..<concurrency {
                 group.addTask {
                     while true {
-                        let px: String? = lock.withLock {
-                            queue.isEmpty ? nil : queue.removeFirst()
+                        let shouldContinue: Bool = lock.withLock {
+                            if results.count >= need { return false }
+                            return true
                         }
-                        guard let proxy = px else { break }
+                        guard shouldContinue else { break }
                         do {
-                            let cap = try await api.presaleVerify(iboxToken: iboxToken, preferredProxy: proxy)
+                            // 不传用户代理：由服务器 rotating pool 访问极验三域名，避免代理无法连 gsensebot
+                            let cap = try await api.presaleVerify(iboxToken: iboxToken, preferredProxy: "")
                             lock.withLock {
                                 results.append(cap)
                                 ok += 1
@@ -39,12 +35,10 @@ enum PresaleCaptchas {
                                 fail += 1
                                 let n = fail
                                 if n <= 3 || n % 5 == 0 {
-                                    let tag = ProxyPool.normalizeProxyUrl(proxy)
-                                        .replacingOccurrences(of: "http://", with: "")
-                                        .replacingOccurrences(of: "https://", with: "")
-                                    onLog("极验失败(\(String(tag.prefix(22)))): \(error.localizedDescription.prefix(50))")
+                                    onLog("极验失败: \(error.localizedDescription.prefix(60))")
                                 }
                             }
+                            try? await Task.sleep(nanoseconds: 200_000_000)
                         }
                     }
                 }

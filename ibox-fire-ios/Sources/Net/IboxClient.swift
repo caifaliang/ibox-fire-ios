@@ -12,7 +12,7 @@ final class IboxClient: @unchecked Sendable {
     private let auth: String
     let deviceId: String
     let modeLabel: String
-    private let session: URLSession
+    private let http: ProxyURLSession
 
     init(
         token: String,
@@ -34,17 +34,7 @@ final class IboxClient: @unchecked Sendable {
             deviceId = Self.hashDeviceId(raw)
             modeLabel = "Hash派生"
         }
-        let cfg = URLSessionConfiguration.ephemeral
-        cfg.timeoutIntervalForRequest = readMs / 1000.0
-        cfg.timeoutIntervalForResource = (connectMs + readMs) / 1000.0
-        if let px = proxyLine?.trimmingCharacters(in: .whitespacesAndNewlines), !px.isEmpty,
-           let ep = ProxyPool.parseEndpoint(px) {
-            cfg.connectionProxyDictionary = [
-                "HTTPEnable": 1, "HTTPProxy": ep.host, "HTTPPort": ep.port,
-                "HTTPSEnable": 1, "HTTPSProxy": ep.host, "HTTPSPort": ep.port
-            ] as [AnyHashable: Any]
-        }
-        session = URLSession(configuration: cfg)
+        http = ProxyURLSession(proxyLine: proxyLine, timeout: readMs / 1000.0)
     }
 
     /// 对齐 backend `_make_device_id` / Android `makeDeviceId`
@@ -124,7 +114,7 @@ final class IboxClient: @unchecked Sendable {
 
     private func exec(_ req: URLRequest) async -> [String: Any] {
         do {
-            let (data, resp) = try await session.data(for: req)
+            let (data, resp) = try await http.data(for: req)
             let status = (resp as? HTTPURLResponse)?.statusCode ?? 0
             if status == 401 || status == 403 || status == 429 {
                 return ["code": status, "message": "HTTP \(status)"]

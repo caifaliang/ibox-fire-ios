@@ -115,26 +115,14 @@ enum ProxyPool {
     ]
 
     private static func validateOne(_ proxyUrl: String) async -> Bool {
-        guard let ep = parseEndpoint(proxyUrl) else { return false }
-        let config = URLSessionConfiguration.ephemeral
-        config.connectionProxyDictionary = [
-            "HTTPEnable": 1,
-            "HTTPProxy": ep.host,
-            "HTTPPort": ep.port,
-            "HTTPSEnable": 1,
-            "HTTPSProxy": ep.host,
-            "HTTPSPort": ep.port
-        ] as [AnyHashable: Any]
-        if let u = ep.user, let p = ep.pass {
-            // URLSession proxy auth is limited; still try without auth header for open proxies
-            _ = u; _ = p
-        }
-        config.timeoutIntervalForRequest = 3.5
-        let session = URLSession(configuration: config)
+        guard ProxyPool.parseEndpoint(proxyUrl) != nil else { return false }
+        let http = ProxyURLSession(proxyLine: proxyUrl, timeout: 3.5)
         for u in probeURLs {
             guard let url = URL(string: u) else { continue }
             do {
-                let (_, resp) = try await session.data(from: url)
+                var req = URLRequest(url: url)
+                req.httpMethod = "GET"
+                let (_, resp) = try await http.data(for: req)
                 if let http = resp as? HTTPURLResponse, http.statusCode < 500 { return true }
             } catch { continue }
         }
