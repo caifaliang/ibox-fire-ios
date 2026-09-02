@@ -587,7 +587,7 @@ final class ApiRepository {
         return list.compactMap { a in
             guard let id = JSONX.int64Val(a["id"]), id > 0 else { return nil }
             return SynthActivity(
-                id: id,
+                    id: id,
                 name: a["name"] as? String ?? "活动 \(id)",
                 startTime: "\(a["startTime"] ?? "")".replacingOccurrences(of: "null", with: ""),
                 maxSyntheticNum: JSONX.int64Val(a["userMaxSyntheticNum"]) ?? JSONX.int64Val(a["maxSyntheticNum"]) ?? 0
@@ -701,5 +701,11 @@ enum JSONX {
         if let n = v as? NSNumber { return n.int64Value }
         if let s = v as? String { return Int64(s) }
         return nil
+    }
+    static func stringVal(_ v: Any?) -> String {
+        if let s = v as? String { return s }
+        if let n = v as? NSNumber { return n.stringValue }
+        if let n = int64Val(v) { return "\(n)" }
+        return ""
     }
 }

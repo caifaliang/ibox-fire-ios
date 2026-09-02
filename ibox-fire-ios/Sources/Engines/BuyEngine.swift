@@ -16,6 +16,8 @@ struct BuyConfig {
 
 /// 本地捡漏 — 对齐 Android BuyEngine（私人节奏 + 正确下单 API）。
 final class BuyEngine: @unchecked Sendable {
+    private enum BatchOutcome { case ok, skipNormal, stop }
+
     private let cfg: BuyConfig
     private let onLog: (String) -> Void
     private var stop = false
@@ -131,11 +133,11 @@ final class BuyEngine: @unchecked Sendable {
             return ""
         }
 
-        func runBatchStep() async -> Bool {
+        func runBatchStep() async -> BatchOutcome {
             let nowMs = Date().timeIntervalSince1970 * 1000
-            if nowMs < nextBatchAt || nowMs < batchCooldownAt { return false }
+            if nowMs < nextBatchAt || nowMs < batchCooldownAt { return .ok }
             let maxCount = min(batchMax, qty - total())
-            if maxCount <= 0 { return false }
+            if maxCount <= 0 { return .ok }
             onLog("批量购买 #\(cycle)...")
             let body: [String: Any] = [
                 "digitalCollectionGroupId": cfg.groupId,
@@ -146,6 +148,35 @@ final class BuyEngine: @unchecked Sendable {
             let r = await client.postJson("/order-create-service/batch-purchase-consignment-orders?uid=\(uid)", body: body)
             let code = JSONX.code(r)
             let msg = JSONX.message(r)
+
+            if code == -2 || code == -1 {
+                batchTimeouts += 1
+                if batchTimeouts >= 2 {
+                    onLog("批购超时\(batchTimeouts)次,禁用批购")
+                    if mode == "batch" { return .stop }
+                } else {
+                    onLog("批购超时(#\(batchTimeouts)/2)")
+                }
+                if mode == "batch" {
+                    try? await Task.sleep(nanoseconds: batchIntervalMs * 1_000_000)
+                    return .skipNormal
+                }
+                nextBatchAt = Date().timeIntervalSince1970 * 1000 + Double(batchGapMs)
+                return .skipNormal
+            }
+
+            if await handleFatal(code: code, msg: msg) { return .stop }
+
+            if code == 401 && !msg.contains("HTTP 401") {
+                onLog("批购被拒 c=401 \(msg.prefix(50))")
+                if mode == "batch" {
+                    try? await Task.sleep(nanoseconds: batchIntervalMs * 1_000_000)
+                    return .skipNormal
+                }
+                nextBatchAt = Date().timeIntervalSince1970 * 1000 + Double(batch429CooldownMs)
+                return .ok
+            }
+
             if code == 0 {
                 batchTimeouts = 0
                 let oid = extractOrderId(r)
@@ -157,33 +188,48 @@ final class BuyEngine: @unchecked Sendable {
                         if let n = od["quantity"] as? Int, n > 0 { count = n }
                     }
                 }
-                if await doPayment(oid: oid, isBatch: true, count: count) { return true }
-                if total() >= qty { return true }
+                if await doPayment(oid: oid, isBatch: true, count: count) { return .stop }
+                if total() >= qty { return .stop }
                 nextBatchAt = Date().timeIntervalSince1970 * 1000 + Double(batchGapMs)
                 if mode == "batch" {
                     try? await Task.sleep(nanoseconds: batchIntervalMs * 1_000_000)
-                    return true
+                    return .skipNormal
                 }
-                return true
+                try? await Task.sleep(nanoseconds: jitter(300))
+                return .skipNormal
             }
+
             if isFreq(code, msg) {
                 if mode == "batch" {
                     onLog("批购限流，休息60s")
                     try? await Task.sleep(nanoseconds: 60_000_000_000)
-                    return true
+                    return .skipNormal
                 }
                 nextBatchAt = Date().timeIntervalSince1970 * 1000 + Double(batch429CooldownMs)
                 onLog("批购限流 冷却\(batch429CooldownMs / 1000)s")
-                return mode == "cross"
+                return .ok
             }
-            onLog("批购 c=\(code) \(msg.prefix(40))")
-            if await handleFatal(code: code, msg: msg) { return true }
+
+            if code == 2_600_013 {
+                onLog(msg.isEmpty ? "批量购买 #\(cycle)/无货" : String(msg.prefix(60)))
+            } else if code == 5_100_004 {
+                onLog(msg.isEmpty ? "批购被未付订单阻塞,停止购买" : String(msg.prefix(60)))
+                return .stop
+            } else if code == 4_100_003 || msg.contains("实名") {
+                onLog("批购致命 c=\(code) \(msg.prefix(50))")
+                return .stop
+            } else {
+                onLog("批购 c=\(code) \(msg.prefix(40))")
+            }
+
             if mode == "batch" {
                 try? await Task.sleep(nanoseconds: batchIntervalMs * 1_000_000)
-                return true
+                return .skipNormal
             }
-            nextBatchAt = Date().timeIntervalSince1970 * 1000 + Double(batchGapMs)
-            return false
+            if !isFreq(code, msg) {
+                nextBatchAt = Date().timeIntervalSince1970 * 1000 + Double(batchGapMs)
+            }
+            return .ok
         }
 
         func runNormalStep() async -> Bool {
@@ -192,17 +238,10 @@ final class BuyEngine: @unchecked Sendable {
             let code = JSONX.code(page)
             let msg = JSONX.message(page)
             if await handleFatal(code: code, msg: msg) { return true }
-            if isFreq(code, msg) {
-                onLog("列表 c=\(code) \(msg.prefix(40)) 冷却\(normal429CooldownMs / 1000)s")
-                try? await Task.sleep(nanoseconds: normal429CooldownMs * 1_000_000)
-                return false
-            }
-            if code != 0 {
-                onLog("列表 c=\(code) \(msg.prefix(40))")
-                return false
-            }
+
             var targets: [(Int64, Double)] = []
-            for it in JSONX.dataList(page) {
+            let list = JSONX.dataList(page)
+            for it in list {
                 if it["isBelongUser"] as? Bool == true { continue }
                 if let st = it["orderStatus"] as? Int, st != 2 { continue }
                 guard let price = JSONX.doubleVal(it["price"]), price > 0, price <= cfg.targetPrice else { continue }
@@ -213,6 +252,11 @@ final class BuyEngine: @unchecked Sendable {
                 targets.append((dcId, price))
             }
             if targets.isEmpty {
+                if list.isEmpty {
+                    onLog("普通下单 #\(cycle)/无挂单")
+                } else if let first = list.first, let lowest = JSONX.doubleVal(first["price"]), lowest > 0 {
+                    onLog("普通下单 #\(cycle)/最低¥\(lowest)")
+                }
                 try? await Task.sleep(nanoseconds: jitter(sleepNoMatch))
                 return false
             }
@@ -231,8 +275,8 @@ final class BuyEngine: @unchecked Sendable {
                     onLog("普通下单 #\(cycle)/\(ni + 1)/¥\(price) \(oid)")
                     if await doPayment(oid: oid, isBatch: false, count: 1) { return true }
                 } else if bc == 429 {
-                    onLog("普通下单 429限流 冷却\(normal429CooldownMs / 1000)s")
-                    try? await Task.sleep(nanoseconds: normal429CooldownMs)
+                    onLog("普通下单 #\(cycle)/\(ni + 1)/429限流,冷却\(normal429CooldownMs / 1000)s")
+                    try? await Task.sleep(nanoseconds: normal429CooldownMs * 1_000_000)
                     break
                 } else {
                     onLog("购买失败 c=\(bc) \(bmsg.prefix(40))")
@@ -248,8 +292,12 @@ final class BuyEngine: @unchecked Sendable {
             if mode == "batch" || mode == "cross" {
                 let doBatch = mode == "batch" ? batchTimeouts < 2 : (nowMs >= nextBatchAt && batchTimeouts < 2)
                 if doBatch {
-                    if await runBatchStep() { break }
-                    if mode == "batch" { continue }
+                    switch await runBatchStep() {
+                    case .stop: stop = true
+                    case .skipNormal: continue
+                    case .ok: break
+                    }
+                    if stop { break }
                 }
             }
             if mode != "batch" {

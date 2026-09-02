@@ -81,19 +81,19 @@ final class BatchEngine: @unchecked Sendable {
             if list.isEmpty { break }
             for row in list {
                 let pp = row["productPreview"] as? [String: Any] ?? [:]
-                guard extractGroupId(row, pp) == cfg.groupId else { continue }
-                if let tid = pp["tokenId"] as? String, !tid.isEmpty { listedIds.insert(tid) }
+                let tid = JSONX.stringVal(pp["tokenId"])
+                if !tid.isEmpty { listedIds.insert(tid) }
             }
             if !(JSONX.dataDict(c)["hasMore"] as? Bool ?? false) { break }
             lp += 1
         }
 
         var pool = holdings.filter {
-            let tid = ($0["tokenId"] as? String) ?? ""
-            return !tid.isEmpty && !listedIds.contains(tid)
+            let tid = JSONX.stringVal($0["tokenId"]).isEmpty ? JSONX.stringVal($0["token_id"]) : JSONX.stringVal($0["tokenId"])
+            return !listedIds.contains(tid)
         }
         if cfg.safeMode { pool.shuffle() }
-        onLog("本藏品待挂\(pool.count)件 本藏品寄售中\(listedIds.count)件 本批目标\(target)件")
+        onLog("本藏品待挂\(pool.count)件 全站寄售中\(listedIds.count)件 本批目标\(target)件")
         if pool.isEmpty {
             onLog(holdings.isEmpty ? "无可上架持仓（持仓接口返回0，请检查GID/Token）" : "无可上架持仓（可能已全部挂单）")
             return 0

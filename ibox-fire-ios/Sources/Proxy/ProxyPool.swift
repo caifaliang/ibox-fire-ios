@@ -132,18 +132,34 @@ enum ProxyPool {
     static func filterAlive(_ raw: [String], cap: Int) async -> (proxies: [String], detail: String) {
         var alive: [String] = []
         let lock = NSLock()
+        let chunk = raw.prefix(80)
+        let workers = min(8, max(1, chunk.count))
+        var idx = 0
         await withTaskGroup(of: String?.self) { group in
-            for px in raw.prefix(80) {
+            for _ in 0..<workers {
                 group.addTask {
-                    await validateOne(px) ? px : nil
+                    while true {
+                        let i: Int = {
+                            lock.lock()
+                            defer { lock.unlock() }
+                            guard idx < chunk.count else { return -1 }
+                            defer { idx += 1 }
+                            return idx
+                        }()
+                        if i < 0 { break }
+                        let px = Array(chunk)[i]
+                        if await validateOne(px) { return px }
+                    }
+                    return nil
                 }
             }
             for await r in group {
                 guard let px = r else { continue }
                 lock.lock()
                 if alive.count < cap { alive.append(px) }
+                let full = alive.count >= cap
                 lock.unlock()
-                if alive.count >= cap { group.cancelAll() }
+                if full { group.cancelAll() }
             }
         }
         return (alive, "抽\(raw.count)活\(alive.count)")
