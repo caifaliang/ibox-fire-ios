@@ -53,6 +53,7 @@ final class PresaleEngine: @unchecked Sendable {
         }
         onLog("开火抢购!")
         let deadline = Double(cfg.fireAtEpochSec) + cfg.durationS
+        let lock = NSLock()
         var bought = 0
         let payer: HfpayPayer? = (cfg.autoPay && !cfg.payPassword.isEmpty) ? HfpayPayer(iboxToken: cfg.token, proxyLine: cfg.proxies.first) : nil
 
@@ -62,7 +63,9 @@ final class PresaleEngine: @unchecked Sendable {
                 let px = cfg.proxies[i]
                 group.addTask {
                     let client = IboxClient(token: self.cfg.token, proxyLine: px, connectMs: 1200, readMs: 2500, deviceIdMode: .stableMD5)
-                    while !self.stop && Date().timeIntervalSince1970 < deadline && bought < self.cfg.quantity {
+                    while !self.stop && Date().timeIntervalSince1970 < deadline {
+                        lock.lock(); let b = bought; lock.unlock()
+                        if b >= self.cfg.quantity { break }
                         var body: [String: Any] = [
                             "saleId": self.cfg.saleId,
                             "count": 1,
@@ -78,14 +81,14 @@ final class PresaleEngine: @unchecked Sendable {
                         let code = JSONX.code(r)
                         let msg = JSONX.message(r)
                         if code == 0 {
-                            bought += 1
+                            lock.lock(); bought += 1; let b2 = bought; lock.unlock()
                             let oid = (JSONX.dataDict(r)["orderUUId"] as? String) ?? ""
-                            self.onLog("抢购成功 \(bought)/\(self.cfg.quantity) \(oid)")
+                            self.onLog("抢购成功 \(b2)/\(self.cfg.quantity) \(oid)")
                             if let payer, !oid.isEmpty {
                                 let pay = await payer.pay(ibox: client, orderId: oid, payPassword: self.cfg.payPassword)
                                 self.onLog(pay.ok ? "支付OK \(pay.detail)" : "支付失败 \(pay.detail)")
                             }
-                            if bought >= self.cfg.quantity { self.stop = true; return }
+                            if b2 >= self.cfg.quantity { self.stop = true; return }
                         } else {
                             self.onLog("抢购 c=\(code) \(msg.prefix(40))")
                         }
@@ -94,6 +97,7 @@ final class PresaleEngine: @unchecked Sendable {
                 }
             }
         }
-        onLog("抢购结束 成功\(bought)")
+        lock.lock(); let finalBought = bought; lock.unlock()
+        onLog("抢购结束 成功\(finalBought)")
     }
 }

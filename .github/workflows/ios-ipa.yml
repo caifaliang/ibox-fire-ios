@@ -42,7 +42,7 @@ jobs:
           xcode_status=${PIPESTATUS[0]}
           if [ "$xcode_status" -ne 0 ]; then
             echo "=== xcodebuild failed (exit $xcode_status) ==="
-            errors=$(grep -E ": error:" build.log | head -50 || true)
+            errors=$(grep -E ": error:| error:" build.log | head -50 || true)
             if [ -n "$errors" ]; then
               echo "$errors"
               while IFS= read -r line; do
@@ -52,6 +52,15 @@ jobs:
                 echo "### xcodebuild errors"
                 echo '```'
                 echo "$errors"
+                echo '```'
+              } >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "=== full build.log ==="
+              cat build.log
+              {
+                echo "### full build.log"
+                echo '```'
+                cat build.log
                 echo '```'
               } >> "$GITHUB_STEP_SUMMARY"
             fi

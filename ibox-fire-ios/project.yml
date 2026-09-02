@@ -22,7 +22,7 @@ settings:
     CODE_SIGN_IDENTITY: ""
     DEVELOPMENT_TEAM: ""
     ENABLE_BITCODE: NO
-    SWIFT_OBJC_BRIDGING_HEADER: Sources/Support/ibox-fire-bridging-header.h
+    SWIFT_OBJC_BRIDGING_HEADER: Resources/ibox-fire-bridging-header.h
 targets:
   IboxFire:
     type: application
