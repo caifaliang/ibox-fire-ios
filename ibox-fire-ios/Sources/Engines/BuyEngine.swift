@@ -47,7 +47,7 @@ final class BuyEngine: @unchecked Sendable {
         let sleepCycle: UInt64 = 400
         let sleepBetweenBuys: UInt64 = 300
 
-        onLog("捡漏启动[\(mode)] \(cfg.collectionName.isEmpty ? "-" : cfg.collectionName) gid=\(cfg.groupId) ≤¥\(cfg.targetPrice) x\(qty)")
+        onLog("捡漏启动[\(modeLabel(mode))] \(cfg.collectionName.isEmpty ? "-" : cfg.collectionName) gid=\(cfg.groupId) ≤¥\(cfg.targetPrice) x\(qty)")
         onLog(proxy == nil ? "⚡本地直连模式（私人节奏）" : "⚡私人代理模式")
         if payer != nil { onLog("自动支付已开启（汇付钱包）") }
 
@@ -76,6 +76,10 @@ final class BuyEngine: @unchecked Sendable {
 
         func total() -> Int { normalBought + batchBought }
         func jitter(_ ms: UInt64) -> UInt64 { ms == 0 ? 0 : UInt64(Double(ms) * (0.85 + Double.random(in: 0...0.3))) }
+        func sleepMs(_ ms: UInt64) async {
+            let n = jitter(ms)
+            if n > 0 { try? await Task.sleep(nanoseconds: n * 1_000_000) }
+        }
         func isFreq(_ code: Int64, _ msg: String) -> Bool {
             code == 429 || msg.contains("过于频繁") || msg.contains("请稍后再试") || msg.contains("限流")
         }
@@ -195,7 +199,7 @@ final class BuyEngine: @unchecked Sendable {
                     try? await Task.sleep(nanoseconds: batchIntervalMs * 1_000_000)
                     return .skipNormal
                 }
-                try? await Task.sleep(nanoseconds: jitter(300))
+                await sleepMs(300)
                 return .skipNormal
             }
 
@@ -257,7 +261,7 @@ final class BuyEngine: @unchecked Sendable {
                 } else if let first = list.first, let lowest = JSONX.doubleVal(first["price"]), lowest > 0 {
                     onLog("普通下单 #\(cycle)/最低¥\(lowest)")
                 }
-                try? await Task.sleep(nanoseconds: jitter(sleepNoMatch))
+                await sleepMs(sleepNoMatch)
                 return false
             }
             for (ni, pair) in targets.enumerated() {
@@ -281,7 +285,7 @@ final class BuyEngine: @unchecked Sendable {
                 } else {
                     onLog("购买失败 c=\(bc) \(bmsg.prefix(40))")
                 }
-                if ni < targets.count - 1 { try? await Task.sleep(nanoseconds: jitter(sleepBetweenBuys)) }
+                if ni < targets.count - 1 { await sleepMs(sleepBetweenBuys) }
             }
             return false
         }
@@ -304,10 +308,18 @@ final class BuyEngine: @unchecked Sendable {
                 if await runNormalStep() { break }
             }
             if total() < qty && !stop {
-                try? await Task.sleep(nanoseconds: jitter(sleepCycle))
+                await sleepMs(sleepCycle)
             }
         }
         onLog("捡漏结束 成交 \(total())/\(qty)")
         return total()
+    }
+
+    private func modeLabel(_ m: String) -> String {
+        switch m {
+        case "normal": return "普通下单"
+        case "batch": return "纯批量"
+        default: return "批量+普通"
+        }
     }
 }
