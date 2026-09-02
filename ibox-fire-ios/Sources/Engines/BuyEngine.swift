@@ -67,9 +67,44 @@ final class BuyEngine: @unchecked Sendable {
         var normalBought = 0, batchBought = 0, unpaid = 0, cycle = 0
         var nextBatchAt = Date().timeIntervalSince1970 * 1000
         var batchCooldownAt: Double = 0
+        var consec403 = 0
+        var consecBiz401 = 0
         let deadline = Date().timeIntervalSince1970 + cfg.durationS
 
         func total() -> Int { normalBought + batchBought }
+
+        func handleFatal(code: Int64, msg: String) async -> Bool {
+            if code == -2 || code == -1 { return false }
+            if code == 401 {
+                if msg.contains("HTTP 401") {
+                    onLog("HTTP 401，Token 可能失效")
+                    return true
+                }
+                consecBiz401 += 1
+                onLog("业务401 \(msg.prefix(50)) (#\(consecBiz401)/2)")
+                if consecBiz401 >= 2 {
+                    onLog("连续业务401，停止（换网络后再试）")
+                    return true
+                }
+                return false
+            }
+            if code == 403 {
+                consec403 += 1
+                if consec403 >= 5 {
+                    onLog("连续5次403,确认IP被封")
+                    return true
+                }
+                let wait = min(30 * consec403, 120)
+                onLog("403冷却\(wait)s(#\(consec403)/5) \(msg.prefix(60))")
+                try? await Task.sleep(nanoseconds: UInt64(wait) * 1_000_000_000)
+                return false
+            }
+            if consec403 > 0 && code != -2 && code != -1 && code != 401 {
+                onLog("403计数器已重置(连接恢复)")
+                consec403 = 0
+            }
+            return false
+        }
 
         while !stop && total() < qty && Date().timeIntervalSince1970 < deadline {
             cycle += 1
@@ -112,6 +147,7 @@ final class BuyEngine: @unchecked Sendable {
                         onLog("批购限流 冷却50s")
                     } else {
                         onLog("批购 c=\(code) \(msg.prefix(40))")
+                        if await handleFatal(code: code, msg: msg) { return total() }
                     }
                     nextBatchAt = Date().timeIntervalSince1970 * 1000 + Double(batchIntervalMs)
                     if mode == "batch" {
@@ -130,7 +166,9 @@ final class BuyEngine: @unchecked Sendable {
             let page = await client.get(listPath)
             let code = JSONX.code(page)
             if code != 0 {
-                onLog("列表 c=\(code) \(JSONX.message(page).prefix(40))")
+                let msg = JSONX.message(page)
+                onLog("列表 c=\(code) \(msg.prefix(40))")
+                if await handleFatal(code: code, msg: msg) { return total() }
                 try? await Task.sleep(nanoseconds: sleepCycle * 1_000_000)
                 continue
             }
@@ -166,6 +204,7 @@ final class BuyEngine: @unchecked Sendable {
                 try? await Task.sleep(nanoseconds: 300_000_000)
             } else {
                 onLog("购买失败 c=\(bc) \(bmsg.prefix(40))")
+                if await handleFatal(code: bc, msg: bmsg) { return total() }
                 try? await Task.sleep(nanoseconds: sleepCycle * 1_000_000)
             }
         }

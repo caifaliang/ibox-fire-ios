@@ -146,48 +146,242 @@ final class ApiRepository {
     }
 
     func fetchUserProxy(platformToken: String) async throws -> String {
-        var req = URLRequest(url: URL(string: "\(base())/auth/proxy")!)
-        req.setValue(JwtUtil.bearer(platformToken), forHTTPHeaderField: "Authorization")
-        let (data, _) = try await siteSession().data(for: req)
-        let o = jsonObject(data)
-        return (o["extract_url"] as? String) ?? (o["proxy"] as? String) ?? ""
+        // 对齐 Android：优先 /auth/user/proxy，兼容旧 /auth/proxy
+        for path in ["/auth/user/proxy", "/auth/proxy"] {
+            var req = URLRequest(url: URL(string: "\(base())\(path)")!)
+            req.setValue(JwtUtil.bearer(platformToken), forHTTPHeaderField: "Authorization")
+            guard let (data, resp) = try? await siteSession().data(for: req),
+                  ((resp as? HTTPURLResponse)?.statusCode ?? 0) < 400 else { continue }
+            let o = jsonObject(data)
+            let url = (o["xiequ_url"] as? String) ?? (o["extract_url"] as? String) ?? (o["proxy"] as? String) ?? ""
+            if !url.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return url }
+        }
+        return ""
     }
 
     func consumeLocal(platformToken: String, kind: String) async throws -> QuotaInfo {
-        let body = try JSONSerialization.data(withJSONObject: ["kind": kind])
-        var req = URLRequest(url: URL(string: "\(base())/quota/consume-local")!)
+        let body = try JSONSerialization.data(withJSONObject: [
+            "platform_token": platformToken,
+            "kind": kind
+        ])
+        var req = URLRequest(url: URL(string: "\(base())/snipe/local/consume")!)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.setValue(JwtUtil.bearer(platformToken), forHTTPHeaderField: "Authorization")
         req.httpBody = body
-        let (data, _) = try await siteSession().data(for: req)
-        return parseQuota(jsonObject(data))
+        req.timeoutInterval = 30
+        let (data, resp) = try await siteSession(timeout: 30).data(for: req)
+        let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+        let o = jsonObject(data)
+        if code == 401 || code == 403 {
+            throw NSError(domain: "quota", code: code, userInfo: [NSLocalizedDescriptionKey: (o["detail"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "无权限或登录过期"])
+        }
+        if o["status"] as? String != "ok" {
+            throw NSError(domain: "quota", code: 1, userInfo: [NSLocalizedDescriptionKey: o["message"] as? String ?? "扣次失败"])
+        }
+        if let q = o["quota"] as? [String: Any] { return parseQuota(q) }
+        return parseQuota(o)
     }
 
-    func searchCollections(_ q: String) async throws -> [CollHit] {
-        let enc = q.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? q
-        let url = URL(string: "\(base())/collections/search?q=\(enc)")!
-        let (data, _) = try await siteSession().data(from: url)
+    /// NewBee 汇付自动支付（走网站 newbee_pay）
+    func newbeeAutopay(
+        nbToken: String,
+        payPassword: String,
+        orderId: String = "",
+        buyMessage: String = "",
+        buyData: [String: Any]? = nil,
+        proxy: String = ""
+    ) async throws -> (paid: Bool, message: String, orderId: String) {
+        var body: [String: Any] = [
+            "token": nbToken,
+            "pay_password": payPassword,
+            "proxy": proxy,
+            "order_id": orderId,
+            "buy_message": buyMessage
+        ]
+        if let buyData { body["buy_data"] = buyData }
+        var req = URLRequest(url: URL(string: "\(base())/newbee/tech/autopay")!)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONSerialization.data(withJSONObject: body)
+        req.timeoutInterval = 45
+        let (data, _) = try await siteSession(timeout: 45).data(for: req)
         let o = jsonObject(data)
-        let arr = (o["items"] as? [[String: Any]]) ?? (o["data"] as? [[String: Any]]) ?? []
-        return arr.compactMap { row in
-            let id = (row["id"] as? NSNumber)?.int64Value ?? Int64(row["id"] as? String ?? "") ?? 0
-            let name = row["name"] as? String ?? ""
-            guard id > 0 else { return nil }
-            return CollHit(id: id, name: name)
+        let paid = o["paid"] as? Bool ?? false
+        let msg = (o["message"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? (paid ? "支付成功" : "支付失败")
+        return (paid, msg, o["order_id"] as? String ?? "")
+    }
+
+    /// NB 首发列表走网站（curl_cffi，避开 EdgeOne 拦直连）
+    func fetchNbPresaleList(nbToken: String, proxy: String = "", page: Int = 1) async throws -> [NbPresaleItem] {
+        let enc = { (s: String) in s.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? s }
+        let url = URL(string: "\(base())/newbee/tech/presale/list?token=\(enc(nbToken))&proxy=\(enc(proxy))&page=\(page)&per_page=30")!
+        let (data, _) = try await siteSession().data(from: url)
+        let text = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if text.hasPrefix("<") {
+            throw NSError(domain: "nb", code: 1, userInfo: [NSLocalizedDescriptionKey: "网站返回异常页，请检查网络/站点"])
+        }
+        let o = jsonObject(data)
+        guard o["status"] as? String == "ok" else {
+            throw NSError(domain: "nb", code: 1, userInfo: [NSLocalizedDescriptionKey: (o["message"] as? String) ?? "获取首发列表失败"])
+        }
+        let arr = o["items"] as? [[String: Any]] ?? []
+        return arr.compactMap { it in
+            let pid = JSONX.int64Val(it["pid"]) ?? 0
+            guard pid > 0 else { return nil }
+            let lim = Int(JSONX.int64Val(it["limit"]) ?? 0)
+            return NbPresaleItem(
+                pid: pid,
+                name: (it["name"] as? String)?.isEmpty == false ? (it["name"] as! String) : "PID \(pid)",
+                price: JSONX.doubleVal(it["price"]) ?? 0,
+                startTime: (it["start_time"] as? String) ?? "",
+                limit: lim > 0 ? lim : nil
+            )
         }
     }
 
-    func announceSubscribe(platformToken: String, clientId: String = "") async throws -> (clientId: String, seq: Int64, alive: Bool) {
-        var body: [String: Any] = [:]
+    func fetchNbPresaleDetail(nbToken: String, pid: Int64, proxy: String = "") async throws -> NbPresaleItem {
+        let enc = { (s: String) in s.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? s }
+        let url = URL(string: "\(base())/newbee/tech/presale/detail?token=\(enc(nbToken))&proxy=\(enc(proxy))&id=\(pid)")!
+        let (data, _) = try await siteSession().data(from: url)
+        let text = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if text.hasPrefix("<") {
+            throw NSError(domain: "nb", code: 1, userInfo: [NSLocalizedDescriptionKey: "网站返回异常页"])
+        }
+        let o = jsonObject(data)
+        guard o["status"] as? String == "ok", let it = o["item"] as? [String: Any] else {
+            throw NSError(domain: "nb", code: 1, userInfo: [NSLocalizedDescriptionKey: (o["message"] as? String) ?? "获取详情失败"])
+        }
+        let p = JSONX.int64Val(it["pid"]) ?? pid
+        let lim = Int(JSONX.int64Val(it["limit"]) ?? 0)
+        return NbPresaleItem(
+            pid: p,
+            name: (it["name"] as? String)?.isEmpty == false ? (it["name"] as! String) : "PID \(p)",
+            price: JSONX.doubleVal(it["price"]) ?? 0,
+            startTime: (it["start_time"] as? String) ?? "",
+            limit: lim > 0 ? lim : nil
+        )
+    }
+
+    /// NB 市场搜索走网站转发（带会员 Authorization 可用私人代理）
+    func searchNbMarket(nbToken: String, keywords: String, platformToken: String = "", proxy: String = "") async throws -> [NbMarketHit] {
+        let enc = { (s: String) in s.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? s }
+        let kw = keywords.trimmingCharacters(in: .whitespacesAndNewlines)
+        var map: [Int64: NbMarketHit] = [:]
+        for productType in [19, 25] {
+            let urlStr = "\(base())/newbee/market/search?token=\(enc(nbToken))&proxy=\(enc(proxy))&page=1&per_page=20" +
+                "&keywords=\(enc(kw))&product_type=\(productType)&time_type=1&sort=DESC&hot=0" +
+                "&market_type=0&hasmarket=-1&order=fluctuation&collection_id="
+            var req = URLRequest(url: URL(string: urlStr)!)
+            if !platformToken.isEmpty {
+                req.setValue(JwtUtil.bearer(platformToken), forHTTPHeaderField: "Authorization")
+            }
+            let (data, _) = try await siteSession().data(for: req)
+            let o = jsonObject(data)
+            if o["status"] as? String != "ok" {
+                if map.isEmpty {
+                    throw NSError(domain: "nb", code: 1, userInfo: [NSLocalizedDescriptionKey: (o["message"] as? String) ?? "搜索失败"])
+                }
+                continue
+            }
+            for it in o["items"] as? [[String: Any]] ?? [] {
+                let id = JSONX.int64Val(it["id"]) ?? 0
+                guard id > 0, map[id] == nil else { continue }
+                let floor = "\(it["floor"] ?? "")".replacingOccurrences(of: "null", with: "")
+                map[id] = NbMarketHit(
+                    id: id,
+                    name: (it["name"] as? String)?.isEmpty == false ? (it["name"] as! String) : "PID \(id)",
+                    floor: floor
+                )
+            }
+            if !kw.isEmpty && map.values.contains(where: { $0.name.localizedCaseInsensitiveContains(kw) }) { break }
+        }
+        return Array(map.values)
+    }
+
+    func fetchSynthQuota(platformToken: String) async throws -> QuotaInfo {
+        let enc = platformToken.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? platformToken
+        let (data, resp) = try await siteSession().data(from: URL(string: "\(base())/snipe/synth-quota?platform_token=\(enc)")!)
+        let o = jsonObject(data)
+        if (resp as? HTTPURLResponse)?.statusCode == 403 {
+            throw NSError(domain: "quota", code: 403, userInfo: [NSLocalizedDescriptionKey: o["detail"] as? String ?? "需要 VIP"])
+        }
+        if o["status"] as? String == "error" {
+            throw NSError(domain: "quota", code: 1, userInfo: [NSLocalizedDescriptionKey: o["message"] as? String ?? "额度查询失败"])
+        }
+        return parseQuota(o)
+    }
+
+    func fetchPresaleQuota(platformToken: String) async throws -> QuotaInfo {
+        let enc = platformToken.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? platformToken
+        let (data, resp) = try await siteSession().data(from: URL(string: "\(base())/snipe/presale-quota?platform_token=\(enc)")!)
+        let o = jsonObject(data)
+        if (resp as? HTTPURLResponse)?.statusCode == 403 {
+            throw NSError(domain: "quota", code: 403, userInfo: [NSLocalizedDescriptionKey: o["detail"] as? String ?? "需要 VIP"])
+        }
+        return parseQuota(o)
+    }
+
+    func fetchAnnounceQuota(platformToken: String) async throws -> QuotaInfo {
+        let enc = platformToken.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? platformToken
+        let (data, resp) = try await siteSession().data(from: URL(string: "\(base())/snipe/announce-lock/quota?platform_token=\(enc)")!)
+        let o = jsonObject(data)
+        if (resp as? HTTPURLResponse)?.statusCode == 403 {
+            throw NSError(domain: "quota", code: 403, userInfo: [NSLocalizedDescriptionKey: o["detail"] as? String ?? "需要月卡或年卡"])
+        }
+        return parseQuota(o)
+    }
+
+    func searchCollections(_ q: String) async throws -> [CollHit] {
+        let qq = q.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !qq.isEmpty else { return [] }
+        let enc = qq.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? qq
+        let url = URL(string: "\(base())/collections/search?q=\(enc)")!
+        let (data, resp) = try await siteSession().data(from: url)
+        let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+        let text = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let arr: [[String: Any]]
+        if text.hasPrefix("[") {
+            arr = (try? JSONSerialization.jsonObject(with: data) as? [[String: Any]]) ?? []
+        } else {
+            let o = jsonObject(data)
+            if code >= 400 {
+                throw NSError(domain: "search", code: code, userInfo: [NSLocalizedDescriptionKey: o["detail"] as? String ?? "搜索失败 HTTP\(code)"])
+            }
+            arr = (o["items"] as? [[String: Any]])
+                ?? (o["results"] as? [[String: Any]])
+                ?? (o["data"] as? [[String: Any]])
+                ?? ((o["data"] as? [String: Any])?["list"] as? [[String: Any]])
+                ?? []
+        }
+        return arr.compactMap { row in
+            let id = JSONX.int64Val(row["id"])
+                ?? JSONX.int64Val(row["groupId"])
+                ?? JSONX.int64Val(row["digitalCollectionGroupId"])
+                ?? 0
+            let name = (row["name"] as? String) ?? (row["title"] as? String) ?? ""
+            guard id > 0 else { return nil }
+            return CollHit(id: id, name: name.isEmpty ? "GID \(id)" : name)
+        }
+    }
+
+    func announceSubscribe(platformToken: String, iboxToken: String, clientId: String = "") async throws -> (clientId: String, seq: Int64, alive: Bool) {
+        var body: [String: Any] = [
+            "platform_token": platformToken,
+            "token": JwtUtil.normalize(iboxToken)
+        ]
         if !clientId.isEmpty { body["client_id"] = clientId }
-        var req = URLRequest(url: URL(string: "\(base())/announce/subscribe")!)
+        var req = URLRequest(url: URL(string: "\(base())/snipe/announce-lock/subscribe")!)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.setValue(JwtUtil.bearer(platformToken), forHTTPHeaderField: "Authorization")
         req.httpBody = try JSONSerialization.data(withJSONObject: body)
-        let (data, _) = try await siteSession().data(for: req)
+        let (data, resp) = try await siteSession().data(for: req)
         let o = jsonObject(data)
+        if (resp as? HTTPURLResponse)?.statusCode == 403 {
+            throw NSError(domain: "announce", code: 403, userInfo: [NSLocalizedDescriptionKey: o["detail"] as? String ?? o["message"] as? String ?? "需要月卡或年卡"])
+        }
+        guard o["status"] as? String == "ok" else {
+            throw NSError(domain: "announce", code: 1, userInfo: [NSLocalizedDescriptionKey: o["message"] as? String ?? "订阅失败"])
+        }
         return (
             o["client_id"] as? String ?? clientId,
             (o["seq"] as? NSNumber)?.int64Value ?? 0,
@@ -195,14 +389,25 @@ final class ApiRepository {
         )
     }
 
-    func announceFeed(platformToken: String, clientId: String, afterSeq: Int64) async throws -> [AnnounceFeedItem] {
-        let url = URL(string: "\(base())/announce/feed?client_id=\(clientId)&after=\(afterSeq)")!
-        var req = URLRequest(url: url)
-        req.setValue(JwtUtil.bearer(platformToken), forHTTPHeaderField: "Authorization")
-        let (data, _) = try await siteSession().data(for: req)
+    func announceFeed(platformToken: String, clientId: String, sinceSeq: Int64) async throws -> (seq: Int64, items: [AnnounceFeedItem]) {
+        var comps = URLComponents(string: "\(base())/snipe/announce-lock/feed")!
+        comps.queryItems = [
+            URLQueryItem(name: "platform_token", value: platformToken),
+            URLQueryItem(name: "since_seq", value: "\(sinceSeq)"),
+            URLQueryItem(name: "client_id", value: clientId)
+        ]
+        var req = URLRequest(url: comps.url!)
+        let (data, resp) = try await siteSession().data(for: req)
         let o = jsonObject(data)
+        if (resp as? HTTPURLResponse)?.statusCode == 403 {
+            throw NSError(domain: "announce", code: 403, userInfo: [NSLocalizedDescriptionKey: o["detail"] as? String ?? "需要月卡或年卡"])
+        }
+        guard o["status"] as? String == "ok" else {
+            throw NSError(domain: "announce", code: 1, userInfo: [NSLocalizedDescriptionKey: o["message"] as? String ?? "feed 失败"])
+        }
+        let seq = (o["seq"] as? NSNumber)?.int64Value ?? sinceSeq
         let arr = o["items"] as? [[String: Any]] ?? []
-        return arr.map { row in
+        let items: [AnnounceFeedItem] = arr.map { row in
             var gids: [String: Int64] = [:]
             if let g = row["gids"] as? [String: Any] {
                 for (k, v) in g {
@@ -210,13 +415,23 @@ final class ApiRepository {
                 }
             }
             return AnnounceFeedItem(
-                noticeId: row["notice_id"] as? String ?? UUID().uuidString,
+                noticeId: row["notice_id"] as? String ?? "",
                 seq: (row["seq"] as? NSNumber)?.int64Value ?? 0,
                 title: row["title"] as? String ?? "",
                 content: row["content"] as? String ?? "",
                 gids: gids
             )
         }
+        return (seq, items)
+    }
+
+    func announceUnsubscribe(platformToken: String, clientId: String) async {
+        guard !clientId.isEmpty else { return }
+        let encPt = platformToken.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? platformToken
+        let encCid = clientId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? clientId
+        var req = URLRequest(url: URL(string: "\(base())/snipe/announce-lock/unsubscribe?platform_token=\(encPt)&client_id=\(encCid)")!)
+        req.httpMethod = "POST"
+        _ = try? await siteSession().data(for: req)
     }
 
     /// 服务端极验（三期本地求解前的降级路径）
@@ -268,17 +483,199 @@ final class ApiRepository {
     }
 
     func sendSmsAuto(phone: String) async throws {
-        let body = try JSONSerialization.data(withJSONObject: ["phone": phone])
-        var req = URLRequest(url: URL(string: "\(base())/snipe/sms-auto")!)
+        let body = try JSONSerialization.data(withJSONObject: ["phone": phone, "proxy": ""])
+        var req = URLRequest(url: URL(string: "\(base())/snipe/send-sms-auto")!)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = body
         req.timeoutInterval = 90
-        let (data, _) = try await siteSession(timeout: 90).data(for: req)
+        let (data, resp) = try await siteSession(timeout: 90).data(for: req)
         let o = jsonObject(data)
+        let httpCode = (resp as? HTTPURLResponse)?.statusCode ?? 0
+        if httpCode >= 400 {
+            throw NSError(domain: "sms", code: httpCode, userInfo: [NSLocalizedDescriptionKey: (o["message"] as? String) ?? "HTTP \(httpCode)"])
+        }
         if o["status"] as? String != "ok" && o["ok"] as? Bool != true {
             throw NSError(domain: "sms", code: 1, userInfo: [NSLocalizedDescriptionKey: (o["message"] as? String) ?? "短信发送失败"])
         }
+    }
+
+    func loginSms(phone: String, code: String) async throws -> (token: String, uid: Int64) {
+        let body = try JSONSerialization.data(withJSONObject: [
+            "phoneNumber": phone.trimmingCharacters(in: .whitespacesAndNewlines),
+            "code": code.trimmingCharacters(in: .whitespacesAndNewlines)
+        ])
+        var req = URLRequest(url: URL(string: "https://sail-api.ibox.art/box-server/api/v1/login/verify")!)
+        req.httpMethod = "POST"
+        req.httpBody = body
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue("Dart/3.11 (dart:io)", forHTTPHeaderField: "User-Agent")
+        let (data, _) = try await siteSession(timeout: 20).data(for: req)
+        guard var obj = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw NSError(domain: "login", code: 1, userInfo: [NSLocalizedDescriptionKey: "响应无效"])
+        }
+        if obj["encryptKey"] != nil {
+            let plain = try IboxCrypto.decryptResponse(String(data: data, encoding: .utf8) ?? "")
+            obj = (try JSONSerialization.jsonObject(with: Data(plain.utf8)) as? [String: Any]) ?? obj
+        }
+        if JSONX.code(obj) != 0 {
+            throw NSError(domain: "login", code: Int(JSONX.code(obj)), userInfo: [NSLocalizedDescriptionKey: JSONX.message(obj)])
+        }
+        let d = JSONX.dataDict(obj)
+        guard let tokenRaw = d["token"] as? String, !tokenRaw.isEmpty else {
+            throw NSError(domain: "login", code: 2, userInfo: [NSLocalizedDescriptionKey: "无 token"])
+        }
+        let token = JwtUtil.normalize(tokenRaw)
+        let uid = JSONX.int64Val((d["userInfo"] as? [String: Any])?["userId"]) ?? JwtUtil.uid(token) ?? 0
+        return (token, uid)
+    }
+
+    func verifyIboxToken(_ token: String) throws -> (token: String, uid: Int64) {
+        let t = JwtUtil.normalize(token)
+        guard !t.isEmpty else { throw NSError(domain: "login", code: 1, userInfo: [NSLocalizedDescriptionKey: "Token 无效"]) }
+        guard let uid = JwtUtil.uid(t) else { throw NSError(domain: "login", code: 2, userInfo: [NSLocalizedDescriptionKey: "JWT 无 userId"]) }
+        if JwtUtil.isExpired(t) { throw NSError(domain: "login", code: 3, userInfo: [NSLocalizedDescriptionKey: "Token 已过期"]) }
+        return (t, uid)
+    }
+
+    // MARK: - iBox 直连 API
+
+    private let iboxHost = "https://sail-api.ibox.art"
+
+    func iboxGet(_ path: String, token: String) async throws -> [String: Any] {
+        let p = path.hasPrefix("/") ? path : "/\(path)"
+        guard let url = URL(string: iboxHost + p) else { throw NSError(domain: "ibox", code: 1) }
+        var req = URLRequest(url: url)
+        req.httpMethod = "GET"
+        let auth = JwtUtil.bearer(token)
+        let dev = IboxClient.makeDeviceId(token)
+        for (k, v) in [
+            "Authorization": auth, "platform-type": "1", "channel": "website",
+            "device-id": dev, "User-Agent": "Dart/3.11 (dart:io)",
+            "accept": "application/json", "Content-Type": "application/json;charset=UTF-8"
+        ] { req.setValue(v, forHTTPHeaderField: k) }
+        let (data, resp) = try await siteSession(timeout: 20).data(for: req)
+        let status = (resp as? HTTPURLResponse)?.statusCode ?? 0
+        if status == 401 || status == 403 || status == 429 {
+            return ["code": status, "message": "HTTP \(status)"]
+        }
+        let text = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !text.isEmpty else { return ["code": -1, "message": "empty"] }
+        guard var obj = try JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any] else {
+            return ["code": status, "message": String(text.prefix(60))]
+        }
+        if obj["encryptKey"] != nil {
+            let plain = try IboxCrypto.decryptResponse(text)
+            obj = (try JSONSerialization.jsonObject(with: Data(plain.utf8)) as? [String: Any]) ?? obj
+        }
+        return obj
+    }
+
+    func fetchActivities(q: String, token: String) async throws -> [SynthActivity] {
+        let qq = q.trimmingCharacters(in: .whitespacesAndNewlines)
+        if qq.allSatisfy(\.isNumber), !qq.isEmpty {
+            let d = try await fetchActivityDetail(id: Int64(qq) ?? 0, token: token)
+            return [SynthActivity(id: d.id, name: d.name)]
+        }
+        var path = "/synthesis-service/synthetic/activity/list?pageNo=1&pageSize=20"
+        if !qq.isEmpty {
+            path += "&name=\(qq.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? qq)"
+        }
+        let data = try await iboxGet(path, token: token)
+        if JSONX.code(data) != 0 { throw NSError(domain: "synth", code: Int(JSONX.code(data)), userInfo: [NSLocalizedDescriptionKey: JSONX.message(data)]) }
+        let list = JSONX.dataDict(data)["list"] as? [[String: Any]] ?? []
+        return list.compactMap { a in
+            guard let id = JSONX.int64Val(a["id"]), id > 0 else { return nil }
+            return SynthActivity(
+                id: id,
+                name: a["name"] as? String ?? "活动 \(id)",
+                startTime: "\(a["startTime"] ?? "")".replacingOccurrences(of: "null", with: ""),
+                maxSyntheticNum: JSONX.int64Val(a["userMaxSyntheticNum"]) ?? JSONX.int64Val(a["maxSyntheticNum"]) ?? 0
+            )
+        }
+    }
+
+    func fetchActivityDetail(id: Int64, token: String) async throws -> ActivityDetail {
+        let data = try await iboxGet("/synthesis-service/synthetic/activity/detail?id=\(id)", token: token)
+        if JSONX.code(data) != 0 { throw NSError(domain: "synth", code: Int(JSONX.code(data)), userInfo: [NSLocalizedDescriptionKey: JSONX.message(data)]) }
+        let a = JSONX.dataDict(data)
+        let chArr = a["channels"] as? [[String: Any]] ?? []
+        let channels = chArr.compactMap { ch -> SynthChannel? in
+            guard let cid = JSONX.int64Val(ch["syntheticActivityId"]), cid > 0 else { return nil }
+            return SynthChannel(id: cid, name: ch["name"] as? String ?? "通道 \(cid)")
+        }
+        let materials = try await channels.first.asyncMap { try await fetchChannelMaterials(centerId: $0.id, token: token) } ?? []
+        return ActivityDetail(
+            id: JSONX.int64Val(a["id"]) ?? id,
+            name: a["name"] as? String ?? "活动 \(id)",
+            channels: channels,
+            materials: materials
+        )
+    }
+
+    func fetchChannelMaterials(centerId: Int64, token: String) async throws -> [SynthMaterial] {
+        let data = try await iboxGet("/synthesis-service/synthetic/center/\(centerId)", token: token)
+        if JSONX.code(data) != 0 { throw NSError(domain: "synth", code: Int(JSONX.code(data)), userInfo: [NSLocalizedDescriptionKey: JSONX.message(data)]) }
+        let c = JSONX.dataDict(data)
+        let burn = c["burnAlbums"] as? [[String: Any]] ?? []
+        var out: [SynthMaterial] = []
+        for bg in burn {
+            let gid = JSONX.int64Val(bg["groupId"]) ?? 0
+            let albums = bg["albums"] as? [[String: Any]] ?? []
+            for alb in albums {
+                if let aid = JSONX.int64Val(alb["id"]), aid > 0 {
+                    out.append(SynthMaterial(gid: gid, name: alb["name"] as? String ?? "材料", albumId: aid))
+                }
+            }
+        }
+        return out
+    }
+
+    func fetchPresaleList(iboxToken: String, proxyLine: String = "") async throws -> [PresaleItem] {
+        let proxy = proxyLine.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !proxy.isEmpty {
+            let body = try JSONSerialization.data(withJSONObject: ["token": JwtUtil.normalize(iboxToken), "proxy": proxy, "page": 1])
+            var req = URLRequest(url: URL(string: "\(base())/snipe/presale-list")!)
+            req.httpMethod = "POST"
+            req.httpBody = body
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            let (data, _) = try await siteSession(timeout: 20).data(for: req)
+            let o = jsonObject(data)
+            if o["status"] as? String != "ok" {
+                throw NSError(domain: "presale", code: 1, userInfo: [NSLocalizedDescriptionKey: o["message"] as? String ?? "列表失败"])
+            }
+            return parsePresaleItems(o["items"] as? [[String: Any]] ?? [])
+        }
+        let data = try await iboxGet("/public-service/sale-infos?pageNo=1&pageSize=20&sortField=0&sortType=1", token: iboxToken)
+        if JSONX.code(data) != 0 { throw NSError(domain: "presale", code: Int(JSONX.code(data)), userInfo: [NSLocalizedDescriptionKey: JSONX.message(data)]) }
+        return parsePresaleItems(JSONX.dataDict(data)["list"] as? [[String: Any]] ?? [])
+    }
+
+    private func parsePresaleItems(_ arr: [[String: Any]]) -> [PresaleItem] {
+        arr.compactMap { a in
+            let gid = a["digitalCollectionGroup"] as? [String: Any]
+            let saleId = JSONX.int64Val(a["id"]) ?? JSONX.int64Val(a["saleId"]) ?? JSONX.int64Val(a["groupId"]) ?? 0
+            guard saleId > 0 else { return nil }
+            let name = (gid?["name"] as? String) ?? (a["name"] as? String) ?? "Sale \(saleId)"
+            let price = JSONX.doubleVal(a["price"]) ?? JSONX.doubleVal(a["salePrice"]) ?? 0
+            let start = "\(a["onSaleTime"] ?? a["startTime"] ?? a["saleTime"] ?? "")".replacingOccurrences(of: "null", with: "")
+            return PresaleItem(saleId: saleId, name: name, price: price, startTime: start)
+        }
+    }
+}
+
+private extension Array {
+    func asyncMap<T>(_ transform: (Element) async throws -> T) async rethrows -> [T] {
+        var out: [T] = []
+        for e in self { out.append(try await transform(e)) }
+        return out
+    }
+}
+
+private extension Optional {
+    func asyncMap<T>(_ transform: (Wrapped) async throws -> T) async rethrows -> T? {
+        guard let v = self else { return nil }
+        return try await transform(v)
     }
 }
 

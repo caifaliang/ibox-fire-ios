@@ -36,6 +36,9 @@ struct LogLine: Identifiable, Equatable {
 
 @MainActor
 final class AppViewModel: ObservableObject {
+    static let queryDepths = [500, 1000, 2000, 3000, 4000, 5000, 6000, 10000]
+    static let workerOptions = [1, 3, 5, 6, 8, 10, 12, 20]
+
     @Published var siteLoggedIn = false
     @Published var siteUser: SiteUser?
     @Published var siteUserName = ""
@@ -44,45 +47,104 @@ final class AppViewModel: ObservableObject {
 
     @Published var iboxLoggedIn = false
     @Published var iboxToken = ""
+    @Published var iboxTokenInput = ""
+    @Published var iboxPhone = ""
+    @Published var iboxCode = ""
     @Published var iboxLoginError = ""
+    @Published var smsSent = false
+    @Published var smsLoading = false
+    @Published var loginLoading = false
 
     @Published var nbLoggedIn = false
     @Published var nbToken = ""
+    @Published var nbTokenInput = ""
     @Published var nbMobile = ""
     @Published var nbPassword = ""
     @Published var nbError = ""
 
     @Published var appPlatform: AppPlatform = .ibox
-    @Published var techMode: TechMode = .buy
+    @Published var techMode: TechMode = .announce
 
-    @Published var searchQ = ""
-    @Published var searchHits: [CollHit] = []
-    @Published var selectedGid: Int64 = 0
-    @Published var selectedName = ""
+    @Published var collSearch = ""
+    @Published var collHits: [CollHit] = []
 
-    @Published var priceText = ""
-    @Published var qtyText = "1"
-    @Published var consignPwd = ""
-    @Published var payPwd = ""
-    @Published var autoPay = false
+    @Published var buyGid: Int64 = 0
+    @Published var buyCname = ""
+    @Published var buyPrice = ""
+    @Published var buyQty = "1"
     @Published var buyMode = "cross"
+    @Published var buyBatchInterval = "6"
+    @Published var buyAutoPay = false
+    @Published var buyPayPwd = ""
+
+    @Published var sellGid: Int64 = 0
+    @Published var sellCname = ""
+    @Published var sellPrice = ""
+    @Published var sellQty = "1"
+
+    @Published var batchGid: Int64 = 0
+    @Published var batchCname = ""
+    @Published var batchPrice = ""
+    @Published var batchQty = "0"
+    @Published var batchAction = "list"
     @Published var batchSafe = true
-    @Published var batchActionList = true
+
+    @Published var queryGid: Int64 = 0
+    @Published var queryCname = ""
     @Published var queryKind = "consignment"
-    @Published var queryDepth = "200"
-    @Published var fireH = 20
+    @Published var queryDepth = 1000
+    @Published var queryScanned = 0
+    @Published var queryApiTotal = 0
+    @Published var queryProgressMsg = ""
+
+    @Published var consignPwd = ""
+    @Published var fireH = 0
     @Published var fireM = 0
     @Published var fireS = 0
-    @Published var synthIdText = ""
-    @Published var synthNumText = "1"
-    @Published var albumIdsText = ""
-    @Published var workersText = "8"
-    @Published var saleIdText = ""
-    @Published var nbPidText = ""
-    @Published var proxyExtractUrl = ""
+    @Published var workers = 10
 
-    @Published var logs: [LogLine] = []
-    @Published var queryTiers: [QueryTier] = []
+    @Published var activitySearch = ""
+    @Published var activities: [SynthActivity] = []
+    @Published var selectedActivity: SynthActivity?
+    @Published var channels: [SynthChannel] = []
+    @Published var channelId: Int64 = 0
+    @Published var materials: [SynthMaterial] = []
+    @Published var checkedAlbums: Set<Int64> = []
+    @Published var synthQty = "1"
+    @Published var busyMsg = ""
+
+    @Published var synthQuota = QuotaInfo(limit: 2, remaining: 2)
+    @Published var presaleQuota = QuotaInfo(limit: 1, remaining: 1)
+    @Published var announceQuota = QuotaInfo(limit: 3, remaining: 3)
+
+    @Published var presaleItems: [PresaleItem] = []
+    @Published var presaleSelected: PresaleItem?
+    @Published var presaleAutoPay = false
+    @Published var presaleQty = "1"
+
+    @Published var announceOrderMode = "batch"
+    @Published var announceMaxPrice = ""
+    @Published var announceMaxCount = "1"
+
+    @Published var nbPresaleItems: [NbPresaleItem] = []
+    @Published var nbPresaleSelected: NbPresaleItem?
+    @Published var nbPresaleAutoPay = true
+    @Published var nbPresalePayPwd = ""
+    @Published var nbPresaleQty = "1"
+
+    @Published var nbSnipeSearch = ""
+    @Published var nbSnipeHits: [NbMarketHit] = []
+    @Published var nbSnipePid: Int64 = 0
+    @Published var nbSnipeName = ""
+    @Published var nbSnipePrice = ""
+    @Published var nbSnipeQty = "1"
+    @Published var nbSnipeMode = "cross"
+    @Published var nbSnipeAutoPay = true
+    @Published var nbSnipePayPwd = ""
+
+    @Published var proxyExtractUrl = ""
+    @Published var modeLogs: [String: [LogLine]] = [:]
+    @Published var logExpanded = false
     @Published var vipPreviewBanner = true
 
     private let prefs = UserDefaults.standard
@@ -92,28 +154,57 @@ final class AppViewModel: ObservableObject {
     private let kSite = "ibox.site.token"
     private let kIbox = "ibox.jwt"
     private let kNb = "ibox.nb.token"
+    private let kPhone = "ibox.phone"
+    private let kProxy = "ibox.proxy_api"
+    private let kWorkers = "ibox.workers"
+    private var nbSnipeSearchTask: Task<Void, Never>?
 
     init() {
+        iboxPhone = prefs.string(forKey: kPhone) ?? ""
+        workers = prefs.object(forKey: kWorkers) as? Int ?? 10
+        let savedProxy = prefs.string(forKey: kProxy)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        proxyExtractUrl = ProxyPool.effectiveExtractUrl(savedProxy)
+        if savedProxy.isEmpty { prefs.set(proxyExtractUrl, forKey: kProxy) }
         if let t = prefs.string(forKey: kSite), !t.isEmpty {
             Task { await restoreSite(t) }
         }
         if let t = prefs.string(forKey: kIbox), !t.isEmpty, !JwtUtil.isExpired(t) {
             iboxToken = t
             iboxLoggedIn = true
+            Task { await onIboxReady() }
         }
         if let t = prefs.string(forKey: kNb), !t.isEmpty {
             nbToken = t
             nbLoggedIn = true
+            Task { await refreshNbPresaleList(silent: true) }
         }
     }
 
     var isVip: Bool { siteUser?.isVip == true || siteUser?.isAdmin == true }
+    var isYearVip: Bool { siteUser?.isYearVip == true || siteUser?.isAdmin == true }
+    var isMonthVip: Bool { siteUser?.isMonthVip == true }
+    var canAnnounce: Bool { siteUser?.isAdmin == true || isYearVip || isMonthVip || siteUser?.isVip == true }
     var iboxTabs: [TechMode] { [.announce, .synth, .presale, .buy, .sell, .batch, .query] }
     var nbTabs: [TechMode] { [.nb_presale, .nb_snipe] }
 
-    func appendLog(_ msg: String, type: String = "info") {
-        logs.insert(LogLine(time: bjTimeString(), msg: msg, type: type), at: 0)
-        if logs.count > 400 { logs = Array(logs.prefix(400)) }
+    var currentLogs: [LogLine] {
+        modeLogs[techMode.rawValue] ?? []
+    }
+
+    func appendLog(_ msg: String, type: String = "info", mode: TechMode? = nil) {
+        let key = (mode ?? techMode).rawValue
+        var list = modeLogs[key] ?? []
+        list.insert(LogLine(time: bjTimeString(), msg: msg, type: type), at: 0)
+        if list.count > 300 { list = Array(list.prefix(300)) }
+        modeLogs[key] = list
+    }
+
+    func clearLogs(_ mode: TechMode? = nil) {
+        modeLogs[(mode ?? techMode).rawValue] = []
+    }
+
+    func logsText(_ mode: TechMode? = nil) -> String {
+        (modeLogs[(mode ?? techMode).rawValue] ?? []).map { "[\($0.time)] \($0.msg)" }.joined(separator: "\n")
     }
 
     private func restoreSite(_ token: String) async {
@@ -122,8 +213,35 @@ final class AppViewModel: ObservableObject {
             siteUser = u
             siteLoggedIn = true
             vipPreviewBanner = !u.isVip && !u.isAdmin
+            await syncUserProxyFromSite()
+            await refreshAllQuotas()
         } catch {
             prefs.removeObject(forKey: kSite)
+        }
+    }
+
+    private func onIboxReady() async {
+        await refreshActivities("")
+        await refreshPresaleList(silent: true)
+        await refreshAllQuotas()
+    }
+
+    func saveProxyExtractUrl() {
+        let t = proxyExtractUrl.trimmingCharacters(in: .whitespacesAndNewlines)
+        proxyExtractUrl = t.isEmpty ? ProxyPool.defaultExtractURL : t
+        prefs.set(proxyExtractUrl, forKey: kProxy)
+    }
+
+    func setWorkers(_ w: Int) {
+        workers = w
+        prefs.set(w, forKey: kWorkers)
+    }
+
+    private func syncUserProxyFromSite() async {
+        guard let pt = siteUser?.token else { return }
+        if let url = try? await api.fetchUserProxy(platformToken: pt), !url.isEmpty {
+            proxyExtractUrl = url
+            prefs.set(url, forKey: kProxy)
         }
     }
 
@@ -135,6 +253,8 @@ final class AppViewModel: ObservableObject {
             siteLoggedIn = true
             vipPreviewBanner = !u.isVip && !u.isAdmin
             prefs.set(u.token, forKey: kSite)
+            await syncUserProxyFromSite()
+            await refreshAllQuotas()
         } catch {
             siteError = error.localizedDescription
         }
@@ -147,34 +267,118 @@ final class AppViewModel: ObservableObject {
         runner.stopAll()
     }
 
-    func saveIboxToken() {
-        let t = JwtUtil.normalize(iboxToken)
-        if t.isEmpty { iboxLoginError = "Token 为空"; return }
-        if JwtUtil.isExpired(t) { iboxLoginError = "Token 已过期"; return }
-        if JwtUtil.uid(t) == nil { iboxLoginError = "JWT 无 userId"; return }
-        iboxToken = t
-        iboxLoggedIn = true
+    func refreshAllQuotas() async {
+        guard let pt = siteUser?.token else { return }
+        if let q = try? await api.fetchSynthQuota(platformToken: pt) { synthQuota = q }
+        if let q = try? await api.fetchPresaleQuota(platformToken: pt) { presaleQuota = q }
+        if isYearVip || isMonthVip || isVip {
+            if let q = try? await api.fetchAnnounceQuota(platformToken: pt) { announceQuota = q }
+        }
+    }
+
+    func loginToken() {
+        guard requireVip() else { return }
+        let raw = iboxTokenInput.isEmpty ? iboxToken : iboxTokenInput
+        loginLoading = true
         iboxLoginError = ""
-        prefs.set(t, forKey: kIbox)
+        Task {
+            do {
+                let (token, uid) = try api.verifyIboxToken(raw)
+                iboxToken = token
+                iboxLoggedIn = true
+                iboxLoginError = ""
+                loginLoading = false
+                prefs.set(token, forKey: kIbox)
+                appendLog("iBox Token 登录 UID=\(uid)", type: "buy")
+                await onIboxReady()
+            } catch {
+                iboxLoginError = error.localizedDescription
+                loginLoading = false
+            }
+        }
+    }
+
+    func sendSms() {
+        guard requireVip() else { return }
+        let phone = iboxPhone.filter { !$0.isWhitespace }
+        guard phone.count >= 11 else { iboxLoginError = "请输入手机号"; return }
+        smsLoading = true
+        iboxLoginError = ""
+        smsSent = false
+        prefs.set(phone, forKey: kPhone)
+        Task {
+            do {
+                try await api.sendSmsAuto(phone: phone)
+                smsSent = true
+                smsLoading = false
+                appendLog("验证码已发送", type: "buy")
+            } catch {
+                iboxLoginError = error.localizedDescription
+                smsLoading = false
+            }
+        }
+    }
+
+    func loginSms() {
+        guard requireVip() else { return }
+        let phone = iboxPhone.filter { !$0.isWhitespace }
+        loginLoading = true
+        iboxLoginError = ""
+        Task {
+            do {
+                let (token, uid) = try await api.loginSms(phone: phone, code: iboxCode)
+                iboxToken = token
+                iboxLoggedIn = true
+                loginLoading = false
+                prefs.set(token, forKey: kIbox)
+                prefs.set(phone, forKey: kPhone)
+                appendLog("iBox 登录成功 UID=\(uid)", type: "buy")
+                await onIboxReady()
+            } catch {
+                iboxLoginError = error.localizedDescription
+                loginLoading = false
+            }
+        }
     }
 
     func clearIbox() {
         iboxLoggedIn = false
         iboxToken = ""
+        selectedActivity = nil
+        presaleSelected = nil
+        activities = []
+        presaleItems = []
         prefs.removeObject(forKey: kIbox)
     }
 
     func saveNbToken() {
-        let t = nbToken.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !t.isEmpty else { nbError = "Token 为空"; return }
+        let t = nbTokenInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard t.count >= 8 else { nbError = "请粘贴有效 NewBee Token"; return }
         nbToken = t
+        nbTokenInput = ""
         nbLoggedIn = true
         nbError = ""
         prefs.set(t, forKey: kNb)
+        appendLog("NewBee Token 已保存", mode: .nb_presale)
+        Task { await refreshNbPresaleList(silent: true) }
+    }
+
+    func clearNb() {
+        nbLoggedIn = false
+        nbToken = ""
+        nbPresaleSelected = nil
+        nbPresaleItems = []
+        nbSnipePid = 0
+        prefs.removeObject(forKey: kNb)
     }
 
     func nbOcrLogin() async {
         guard let pt = siteUser?.token else { nbError = "请先登录网站"; return }
+        let mobile = nbMobile.trimmingCharacters(in: .whitespacesAndNewlines)
+        if mobile.range(of: #"^1\d{10}$"#, options: .regularExpression) == nil {
+            nbError = "请输入11位手机号"; return
+        }
+        if nbPassword.count < 4 { nbError = "密码至少4位"; return }
         do {
             let r = try await api.newbeeLogin(platformToken: pt, mobile: nbMobile, password: nbPassword)
             nbToken = r.token
@@ -182,6 +386,7 @@ final class AppViewModel: ObservableObject {
             prefs.set(r.token, forKey: kNb)
             nbError = ""
             appendLog("NB登录成功 \(r.nickname)", type: "buy")
+            await refreshNbPresaleList(silent: true)
         } catch {
             nbError = error.localizedDescription
         }
@@ -189,191 +394,529 @@ final class AppViewModel: ObservableObject {
 
     func requireVip() -> Bool {
         if isVip { return true }
-        appendLog("非VIP仅可预览，开火已拦截", type: "error")
+        appendLog("该功能需要网站 VIP，请先开通", type: "error")
         return false
     }
 
-    func search() async {
-        do {
-            searchHits = try await api.searchCollections(searchQ)
-        } catch {
-            appendLog("搜索失败 \(error.localizedDescription)", type: "error")
-        }
+    func requireAnnounceVip() -> Bool {
+        if canAnnounce { return true }
+        appendLog("公告锁定仅月卡/年卡可用", type: "error")
+        return false
     }
 
-    func pick(_ hit: CollHit) {
-        selectedGid = hit.id
-        selectedName = hit.name
-        searchHits = []
-        searchQ = hit.name
-    }
-
-    private func resolveProxyUrl() async -> String {
-        if let pt = siteUser?.token {
-            if let u = try? await api.fetchUserProxy(platformToken: pt), !u.isEmpty {
-                return ProxyPool.effectiveExtractUrl(u)
+    func searchColl(_ q: String) {
+        collSearch = q
+        let qq = q.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !qq.isEmpty else { collHits = []; return }
+        Task {
+            do {
+                collHits = Array((try await api.searchCollections(qq)).prefix(20))
+                if collHits.isEmpty { appendLog("搜索无结果: \(qq)") }
+            } catch {
+                collHits = []
+                appendLog("搜索失败 \(error.localizedDescription)", type: "error")
             }
         }
-        return ProxyPool.effectiveExtractUrl(proxyExtractUrl)
+    }
+
+    func pickColl(_ hit: CollHit, target: String) {
+        collHits = []
+        collSearch = hit.name
+        switch target {
+        case "buy": buyGid = hit.id; buyCname = hit.name
+        case "sell": sellGid = hit.id; sellCname = hit.name
+        case "batch": batchGid = hit.id; batchCname = hit.name
+        case "query":
+            queryGid = hit.id; queryCname = hit.name
+            queryTiers = []; queryScanned = 0; queryApiTotal = 0; queryProgressMsg = ""
+        default: buyGid = hit.id; buyCname = hit.name
+        }
+    }
+
+    func refreshActivities(_ q: String) async {
+        guard iboxLoggedIn else { return }
+        activitySearch = q
+        do {
+            activities = try await api.fetchActivities(q: q, token: iboxToken)
+            appendLog("活动列表 \(activities.count) 条", mode: .synth)
+        } catch {
+            appendLog("活动列表失败: \(error.localizedDescription)", type: "error", mode: .synth)
+        }
+    }
+
+    func selectActivity(_ a: SynthActivity) {
+        selectedActivity = a
+        if let (h, m, s) = parseStartToHms(a.startTime) {
+            fireH = h; fireM = m; fireS = s
+            appendLog(String(format: "已自动填入开火时间 %02d:%02d:%02d", h, m, s), mode: .synth)
+        }
+        busyMsg = "加载详情…"
+        Task {
+            do {
+                let d = try await api.fetchActivityDetail(id: a.id, token: iboxToken)
+                channels = d.channels
+                channelId = d.channels.first?.id ?? 0
+                materials = d.materials
+                checkedAlbums = Set(d.materials.map(\.albumId).filter { $0 > 0 })
+                appendLog("活动详情已加载", mode: .synth)
+            } catch {
+                appendLog("详情失败: \(error.localizedDescription)", type: "error", mode: .synth)
+            }
+            busyMsg = ""
+        }
+    }
+
+    func selectChannel(_ cid: Int64) {
+        channelId = cid
+        Task {
+            do {
+                materials = try await api.fetchChannelMaterials(centerId: cid, token: iboxToken)
+                checkedAlbums = Set(materials.map(\.albumId).filter { $0 > 0 })
+                appendLog("通道材料已刷新", mode: .synth)
+            } catch {
+                appendLog("材料失败: \(error.localizedDescription)", type: "error", mode: .synth)
+            }
+        }
+    }
+
+    func clearSynthSelection() {
+        selectedActivity = nil
+        channels = []
+        materials = []
+        checkedAlbums = []
+        channelId = 0
+    }
+
+    func refreshPresaleList(silent: Bool = false) async {
+        guard iboxLoggedIn else {
+            if !silent { appendLog("抢购需先登录 iBox", type: "error", mode: .presale) }
+            return
+        }
+        do {
+            presaleItems = try await api.fetchPresaleList(iboxToken: iboxToken)
+            if !silent { appendLog("发售列表 \(presaleItems.count) 条", mode: .presale) }
+        } catch {
+            if !silent { appendLog("发售列表失败: \(error.localizedDescription)", type: "error", mode: .presale) }
+        }
+    }
+
+    func selectPresale(_ item: PresaleItem) {
+        presaleSelected = item
+        if let (h, m, s) = parseStartToHms(item.startTime) {
+            fireH = h; fireM = m; fireS = s
+            appendLog(String(format: "已自动填入开火时间 %02d:%02d:%02d", h, m, s), mode: .presale)
+        }
+    }
+
+    func clearPresaleSelection() { presaleSelected = nil }
+
+    func refreshNbPresaleList(silent: Bool = false) async {
+        guard nbLoggedIn, !nbToken.isEmpty else { return }
+        do {
+            nbPresaleItems = try await api.fetchNbPresaleList(nbToken: nbToken)
+            if !silent { appendLog("NB发售 \(nbPresaleItems.count) 条", mode: .nb_presale) }
+        } catch {
+            if !silent { appendLog("NB发售列表失败: \(error.localizedDescription)", type: "error", mode: .nb_presale) }
+        }
+    }
+
+    func selectNbPresale(_ item: NbPresaleItem) {
+        nbPresaleSelected = item
+        if let (h, m, s) = parseStartToHms(item.startTime) {
+            fireH = h; fireM = m; fireS = s
+            appendLog(String(format: "已自动填入开火时间 %02d:%02d:%02d", h, m, s), mode: .nb_presale)
+        }
+        Task {
+            guard !nbToken.isEmpty else { return }
+            guard let detail = try? await api.fetchNbPresaleDetail(nbToken: nbToken, pid: item.pid) else { return }
+            guard nbPresaleSelected?.pid == item.pid else { return }
+            nbPresaleSelected = detail
+            if let lim = detail.limit, lim > 0 { nbPresaleQty = "\(lim)" }
+            if let (h, m, s) = parseStartToHms(detail.startTime) {
+                fireH = h; fireM = m; fireS = s
+            }
+        }
+    }
+
+    func clearNbPresaleSelection() { nbPresaleSelected = nil }
+
+    func searchNbSnipe(_ q: String) {
+        nbSnipeSearch = q
+        guard nbLoggedIn, !nbToken.isEmpty else { nbSnipeHits = []; return }
+        let qq = q.trimmingCharacters(in: .whitespacesAndNewlines)
+        if qq.isEmpty { nbSnipeHits = []; nbSnipeSearchTask?.cancel(); return }
+        if let pid = Int64(qq), pid > 0, qq.allSatisfy(\.isNumber) {
+            nbSnipeSearchTask?.cancel()
+            nbSnipeHits = [NbMarketHit(id: pid, name: "PID \(pid)")]
+            return
+        }
+        nbSnipeSearchTask?.cancel()
+        nbSnipeSearchTask = Task {
+            try? await Task.sleep(nanoseconds: 350_000_000)
+            guard !Task.isCancelled else { return }
+            guard nbSnipeSearch.trimmingCharacters(in: .whitespacesAndNewlines) == qq else { return }
+            let pt = siteUser?.token ?? ""
+            do {
+                let hits = try await api.searchNbMarket(nbToken: nbToken, keywords: qq, platformToken: pt)
+                guard !Task.isCancelled, nbSnipeSearch.trimmingCharacters(in: .whitespacesAndNewlines) == qq else { return }
+                nbSnipeHits = Array(hits.prefix(20))
+                if hits.isEmpty { appendLog("未找到「\(qq)」", mode: .nb_snipe) }
+            } catch {
+                guard !Task.isCancelled else { return }
+                appendLog("搜藏品失败: \(error.localizedDescription)", mode: .nb_snipe)
+                nbSnipeHits = []
+            }
+        }
+    }
+
+    func pickNbSnipe(_ hit: NbMarketHit) {
+        nbSnipePid = hit.id
+        nbSnipeName = hit.name
+        nbSnipeHits = []
+        nbSnipeSearch = ""
+        let floorDigits = hit.floor.filter { $0.isNumber || $0 == "." }
+        if !floorDigits.isEmpty { nbSnipePrice = floorDigits }
+    }
+
+    func clearNbSnipeSelection() {
+        nbSnipePid = 0
+        nbSnipeName = ""
+    }
+
+    private func parseStartToHms(_ raw: String) -> (Int, Int, Int)? {
+        let s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if s.isEmpty || s == "null" || s == "0" { return nil }
+        if s.contains(":") {
+            guard let re = try? NSRegularExpression(pattern: #"(\d{1,2}):(\d{2}):(\d{2})"#),
+                  let m = re.firstMatch(in: s, range: NSRange(s.startIndex..., in: s)),
+                  m.numberOfRanges >= 4,
+                  let hR = Range(m.range(at: 1), in: s),
+                  let mR = Range(m.range(at: 2), in: s),
+                  let sR = Range(m.range(at: 3), in: s) else { return nil }
+            return (Int(s[hR]) ?? 0, Int(s[mR]) ?? 0, Int(s[sR]) ?? 0)
+        }
+        let digits = s.filter(\.isNumber)
+        guard let n = Int64(digits), n > 0 else { return nil }
+        let ms = n > 10_000_000_000 ? n : n * 1000
+        var cal = Calendar.current
+        cal.timeZone = TimeZone(identifier: "Asia/Shanghai") ?? .current
+        let d = Date(timeIntervalSince1970: Double(ms) / 1000)
+        return (cal.component(.hour, from: d), cal.component(.minute, from: d), cal.component(.second, from: d))
+    }
+
+    private func resolveProxyUrl() -> String { ProxyPool.effectiveExtractUrl(proxyExtractUrl) }
+
+    private func fireTimeNotTooLate() -> Bool {
+        let fireAt = todayFireAtEpochSec(h: fireH, m: fireM, s: fireS)
+        let late = Int64(Date().timeIntervalSince1970) - fireAt
+        if late > 10 {
+            appendLog("开火时间已过 \(late)s，请改时间后再启动", type: "error")
+            return false
+        }
+        return true
+    }
+
+    private func quotaOk(_ q: QuotaInfo, label: String) -> Bool {
+        if q.unlimited || q.remaining > 0 { return true }
+        appendLog("今日\(label)次数已用完（每天限\(q.limit)次）", type: "error")
+        return false
     }
 
     // MARK: - Starts
 
+    @Published var queryTiers: [QueryTier] = []
+
     func startQuery() {
-        guard requireVip(), iboxLoggedIn, selectedGid > 0 else { return }
-        let depth = Int(queryDepth) ?? 200
-        let engine = QueryEngine(cfg: QueryConfig(token: iboxToken, groupId: selectedGid, collectionName: selectedName, kind: queryKind, depth: depth), onLog: { [weak self] m in
-            Task { @MainActor in self?.appendLog(m) }
+        guard requireVip(), iboxLoggedIn, queryGid > 0 else {
+            appendLog("请搜索并选择藏品", type: "error", mode: .query); return
+        }
+        queryTiers = []; queryScanned = 0; queryApiTotal = 0; queryProgressMsg = "查询中…"
+        let engine = QueryEngine(cfg: QueryConfig(token: iboxToken, groupId: queryGid, collectionName: queryCname, kind: queryKind, depth: queryDepth), onLog: { [weak self] m in
+            Task { @MainActor in self?.appendLog(m, mode: .query) }
         })
         runner.start(kind: .query, stop: { engine.requestStop() }) { [weak self] in
             do {
-                let r = try await engine.run()
+                let r = try await engine.run(onProgress: { scanned, total in
+                    Task { @MainActor in
+                        self?.queryScanned = scanned
+                        self?.queryProgressMsg = "已扫 \(scanned)/\(total)"
+                    }
+                })
                 await MainActor.run {
                     guard let self else { return }
                     self.queryTiers = r.tiers
-                    self.appendLog("查询完成 扫描\(r.scanned)", type: "buy")
+                    self.queryScanned = r.scanned
+                    self.queryApiTotal = r.apiTotal
+                    self.queryProgressMsg = ""
+                    self.appendLog("查询完成 扫描\(r.scanned) 档位\(r.tiers.count)", type: "buy", mode: .query)
                 }
             } catch {
-                await MainActor.run { self?.appendLog(error.localizedDescription, type: "error") }
+                await MainActor.run {
+                    self?.queryProgressMsg = ""
+                    self?.appendLog(error.localizedDescription, type: "error", mode: .query)
+                }
             }
         }
     }
 
     func startBuy() {
-        guard requireVip(), iboxLoggedIn, selectedGid > 0 else { return }
-        let price = Double(priceText) ?? 0
-        let qty = Int(qtyText) ?? 1
-        let engine = BuyEngine(cfg: BuyConfig(token: iboxToken, groupId: selectedGid, collectionName: selectedName, targetPrice: price, quantity: qty, buyMode: buyMode, autoPay: autoPay, payPassword: payPwd), onLog: { [weak self] m in
-            Task { @MainActor in self?.appendLog(m, type: m.contains("成功") ? "buy" : "info") }
-        })
-        runner.start(kind: .buy, stop: { engine.requestStop() }) {
-            _ = await engine.run()
+        guard requireVip(), iboxLoggedIn, buyGid > 0 else { appendLog("请搜索并选择藏品", type: "error", mode: .buy); return }
+        let price = Double(buyPrice) ?? 0
+        let qty = Int(buyQty) ?? 0
+        guard price > 0 else { appendLog("请填写目标价", type: "error", mode: .buy); return }
+        guard qty >= 1 else { appendLog("请填写数量", type: "error", mode: .buy); return }
+        if buyAutoPay && buyPayPwd.trimmingCharacters(in: .whitespaces).isEmpty {
+            appendLog("开启自动支付需填写支付密码", type: "error", mode: .buy); return
         }
+        let interval = (Double(buyBatchInterval) ?? 6).clamped(to: 1...60)
+        let engine = BuyEngine(cfg: BuyConfig(token: iboxToken, groupId: buyGid, collectionName: buyCname, targetPrice: price, quantity: qty, buyMode: buyMode, batchIntervalS: interval, autoPay: buyAutoPay, payPassword: buyPayPwd), onLog: { [weak self] m in
+            Task { @MainActor in self?.appendLog(m, type: m.contains("成功") ? "buy" : "info", mode: .buy) }
+        })
+        runner.start(kind: .buy, stop: { engine.requestStop() }) { _ = await engine.run() }
     }
 
     func startSell() {
-        guard requireVip(), iboxLoggedIn, selectedGid > 0 else { return }
-        let engine = SellEngine(cfg: SellConfig(token: iboxToken, groupId: selectedGid, collectionName: selectedName, targetPrice: Double(priceText) ?? 0, quantity: Int(qtyText) ?? 1, consignPassword: consignPwd), onLog: { [weak self] m in
-            Task { @MainActor in self?.appendLog(m) }
-        })
-        runner.start(kind: .sell, stop: { engine.requestStop() }) {
-            _ = try? await engine.run()
+        guard requireVip(), iboxLoggedIn, sellGid > 0 else { appendLog("请搜索并选择藏品", type: "error", mode: .sell); return }
+        let price = Double(sellPrice) ?? 0
+        let qty = Int(sellQty) ?? 0
+        guard price > 0 else { appendLog("请填写最低接受价", type: "error", mode: .sell); return }
+        guard qty >= 1 else { appendLog("请填写数量", type: "error", mode: .sell); return }
+        if consignPwd.trimmingCharacters(in: .whitespaces).isEmpty {
+            appendLog("请填写寄售密码", type: "error", mode: .sell); return
         }
+        let engine = SellEngine(cfg: SellConfig(token: iboxToken, groupId: sellGid, collectionName: sellCname, targetPrice: price, quantity: qty, consignPassword: consignPwd), onLog: { [weak self] m in
+            Task { @MainActor in self?.appendLog(m, mode: .sell) }
+        })
+        runner.start(kind: .sell, stop: { engine.requestStop() }) { _ = try? await engine.run() }
     }
 
-    func startBatch(list: Bool) {
-        guard requireVip(), iboxLoggedIn, selectedGid > 0 else { return }
-        let engine = BatchEngine(cfg: BatchConfig(token: iboxToken, groupId: selectedGid, collectionName: selectedName, action: list ? "list" : "unlist", price: Double(priceText) ?? 0, consignPassword: consignPwd, quantity: Int(qtyText) ?? 0, safeMode: batchSafe), onLog: { [weak self] m in
-            Task { @MainActor in self?.appendLog(m) }
-        })
-        runner.start(kind: .batch, stop: { engine.requestStop() }) {
-            _ = try? await engine.run()
+    func startBatch() {
+        guard requireVip(), iboxLoggedIn, batchGid > 0 else { appendLog("请搜索并选择藏品", type: "error", mode: .batch); return }
+        let list = batchAction == "list"
+        if list {
+            if (Double(batchPrice) ?? 0) <= 0 { appendLog("请填写上架价", type: "error", mode: .batch); return }
+            if consignPwd.trimmingCharacters(in: .whitespaces).isEmpty { appendLog("请填写寄售密码", type: "error", mode: .batch); return }
         }
+        let engine = BatchEngine(cfg: BatchConfig(token: iboxToken, groupId: batchGid, collectionName: batchCname, action: list ? "list" : "unlist", price: Double(batchPrice) ?? 0, consignPassword: consignPwd, quantity: Int(batchQty) ?? 0, safeMode: batchSafe), onLog: { [weak self] m in
+            Task { @MainActor in self?.appendLog(m, mode: .batch) }
+        })
+        runner.start(kind: .batch, stop: { engine.requestStop() }) { _ = try? await engine.run() }
     }
 
     func startAnnounce() {
-        guard requireVip(), iboxLoggedIn, let pt = siteUser?.token else { return }
-        let engine = AnnounceEngine(cfg: AnnounceConfig(token: iboxToken, platformToken: pt), onLog: { [weak self] m in
-            Task { @MainActor in self?.appendLog(m) }
-        })
-        runner.start(kind: .announce, stop: { engine.requestStop() }) {
-            await engine.run()
+        guard requireAnnounceVip(), iboxLoggedIn else {
+            if iboxLoggedIn == false { appendLog("请先登录 iBox", type: "error", mode: .announce) }
+            return
+        }
+        guard let pt = siteUser?.token else { return }
+        if !announceQuota.openNow {
+            appendLog("仅北京时间 \(announceQuota.openHours.isEmpty ? "09:00-23:59" : announceQuota.openHours) 可用", type: "error", mode: .announce)
+            return
+        }
+        guard quotaOk(announceQuota, label: "公告锁定") else { return }
+        if announceOrderMode == "batch" {
+            if (Double(announceMaxPrice) ?? 0) <= 0 { appendLog("批量模式请填写钱包余额", type: "error", mode: .announce); return }
+            if (Int(announceMaxCount) ?? 0) < 1 { appendLog("批量模式请填写数量", type: "error", mode: .announce); return }
+        }
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let q = try await api.consumeLocal(platformToken: pt, kind: "announce_lock")
+                announceQuota = q
+                appendLog("公告锁已扣次 剩 \(q.unlimited ? "不限" : "\(q.remaining)/\(q.limit)")", mode: .announce)
+            } catch {
+                appendLog("扣次失败: \(error.localizedDescription)", type: "error", mode: .announce)
+                return
+            }
+            let cfg = AnnounceConfig(token: iboxToken, orderMode: announceOrderMode, maxSinglePrice: Double(announceMaxPrice) ?? 0, maxCount: Int(announceMaxCount) ?? 1, s1SearchBase: api.siteBase)
+            appendLog("公告发现本机直连（不走代理）", mode: .announce)
+            let engine = AnnounceEngine(cfg: cfg, onLog: { [weak self] m in
+                Task { @MainActor in self?.appendLog(m, mode: .announce) }
+            })
+            runner.start(kind: .announce, stop: { engine.requestStop() }) { _ = await engine.run() }
         }
     }
 
     func startSynth() {
         guard requireVip(), iboxLoggedIn else { return }
+        guard selectedActivity != nil else { appendLog("请选择活动", type: "error", mode: .synth); return }
+        let sid = channelId > 0 ? channelId : (selectedActivity?.id ?? 0)
+        guard sid > 0 else { appendLog("请先选择活动", type: "error", mode: .synth); return }
+        guard quotaOk(synthQuota, label: "抢合") else { return }
+        guard fireTimeNotTooLate() else { return }
         Task { [weak self] in
             guard let self else { return }
-            if let pt = siteUser?.token { _ = try? await api.consumeLocal(platformToken: pt, kind: "synth") }
-            appendLog("抽取代理中…")
-            let url = await resolveProxyUrl()
+            if let pt = siteUser?.token {
+                do {
+                    let q = try await api.consumeLocal(platformToken: pt, kind: "synth")
+                    synthQuota = q
+                    appendLog(q.unlimited ? "扣次成功（不限）" : "扣次成功 今日剩 \(q.remaining)/\(q.limit)", mode: .synth)
+                } catch {
+                    appendLog("扣次失败: \(error.localizedDescription)", type: "error", mode: .synth)
+                    return
+                }
+            }
+            appendLog("抽取代理中…", mode: .synth)
+            let url = resolveProxyUrl()
             do {
                 let pool = try await ProxyPool.extractAlivePool(url)
-                appendLog(pool.detail)
-                if pool.needMore { appendLog("存活代理不足", type: "error"); return }
-                let fireAt = todayFireAtEpochSec(h: fireH, m: fireM, s: fireS)
-                let albums = albumIdsText.split(separator: ",").compactMap { Int64($0.trimmingCharacters(in: .whitespaces)) }
-                let engine = FireEngine(cfg: FireConfig(token: iboxToken, syntheticId: Int64(synthIdText) ?? 0, syntheticNum: Int(synthNumText) ?? 1, albumIds: albums, fireAtEpochSec: fireAt, workers: Int(workersText) ?? 8, proxies: pool.proxies), onLog: { [weak self] m in
-                    Task { @MainActor in self?.appendLog(m) }
-                })
-                runner.start(kind: .synth, stop: { engine.requestStop() }) {
-                    _ = try? await engine.run()
+                appendLog("代理池就绪 \(pool.proxies.count) 条 | \(pool.detail)", mode: .synth)
+                if pool.proxies.count < 12 {
+                    appendLog("存活仅 \(pool.proxies.count) 条，放弃", type: "error", mode: .synth)
+                    return
                 }
+                if pool.needMore { appendLog("存活代理不足", type: "error", mode: .synth); return }
+                let fireAt = todayFireAtEpochSec(h: fireH, m: fireM, s: fireS)
+                let w = max(1, min(20, min(workers, pool.proxies.count)))
+                appendLog("启动本地抢合 ID=\(sid) workers=\(w)", mode: .synth)
+                let engine = FireEngine(cfg: FireConfig(token: iboxToken, syntheticId: sid, syntheticNum: Int(synthQty) ?? 1, albumIds: Array(checkedAlbums), fireAtEpochSec: fireAt, workers: w, proxies: pool.proxies), onLog: { [weak self] m in
+                    Task { @MainActor in self?.appendLog(m, mode: .synth) }
+                })
+                runner.start(kind: .synth, stop: { engine.requestStop() }) { _ = try? await engine.run() }
             } catch {
-                appendLog("代理失败 \(error.localizedDescription)", type: "error")
+                appendLog("代理失败 \(error.localizedDescription)", type: "error", mode: .synth)
             }
         }
     }
 
     func startPresale() {
         guard requireVip(), iboxLoggedIn else { return }
+        guard let item = presaleSelected else { appendLog("请选择发售", type: "error", mode: .presale); return }
+        guard quotaOk(presaleQuota, label: "抢购") else { return }
+        guard fireTimeNotTooLate() else { return }
+        if presaleAutoPay && consignPwd.trimmingCharacters(in: .whitespaces).isEmpty {
+            appendLog("开启自动支付需填写支付密码", type: "error", mode: .presale); return
+        }
         Task { [weak self] in
             guard let self else { return }
-            appendLog("抽取代理中…")
-            let url = await resolveProxyUrl()
-            do {
-                let pool = try await ProxyPool.extractAlivePool(url)
-                appendLog(pool.detail)
-                let fireAt = todayFireAtEpochSec(h: fireH, m: fireM, s: fireS)
-                let engine = PresaleEngine(cfg: PresaleConfig(token: iboxToken, saleId: Int64(saleIdText) ?? 0, quantity: Int(qtyText) ?? 1, fireAtEpochSec: fireAt, proxies: pool.proxies, autoPay: autoPay, payPassword: payPwd), onLog: { [weak self] m in
-                    Task { @MainActor in self?.appendLog(m) }
-                })
-                runner.start(kind: .presale, stop: { engine.requestStop() }) {
-                    await engine.run()
+            if let pt = siteUser?.token {
+                do {
+                    let q = try await api.consumeLocal(platformToken: pt, kind: "presale")
+                    presaleQuota = q
+                    appendLog(q.unlimited ? "抢购已扣次（不限）" : "抢购已扣次 剩 \(q.remaining)/\(q.limit)", mode: .presale)
+                } catch {
+                    appendLog("扣次失败: \(error.localizedDescription)", type: "error", mode: .presale)
+                    return
                 }
+            }
+            let fireAt = todayFireAtEpochSec(h: fireH, m: fireM, s: fireS)
+            let nowSec = Date().timeIntervalSince1970
+            let prestoreLead = 160.0
+            if Double(fireAt) - nowSec > prestoreLead {
+                let waitSec = max(1, Int64(Double(fireAt) - prestoreLead - nowSec))
+                appendLog("等待至预存窗口 \(waitSec)s (极验~3min有效)", mode: .presale)
+                try? await Task.sleep(nanoseconds: UInt64(waitSec) * 1_000_000_000)
+            }
+            appendLog("抽取代理中…", mode: .presale)
+            do {
+                let pool = try await ProxyPool.extractAlivePool(resolveProxyUrl())
+                appendLog("代理 \(pool.proxies.count) 活 | \(pool.detail)", mode: .presale)
+                if pool.proxies.count < ProxyPool.minAlive {
+                    appendLog("存活过少(\(pool.proxies.count)<\(ProxyPool.minAlive))，放弃", type: "error", mode: .presale)
+                    return
+                }
+                appendLog("预存极验…", mode: .presale)
+                let caps = await PresaleCaptchas.prestored(proxies: pool.proxies, iboxToken: iboxToken) { [weak self] m in
+                    Task { @MainActor in self?.appendLog(m, mode: .presale) }
+                }
+                if caps.isEmpty {
+                    appendLog("极验码为 0，放弃", type: "error", mode: .presale)
+                    return
+                }
+                let payProxy = pool.proxies.first ?? ""
+                let engine = PresaleEngine(cfg: PresaleConfig(
+                    token: iboxToken,
+                    saleId: item.saleId,
+                    saleName: item.name,
+                    quantity: Int(presaleQty) ?? 1,
+                    fireAtEpochSec: fireAt,
+                    proxies: Array(pool.proxies.prefix(50)),
+                    captchas: caps,
+                    workers: 6,
+                    autoPay: presaleAutoPay,
+                    payPassword: presaleAutoPay ? consignPwd : "",
+                    payProxy: payProxy
+                ), onLog: { [weak self] m in
+                    Task { @MainActor in self?.appendLog(m, mode: .presale) }
+                })
+                runner.start(kind: .presale, stop: { engine.requestStop() }) { await engine.run() }
             } catch {
-                appendLog("代理失败 \(error.localizedDescription)", type: "error")
+                appendLog("代理失败 \(error.localizedDescription)", type: "error", mode: .presale)
             }
         }
     }
 
     func startNbPresale() {
         guard requireVip(), nbLoggedIn else { return }
+        guard let item = nbPresaleSelected else { appendLog("请选择发售", type: "error", mode: .nb_presale); return }
+        guard fireTimeNotTooLate() else { return }
+        if nbPresaleAutoPay && nbPresalePayPwd.trimmingCharacters(in: .whitespaces).isEmpty {
+            appendLog("开启自动支付需填写支付密码", type: "error", mode: .nb_presale); return
+        }
         Task { [weak self] in
             guard let self else { return }
-            let url = await resolveProxyUrl()
+            appendLog("提取+验活中…", mode: .nb_presale)
             do {
-                let pool = try await ProxyPool.extractAlivePool(url)
-                let fireAt = todayFireAtEpochSec(h: fireH, m: fireM, s: fireS)
-                let engine = NbPresaleEngine(cfg: NbPresaleConfig(token: nbToken, pid: Int64(nbPidText) ?? 0, name: selectedName, quantity: Int(qtyText) ?? 1, fireAtEpochSec: fireAt, proxies: pool.proxies), onLog: { [weak self] m in
-                    Task { @MainActor in self?.appendLog(m) }
-                })
-                runner.start(kind: .nbPresale, stop: { engine.requestStop() }) {
-                    await engine.run()
+                let pool = try await ProxyPool.extractAlivePool(resolveProxyUrl())
+                appendLog("代理池就绪 \(pool.proxies.count) 条 | \(pool.detail)", mode: .nb_presale)
+                if pool.proxies.count < ProxyPool.minAlive {
+                    appendLog("存活仅 \(pool.proxies.count) 条，放弃", type: "error", mode: .nb_presale)
+                    return
                 }
+                let fireAt = todayFireAtEpochSec(h: fireH, m: fireM, s: fireS)
+                let w = max(1, min(20, min(workers, pool.proxies.count)))
+                appendLog("启动 NB抢购 pid=\(item.pid) 高峰\(w)线程×60s→单线程300ms→最长20min\(nbPresaleAutoPay ? " · 自动支付" : "")", mode: .nb_presale)
+                let engine = NbPresaleEngine(cfg: NbPresaleConfig(
+                    token: nbToken,
+                    pid: item.pid,
+                    name: item.name,
+                    quantity: Int(nbPresaleQty) ?? 1,
+                    fireAtEpochSec: fireAt,
+                    proxies: pool.proxies,
+                    workers: w,
+                    proxyExtractUrl: resolveProxyUrl(),
+                    autoPay: nbPresaleAutoPay,
+                    payPassword: nbPresaleAutoPay ? nbPresalePayPwd : "",
+                    siteBase: api.siteBase
+                ), onLog: { [weak self] m in
+                    Task { @MainActor in self?.appendLog(m, mode: .nb_presale) }
+                })
+                runner.start(kind: .nbPresale, stop: { engine.requestStop() }) { await engine.run() }
             } catch {
-                appendLog(error.localizedDescription, type: "error")
+                appendLog(error.localizedDescription, type: "error", mode: .nb_presale)
             }
         }
     }
 
     func startNbSnipe() {
         guard requireVip(), nbLoggedIn else { return }
-        let engine = NbSnipeEngine(cfg: NbSnipeConfig(token: nbToken, productId: Int64(nbPidText) ?? selectedGid, name: selectedName, maxPrice: Double(priceText) ?? 0, quantity: Int(qtyText) ?? 1), onLog: { [weak self] m in
-            Task { @MainActor in self?.appendLog(m) }
+        guard nbSnipePid > 0 else { appendLog("请搜索并选择商品", type: "error", mode: .nb_snipe); return }
+        let price = Double(nbSnipePrice) ?? 0
+        let qty = Int(nbSnipeQty) ?? 0
+        guard price > 0 else { appendLog("请填写目标价", type: "error", mode: .nb_snipe); return }
+        guard qty >= 1 else { appendLog("请填写数量", type: "error", mode: .nb_snipe); return }
+        if nbSnipeAutoPay && nbSnipePayPwd.trimmingCharacters(in: .whitespaces).isEmpty {
+            appendLog("开启自动支付需填写支付密码", type: "error", mode: .nb_snipe); return
+        }
+        let engine = NbSnipeEngine(cfg: NbSnipeConfig(
+            token: nbToken,
+            productId: nbSnipePid,
+            name: nbSnipeName,
+            maxPrice: price,
+            quantity: qty,
+            mode: nbSnipeMode,
+            autoPay: nbSnipeAutoPay,
+            payPassword: nbSnipePayPwd,
+            siteBase: api.siteBase
+        ), onLog: { [weak self] m in
+            Task { @MainActor in self?.appendLog(m, mode: .nb_snipe) }
         })
-        runner.start(kind: .nbSnipe, stop: { engine.requestStop() }) {
-            await engine.run()
-        }
+        runner.start(kind: .nbSnipe, stop: { engine.requestStop() }) { await engine.run() }
     }
+}
 
-    func startSweep() {
-        guard requireVip(), iboxLoggedIn, selectedGid > 0 else { return }
-        let engine = SweepEngine(cfg: SweepConfig(token: iboxToken, groupId: selectedGid, maxPrice: Double(priceText) ?? 0, quantity: Int(qtyText) ?? 1), onLog: { [weak self] m in
-            Task { @MainActor in self?.appendLog(m) }
-        })
-        runner.start(kind: .sweep, stop: { engine.requestStop() }) {
-            await engine.run()
-        }
-    }
-
-    func smsLogin(phone: String) async {
-        do {
-            try await api.sendSmsAuto(phone: phone)
-            appendLog("短信已发（服务端极验）", type: "buy")
-        } catch {
-            appendLog("短信失败 \(error.localizedDescription)", type: "error")
-        }
+private extension Comparable {
+    func clamped(to range: ClosedRange<Self>) -> Self {
+        min(max(self, range.lowerBound), range.upperBound)
     }
 }

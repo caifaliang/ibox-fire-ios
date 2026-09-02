@@ -100,17 +100,30 @@ final class BatchEngine: @unchecked Sendable {
                 "consignPassword": cfg.consignPassword
             ]
             let r = await client.postJson("/order-create-service/consignment-orders", body: body)
-            await ConsignGate.shared.mark(uid: uid)
             let code = JSONX.code(r)
             let msg = JSONX.message(r)
             if code == 0 {
+                await ConsignGate.shared.mark(uid: uid)
                 onLog("OK \(String((item["name"] as? String ?? "").prefix(30)))")
                 success += 1
+            } else if JwtUtil.isAuthFail(code: code, message: msg) && code != 403 {
+                await ConsignGate.shared.release(uid: uid)
+                onLog("Token失效(挂单 c=\(code) \(msg.prefix(40)))，请到「我的」重新登录")
+                return success
             } else if msg.contains("密码") {
+                await ConsignGate.shared.release(uid: uid)
                 onLog("密码错误! 停止"); return success
+            } else if code == 4100003 {
+                await ConsignGate.shared.release(uid: uid)
+                onLog("未实名认证(4100003),停止"); return success
             } else if [2100001, 4100010, 4100007].contains(Int(code)) {
+                await ConsignGate.shared.mark(uid: uid)
                 onLog("冷却 \(msg.prefix(40))"); skip += 1
+            } else if [429, 10002, -1].contains(Int(code)) {
+                await ConsignGate.shared.mark(uid: uid)
+                onLog("限流 \(msg.prefix(40)) (已计入硬间隔)"); fail += 1
             } else {
+                await ConsignGate.shared.mark(uid: uid)
                 onLog("失败 c=\(code) \(msg.prefix(40))"); fail += 1
             }
         }
