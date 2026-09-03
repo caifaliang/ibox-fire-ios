@@ -40,7 +40,7 @@ final class BatchEngine: @unchecked Sendable {
         if cfg.consignPassword.isEmpty { onLog("上架请填写寄售密码"); return 0 }
         if cfg.price <= 0 { onLog("请填写上架价格"); return 0 }
         onLog("⚡本地模式")
-        onLog(cfg.safeMode ? "安全模式(固定\(ConsignGate.batchListGapS)s+随机顺序)" : "快速模式(固定\(ConsignGate.batchListGapS)s)")
+        onLog(cfg.safeMode ? "安全模式(固定\(ConsignGate.batchListGapS)s+编号顺序)" : "快速模式(固定\(ConsignGate.batchListGapS)s+编号顺序)")
 
         var holdings: [[String: Any]] = []
         var hp = 1
@@ -92,12 +92,21 @@ final class BatchEngine: @unchecked Sendable {
             let tid = JSONX.stringVal($0["tokenId"]).isEmpty ? JSONX.stringVal($0["token_id"]) : JSONX.stringVal($0["tokenId"])
             return !listedIds.contains(tid)
         }
-        if cfg.safeMode { pool.shuffle() }
+        // 按编号升序上架（不再打乱）
+        pool.sort {
+            let a = JSONX.stringVal($0["tokenId"]).isEmpty ? JSONX.stringVal($0["token_id"]) : JSONX.stringVal($0["tokenId"])
+            let b = JSONX.stringVal($1["tokenId"]).isEmpty ? JSONX.stringVal($1["token_id"]) : JSONX.stringVal($1["tokenId"])
+            let ai = Int64(a) ?? Int64.max
+            let bi = Int64(b) ?? Int64.max
+            if ai != bi { return ai < bi }
+            return a < b
+        }
         onLog("本藏品待挂\(pool.count)件 全站寄售中\(listedIds.count)件 本批目标\(target)件")
         if pool.isEmpty {
             onLog(holdings.isEmpty ? "无可上架持仓（持仓接口返回0，请检查GID/Token）" : "无可上架持仓（可能已全部挂单）")
             return 0
         }
+        onLog("挂单按编号顺序 固定间隔 \(ConsignGate.batchListGapS)s")
 
         var success = 0, fail = 0, skip = 0
         for item in pool {
@@ -106,7 +115,8 @@ final class BatchEngine: @unchecked Sendable {
             let okWait = await ConsignGate.shared.wait(uid: uid, gapS: ConsignGate.batchListGapS, isStopped: { [weak self] in self?.stop ?? true }, addLog: onLog, floorS: ConsignGate.batchListGapS)
             if !okWait { break }
             let nm = String((item["name"] as? String ?? "").prefix(24))
-            onLog("挂单 \(success + 1)/\(target) \(nm)...")
+            let tid = JSONX.stringVal(item["tokenId"]).isEmpty ? JSONX.stringVal(item["token_id"]) : JSONX.stringVal(item["tokenId"])
+            onLog("挂单 \(success + 1)/\(target) #\(tid) \(nm)...")
             let did = JSONX.int64Val(item["id"]) ?? 0
             let body: [String: Any] = [
                 "digitalCollectionId": did,

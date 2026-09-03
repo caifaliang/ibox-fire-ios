@@ -848,7 +848,7 @@ struct BatchPane: View {
                     SecureField("寄售密码", text: $vm.consignPwd).fieldStyle()
                 }
                 TextField("数量(0=尽量全)", text: $vm.batchQty).keyboardType(.numberPad).fieldStyle()
-                Toggle("安全模式 固定3.5s", isOn: $vm.batchSafe)
+                Toggle("安全模式 固定3.5s(编号顺序)", isOn: $vm.batchSafe)
                 StopStartButton(
                     running: runner.isRunning(.batch),
                     startTitle: vm.batchAction == "unlist" ? "开始下架（本地）" : "开始上架（本地）",
