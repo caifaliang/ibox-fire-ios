@@ -451,6 +451,7 @@ struct ModePane: View {
                     case .presale: PresalePane()
                     case .buy: BuyPane()
                     case .sell: SellPane()
+                    case .precision: PrecisionPane()
                     case .batch: BatchPane()
                     case .sweep: SweepPane()
                     case .query: QueryPane()
@@ -711,12 +712,127 @@ struct SellPane: View {
     }
 }
 
+struct PrecisionPane: View {
+    @EnvironmentObject var vm: AppViewModel
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("本地直连 · 搜藏品 → UUID/翻页选求购单 → 选持仓 → 精准卖出")
+                .font(.caption).foregroundStyle(.secondary)
+            if !vm.iboxLoggedIn {
+                IboxLoginCard()
+            } else if vm.precisionGid <= 0 {
+                CollSearchBox(
+                    query: Binding(get: { vm.collSearch }, set: { vm.searchColl($0) }),
+                    hits: vm.collHits,
+                    label: "搜索藏品",
+                    onPick: { vm.pickColl($0, target: "precision") }
+                )
+            } else {
+                PickedBar(title: vm.precisionCname, subtitle: "GID \(vm.precisionGid)", onClear: { vm.clearPrecision() })
+                HStack(spacing: 8) {
+                    TextField("求购订单号 orderUuid", text: $vm.precisionUuid).fieldStyle()
+                    Button(vm.precisionUuidLoading ? "…" : "匹配") {
+                        vm.searchPrecisionUuid()
+                    }
+                    .disabled(vm.precisionUuidLoading || vm.precisionUuid.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+                if let o = vm.precisionSelectedOrder {
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text("已匹配").font(.caption2).foregroundStyle(.green)
+                            Text("¥\(o.price)").font(.headline)
+                        }
+                        Text(o.orderUuid.isEmpty ? "-" : o.orderUuid).font(.caption2).lineLimit(1)
+                        Text("\(o.createdAt) · \(o.id)/\(o.orderRelationId)").font(.caption2).foregroundStyle(.secondary)
+                    }
+                    .padding(10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.green.opacity(0.08))
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                }
+                HStack {
+                    Text("求购列表 第\(vm.precisionOrdersPage)页 · 共\(vm.precisionOrdersTotal)")
+                        .font(.caption2).foregroundStyle(.secondary)
+                    Spacer()
+                    Button("上一页") { vm.loadPrecisionOrders(page: vm.precisionOrdersPage - 1) }
+                        .disabled(vm.precisionOrdersPage <= 1 || vm.precisionOrdersLoading)
+                        .font(.caption)
+                    Button("下一页") { vm.loadPrecisionOrders(page: vm.precisionOrdersPage + 1) }
+                        .disabled(vm.precisionOrdersPage * 20 >= vm.precisionOrdersTotal || vm.precisionOrdersLoading)
+                        .font(.caption)
+                    Button(vm.precisionOrdersLoading ? "…" : "刷新") { vm.loadPrecisionOrders(page: vm.precisionOrdersPage) }
+                        .disabled(vm.precisionOrdersLoading)
+                        .font(.caption)
+                }
+                if vm.precisionOrders.isEmpty && !vm.precisionOrdersLoading {
+                    Text("暂无求购单").font(.caption).foregroundStyle(.secondary)
+                } else {
+                    ForEach(vm.precisionOrders) { o in
+                        let sel = vm.precisionSelectedOrder?.id == o.id
+                        Button { vm.selectPrecisionOrder(o) } label: {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("¥\(o.price)").font(.subheadline.weight(.medium))
+                                    Text(o.orderUuid.isEmpty ? "id=\(o.id)" : o.orderUuid)
+                                        .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                                    Text(o.createdAt).font(.caption2).foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                Text(sel ? "已选" : "选择").font(.caption).foregroundStyle(.blue)
+                            }
+                        }
+                        Divider()
+                    }
+                }
+                if vm.precisionSelectedOrder != nil {
+                    HStack {
+                        Text("持仓").font(.caption).foregroundStyle(.secondary)
+                        Spacer()
+                        Button(
+                            vm.precisionHoldingsLoading ? "加载中…" :
+                                (vm.precisionHoldings.isEmpty ? "加载持仓" : "\(vm.precisionHoldings.count)件")
+                        ) { vm.loadPrecisionHoldings() }
+                        .disabled(vm.precisionHoldingsLoading)
+                        .font(.caption)
+                    }
+                    ForEach(vm.precisionHoldings) { h in
+                        let sel = h.id == vm.precisionSelectedHoldingId
+                        Button { vm.precisionSelectedHoldingId = h.id } label: {
+                            Text("\(h.name.isEmpty ? "#\(h.tokenId)" : h.name) (#\(h.id))")
+                                .font(.subheadline.weight(sel ? .semibold : .regular))
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        Divider()
+                    }
+                    SecureField("寄售密码", text: $vm.consignPwd).fieldStyle()
+                    if !vm.precisionResult.isEmpty {
+                        let ok = vm.precisionResult.contains("成功") || vm.precisionResult.contains("已匹配")
+                        let bad = vm.precisionResult.contains("失败") || vm.precisionResult.contains("错误") || vm.precisionResult.contains("未找到")
+                        Text(vm.precisionResult)
+                            .font(.caption)
+                            .foregroundStyle(ok ? Color.green : (bad ? Color.red : Color.secondary))
+                    }
+                    Button {
+                        vm.doPrecisionSell()
+                    } label: {
+                        Text(vm.precisionRunning ? "执行中…" : "精准卖出（本地）")
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(vm.precisionRunning || !vm.isVip || vm.precisionSelectedHoldingId <= 0)
+                }
+            }
+        }
+    }
+}
+
 struct BatchPane: View {
     @EnvironmentObject var vm: AppViewModel
     @EnvironmentObject var runner: TaskRunner
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("上架固定3.5s · 安全模式=随机顺序").font(.caption).foregroundStyle(.secondary)
+            Text("上架固定3.5s · 编号顺序").font(.caption).foregroundStyle(.secondary)
             if !vm.iboxLoggedIn {
                 IboxLoginCard()
             } else if vm.batchGid <= 0 {

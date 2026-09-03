@@ -7,7 +7,7 @@ enum AppPlatform: String {
 }
 
 enum TechMode: String, CaseIterable, Identifiable {
-    case announce, synth, presale, buy, sell, batch, sweep, query
+    case announce, synth, presale, buy, sell, precision, batch, sweep, query
     case nb_presale, nb_snipe
     case profile
     var id: String { rawValue }
@@ -18,6 +18,7 @@ enum TechMode: String, CaseIterable, Identifiable {
         case .presale: return "抢购"
         case .buy: return "捡漏"
         case .sell: return "卖求购"
+        case .precision: return "精准射"
         case .batch: return "上下架"
         case .sweep: return "点对点"
         case .query: return "查询"
@@ -83,6 +84,21 @@ final class AppViewModel: ObservableObject {
     @Published var sellCname = ""
     @Published var sellPrice = ""
     @Published var sellQty = "1"
+
+    @Published var precisionGid: Int64 = 0
+    @Published var precisionCname = ""
+    @Published var precisionOrders: [PrecisionOrder] = []
+    @Published var precisionOrdersTotal = 0
+    @Published var precisionOrdersPage = 1
+    @Published var precisionOrdersLoading = false
+    @Published var precisionSelectedOrder: PrecisionOrder?
+    @Published var precisionHoldings: [PrecisionHolding] = []
+    @Published var precisionHoldingsLoading = false
+    @Published var precisionSelectedHoldingId: Int64 = 0
+    @Published var precisionUuid = ""
+    @Published var precisionUuidLoading = false
+    @Published var precisionRunning = false
+    @Published var precisionResult = ""
 
     @Published var batchGid: Int64 = 0
     @Published var batchCname = ""
@@ -218,7 +234,7 @@ final class AppViewModel: ObservableObject {
     var isYearVip: Bool { siteUser?.isYearVip == true || siteUser?.isAdmin == true }
     var isMonthVip: Bool { siteUser?.isMonthVip == true }
     var canAnnounce: Bool { siteUser?.isAdmin == true || isYearVip || isMonthVip || siteUser?.isVip == true }
-    var iboxTabs: [TechMode] { [.announce, .synth, .presale, .buy, .sell, .batch, .sweep, .query] }
+    var iboxTabs: [TechMode] { [.announce, .synth, .presale, .buy, .sell, .precision, .batch, .sweep, .query] }
     var nbTabs: [TechMode] { [.nb_presale, .nb_snipe] }
 
     var currentLogs: [LogLine] {
@@ -515,6 +531,17 @@ final class AppViewModel: ObservableObject {
         switch target {
         case "buy": buyGid = hit.id; buyCname = hit.name
         case "sell": sellGid = hit.id; sellCname = hit.name
+        case "precision":
+            precisionGid = hit.id
+            precisionCname = hit.name
+            precisionSelectedOrder = nil
+            precisionHoldings = []
+            precisionSelectedHoldingId = 0
+            precisionResult = ""
+            precisionOrders = []
+            precisionOrdersTotal = 0
+            precisionOrdersPage = 1
+            loadPrecisionOrders(page: 1)
         case "batch": batchGid = hit.id; batchCname = hit.name
         case "query":
             queryGid = hit.id; queryCname = hit.name
@@ -527,6 +554,156 @@ final class AppViewModel: ObservableObject {
             clearSweepSeller()
             loadMarkerOrders(reset: true)
         default: buyGid = hit.id; buyCname = hit.name
+        }
+    }
+
+    func clearPrecision() {
+        precisionGid = 0
+        precisionCname = ""
+        precisionOrders = []
+        precisionOrdersTotal = 0
+        precisionOrdersPage = 1
+        precisionSelectedOrder = nil
+        precisionHoldings = []
+        precisionSelectedHoldingId = 0
+        precisionUuid = ""
+        precisionResult = ""
+        collSearch = ""
+        collHits = []
+    }
+
+    func loadPrecisionOrders(page: Int = 1) {
+        guard iboxLoggedIn, precisionGid > 0 else { return }
+        precisionOrdersLoading = true
+        let token = iboxToken
+        let gid = precisionGid
+        Task {
+            do {
+                let r = try await PrecisionBrowse.purchaseOrders(token: token, groupId: gid, page: page)
+                await MainActor.run {
+                    self.precisionOrders = r.orders
+                    self.precisionOrdersTotal = r.total
+                    self.precisionOrdersPage = r.page
+                    self.precisionOrdersLoading = false
+                }
+            } catch {
+                await MainActor.run {
+                    self.precisionOrdersLoading = false
+                    self.precisionResult = error.localizedDescription
+                    self.appendLog(error.localizedDescription, type: "error", mode: .precision)
+                }
+            }
+        }
+    }
+
+    func selectPrecisionOrder(_ order: PrecisionOrder) {
+        precisionSelectedOrder = order
+        precisionSelectedHoldingId = 0
+        precisionResult = ""
+    }
+
+    func loadPrecisionHoldings() {
+        guard iboxLoggedIn, precisionGid > 0 else { return }
+        precisionHoldingsLoading = true
+        precisionResult = ""
+        let token = iboxToken
+        let gid = precisionGid
+        Task {
+            do {
+                let items = try await PrecisionBrowse.holdings(token: token, groupId: gid)
+                await MainActor.run {
+                    self.precisionHoldings = items
+                    self.precisionHoldingsLoading = false
+                    self.precisionSelectedHoldingId = items.first?.id ?? 0
+                    self.precisionResult = items.isEmpty ? "无持仓" : ""
+                }
+            } catch {
+                await MainActor.run {
+                    self.precisionHoldingsLoading = false
+                    self.precisionResult = error.localizedDescription
+                }
+            }
+        }
+    }
+
+    func searchPrecisionUuid() {
+        let uuid = precisionUuid.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !uuid.isEmpty, iboxLoggedIn, precisionGid > 0 else { return }
+        precisionUuidLoading = true
+        precisionResult = "搜索中..."
+        let token = iboxToken
+        let gid = precisionGid
+        let cache = precisionOrders
+        let curPage = precisionOrdersPage
+        Task {
+            do {
+                let (found, page) = try await PrecisionBrowse.findByUuid(token: token, groupId: gid, uuid: uuid, page1Cache: cache)
+                await MainActor.run {
+                    self.precisionUuidLoading = false
+                    if let found {
+                        self.precisionSelectedOrder = found
+                        self.precisionSelectedHoldingId = 0
+                        self.precisionResult = "已匹配: ¥\(found.price)"
+                        self.precisionOrdersPage = page
+                        if page != curPage || !self.precisionOrders.contains(where: { $0.id == found.id }) {
+                            self.loadPrecisionOrders(page: page)
+                        }
+                    } else {
+                        self.precisionResult = "未找到"
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    self.precisionUuidLoading = false
+                    self.precisionResult = error.localizedDescription
+                }
+            }
+        }
+    }
+
+    func doPrecisionSell() {
+        guard requireVip(), iboxLoggedIn else {
+            precisionResult = "请先登录"; return
+        }
+        guard let order = precisionSelectedOrder else {
+            precisionResult = "请选求购单"; return
+        }
+        guard order.orderRelationId > 0 else {
+            precisionResult = "求购单缺 relationId"; return
+        }
+        let holdId = precisionSelectedHoldingId
+        guard holdId > 0 else {
+            precisionResult = "请选藏品"; return
+        }
+        guard !consignPwd.trimmingCharacters(in: .whitespaces).isEmpty else {
+            precisionResult = "请输入寄售密码"; return
+        }
+        guard !precisionRunning else { return }
+        precisionRunning = true
+        precisionResult = "执行中..."
+        let token = iboxToken
+        let pwd = consignPwd
+        let price = order.price
+        Task {
+            let r = await PrecisionBrowse.sell(
+                token: token,
+                orderId: order.id,
+                orderRelationId: order.orderRelationId,
+                digitalCollectionId: holdId,
+                consignPassword: pwd
+            )
+            await MainActor.run {
+                self.precisionRunning = false
+                if r.ok {
+                    self.precisionResult = "成功!"
+                    self.precisionHoldings = self.precisionHoldings.filter { $0.id != holdId }
+                    self.precisionSelectedHoldingId = self.precisionHoldings.first?.id ?? 0
+                    self.appendLog("精准卖出成功 ¥\(price)", type: "buy", mode: .precision)
+                } else {
+                    self.precisionResult = r.message
+                    self.appendLog(r.message, type: "error", mode: .precision)
+                }
+            }
         }
     }
 
