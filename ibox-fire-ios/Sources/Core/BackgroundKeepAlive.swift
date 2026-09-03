@@ -10,7 +10,7 @@ final class BackgroundKeepAlive {
 
     func begin() {
         end()
-        guard UIApplication.shared.applicationState != .background else { renewOnce() }
+        if UIApplication.shared.applicationState == .background { renewOnce() }
         renewTask = Task { @MainActor in
             while !Task.isCancelled {
                 renewOnce()
