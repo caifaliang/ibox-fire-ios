@@ -7,7 +7,7 @@ enum AppPlatform: String {
 }
 
 enum TechMode: String, CaseIterable, Identifiable {
-    case announce, synth, presale, buy, sell, batch, query
+    case announce, synth, presale, buy, sell, batch, sweep, query
     case nb_presale, nb_snipe
     case profile
     var id: String { rawValue }
@@ -19,6 +19,7 @@ enum TechMode: String, CaseIterable, Identifiable {
         case .buy: return "捡漏"
         case .sell: return "卖求购"
         case .batch: return "上下架"
+        case .sweep: return "点对点"
         case .query: return "查询"
         case .nb_presale: return "抢购"
         case .nb_snipe: return "捡漏"
@@ -89,6 +90,36 @@ final class AppViewModel: ObservableObject {
     @Published var batchQty = "0"
     @Published var batchAction = "list"
     @Published var batchSafe = true
+
+    @Published var sweepMarkerSearch = ""
+    @Published var sweepMarkerHits: [CollHit] = []
+    @Published var sweepMarkerGid: Int64 = 0
+    @Published var sweepMarkerCname = ""
+    @Published var sweepMarkerOrders: [SweepMarkerOrder] = []
+    @Published var sweepMarkerSortValues = ""
+    @Published var sweepMarkerHasMore = false
+    @Published var sweepMarkerLoading = false
+    @Published var sweepSeller: SweepSeller?
+    @Published var sweepSellerConfirm: SweepSeller?
+    @Published var sweepWhGroups: [SweepWhGroup] = []
+    @Published var sweepWhItems: [SweepWhItem] = []
+    @Published var sweepWhPage = 1
+    @Published var sweepWhHasMore = false
+    @Published var sweepWhLoading = false
+    @Published var sweepSelected: [SweepSelectedItem] = []
+    @Published var sweepGid: Int64 = 0
+    @Published var sweepCname = ""
+    @Published var sweepMaxPrice = ""
+    @Published var sweepQty = "1"
+    @Published var sweepAutoPay = false
+    @Published var sweepPayPwd = ""
+    @Published var sweepAutoSelecting = false
+    @Published var sweepAutoSelectMsg = ""
+    @Published var sweepHint = ""
+    @Published var sweepHelp = false
+    private var sweepAutoSelectGen = 0
+    private var sweepAutoSelectTask: Task<Void, Never>?
+    private var sweepMarkerSearchTask: Task<Void, Never>?
 
     @Published var queryGid: Int64 = 0
     @Published var queryCname = ""
@@ -187,7 +218,7 @@ final class AppViewModel: ObservableObject {
     var isYearVip: Bool { siteUser?.isYearVip == true || siteUser?.isAdmin == true }
     var isMonthVip: Bool { siteUser?.isMonthVip == true }
     var canAnnounce: Bool { siteUser?.isAdmin == true || isYearVip || isMonthVip || siteUser?.isVip == true }
-    var iboxTabs: [TechMode] { [.announce, .synth, .presale, .buy, .sell, .batch, .query] }
+    var iboxTabs: [TechMode] { [.announce, .synth, .presale, .buy, .sell, .batch, .sweep, .query] }
     var nbTabs: [TechMode] { [.nb_presale, .nb_snipe] }
 
     var currentLogs: [LogLine] {
@@ -488,6 +519,13 @@ final class AppViewModel: ObservableObject {
         case "query":
             queryGid = hit.id; queryCname = hit.name
             queryTiers = []; queryScanned = 0; queryApiTotal = 0; queryProgressMsg = ""
+        case "sweepMarker":
+            sweepMarkerGid = hit.id
+            sweepMarkerCname = hit.name
+            sweepMarkerHits = []
+            sweepMarkerSearch = hit.name
+            clearSweepSeller()
+            loadMarkerOrders(reset: true)
         default: buyGid = hit.id; buyCname = hit.name
         }
     }
@@ -843,6 +881,315 @@ final class AppViewModel: ObservableObject {
             Task { @MainActor in self?.appendLog(m, mode: .sell) }
         })
         runner.start(kind: .sell, stop: { engine.requestStop() }) { _ = try? await engine.run() }
+    }
+
+    func searchMarkerColl(_ q: String) {
+        sweepMarkerSearch = q
+        sweepMarkerSearchTask?.cancel()
+        let qq = q.trimmingCharacters(in: .whitespaces)
+        guard !qq.isEmpty else { sweepMarkerHits = []; return }
+        sweepMarkerSearchTask = Task {
+            try? await Task.sleep(nanoseconds: 200_000_000)
+            if Task.isCancelled { return }
+            do {
+                let list = Array((try await api.searchCollections(qq)).prefix(20))
+                await MainActor.run {
+                    self.sweepMarkerHits = list
+                }
+            } catch {
+                await MainActor.run { self.sweepMarkerHits = [] }
+            }
+        }
+    }
+
+    func loadMarkerOrders(reset: Bool) {
+        guard iboxLoggedIn, sweepMarkerGid > 0 else { return }
+        if !reset && sweepMarkerLoading { return }
+        if !reset && !sweepMarkerHasMore { return }
+        if reset {
+            sweepMarkerSortValues = ""
+            sweepMarkerOrders = []
+            sweepMarkerHasMore = false
+            sweepHint = ""
+        }
+        sweepMarkerLoading = true
+        sweepHint = ""
+        let token = iboxToken
+        let gid = sweepMarkerGid
+        let sv = sweepMarkerSortValues
+        Task {
+            do {
+                let r = try await SweepBrowse.markerOrders(token: token, gid: gid, sortValues: sv)
+                await MainActor.run {
+                    let seen = Set(self.sweepMarkerOrders.map(\.id))
+                    let fresh = r.items.filter { !seen.contains($0.id) }
+                    self.sweepMarkerOrders = reset ? r.items : self.sweepMarkerOrders + fresh
+                    self.sweepMarkerSortValues = r.nextSv
+                    self.sweepMarkerHasMore = r.hasMore && !r.nextSv.isEmpty && (reset || !fresh.isEmpty)
+                    self.sweepMarkerLoading = false
+                }
+            } catch {
+                await MainActor.run {
+                    self.sweepMarkerLoading = false
+                    self.sweepHint = error.localizedDescription
+                    self.appendLog(error.localizedDescription, type: "error", mode: .sweep)
+                }
+            }
+        }
+    }
+
+    func pickMarkerOrder(_ order: SweepMarkerOrder) {
+        guard iboxLoggedIn else { appendLog("请先登录 iBox", type: "error", mode: .sweep); return }
+        guard order.digitalCollectionId > 0 else { return }
+        sweepHint = ""
+        let token = iboxToken
+        let gid = sweepMarkerGid
+        Task {
+            do {
+                var seller = try await SweepBrowse.resolveSeller(token: token, digitalCollectionId: order.digitalCollectionId)
+                seller.markerOrderId = order.orderId
+                seller.markerGid = gid
+                if seller.name.isEmpty { seller.name = order.sellerName.isEmpty ? "未知卖家" : order.sellerName }
+                await MainActor.run { self.sweepSellerConfirm = seller }
+            } catch {
+                await MainActor.run {
+                    self.sweepHint = error.localizedDescription
+                    self.appendLog(error.localizedDescription, type: "error", mode: .sweep)
+                }
+            }
+        }
+    }
+
+    func confirmSweepSeller() {
+        guard let pending = sweepSellerConfirm else { return }
+        sweepSeller = pending
+        sweepSellerConfirm = nil
+        resetSweepWarehouse()
+        loadWarehouseGroups()
+    }
+
+    func cancelSweepSellerConfirm() { sweepSellerConfirm = nil }
+
+    func clearSweepSeller() {
+        sweepAutoSelectGen += 1
+        sweepAutoSelectTask?.cancel()
+        sweepSeller = nil
+        sweepSellerConfirm = nil
+        resetSweepWarehouse()
+    }
+
+    func reselectSweepSeller() {
+        clearSweepSeller()
+        if sweepMarkerGid > 0 { loadMarkerOrders(reset: true) }
+    }
+
+    private func resetSweepWarehouse() {
+        sweepAutoSelectGen += 1
+        sweepAutoSelectTask?.cancel()
+        sweepWhGroups = []
+        sweepWhItems = []
+        sweepWhPage = 1
+        sweepWhHasMore = false
+        sweepWhLoading = false
+        sweepSelected = []
+        sweepGid = 0
+        sweepCname = ""
+        sweepAutoSelecting = false
+        sweepAutoSelectMsg = ""
+    }
+
+    func loadWarehouseGroups() {
+        guard iboxLoggedIn, let sso = sweepSeller?.sso, !sso.isEmpty else { return }
+        sweepWhLoading = true
+        sweepHint = ""
+        let token = iboxToken
+        Task {
+            do {
+                let groups = try await SweepBrowse.warehouseGroups(token: token, sellerSso: sso)
+                await MainActor.run {
+                    self.sweepWhGroups = groups
+                    self.sweepWhLoading = false
+                    if groups.isEmpty { self.sweepHint = "卖家仓库为空或不可见" }
+                }
+            } catch {
+                await MainActor.run {
+                    self.sweepWhLoading = false
+                    self.sweepHint = error.localizedDescription
+                    self.appendLog(error.localizedDescription, type: "error", mode: .sweep)
+                }
+            }
+        }
+    }
+
+    func selectWhGroup(_ g: SweepWhGroup) {
+        guard g.groupId > 0 else { return }
+        sweepGid = g.groupId
+        sweepCname = g.name
+        sweepSelected = []
+        scheduleAutoSelectWh(delayMs: 0)
+    }
+
+    func loadWarehouseItems(reset: Bool) {
+        guard iboxLoggedIn, let sso = sweepSeller?.sso, sweepGid > 0 else { return }
+        if sweepWhLoading || sweepAutoSelecting { return }
+        if !reset && !sweepWhHasMore { return }
+        if reset {
+            sweepWhPage = 1
+            sweepWhItems = []
+            sweepWhHasMore = false
+        }
+        sweepWhLoading = true
+        sweepHint = ""
+        let token = iboxToken
+        let gid = sweepGid
+        let page = max(1, sweepWhPage)
+        Task {
+            do {
+                let r = try await SweepBrowse.warehouseItems(token: token, sellerSso: sso, groupId: gid, page: page)
+                await MainActor.run {
+                    let tagged = r.items.map { item -> SweepWhItem in
+                        var x = item
+                        x.groupId = gid
+                        return x
+                    }
+                    self.sweepWhItems = reset ? tagged : self.sweepWhItems + tagged
+                    self.sweepWhHasMore = r.hasMore
+                    if !tagged.isEmpty || r.hasMore { self.sweepWhPage = page + 1 }
+                    self.sweepWhLoading = false
+                }
+            } catch {
+                await MainActor.run {
+                    self.sweepWhLoading = false
+                    self.sweepHint = error.localizedDescription
+                    self.appendLog(error.localizedDescription, type: "error", mode: .sweep)
+                }
+            }
+        }
+    }
+
+    func setSweepPriceQty(maxPrice: String? = nil, qty: String? = nil) {
+        if let maxPrice { sweepMaxPrice = maxPrice }
+        if let qty { sweepQty = qty }
+        scheduleAutoSelectWh()
+    }
+
+    func toggleWhItem(_ it: SweepWhItem) {
+        if sweepAutoSelecting { return }
+        let id = it.digitalCollectionId
+        guard id > 0 else { return }
+        if let idx = sweepSelected.firstIndex(where: { $0.digitalCollectionId == id }) {
+            sweepSelected.remove(at: idx)
+            return
+        }
+        let maxP = Double(sweepMaxPrice) ?? 0
+        if it.hasPrice && maxP > 0 && it.price > maxP { return }
+        let n = Int(sweepQty) ?? 1
+        if sweepSelected.count >= n { return }
+        sweepSelected.append(SweepSelectedItem(
+            digitalCollectionId: it.digitalCollectionId,
+            tokenId: it.tokenId,
+            price: it.hasPrice ? it.price : 0,
+            groupId: it.groupId > 0 ? it.groupId : sweepGid
+        ))
+    }
+
+    private func scheduleAutoSelectWh(delayMs: UInt64 = 350) {
+        sweepAutoSelectTask?.cancel()
+        sweepAutoSelectTask = Task { [weak self] in
+            if delayMs > 0 { try? await Task.sleep(nanoseconds: delayMs * 1_000_000) }
+            if Task.isCancelled { return }
+            await self?.autoSelectWhByPriceQty()
+        }
+    }
+
+    private func autoSelectWhByPriceQty() async {
+        let gen = sweepAutoSelectGen + 1
+        sweepAutoSelectGen = gen
+        let maxP = Double(sweepMaxPrice) ?? 0
+        let n = Int(sweepQty) ?? 0
+        guard let sso = sweepSeller?.sso, sweepGid > 0, maxP > 0, n >= 1 else {
+            sweepAutoSelectMsg = ""
+            return
+        }
+        sweepAutoSelecting = true
+        sweepAutoSelectMsg = "自动勾选中…"
+        sweepSelected = []
+        sweepWhPage = 1
+        sweepWhItems = []
+        sweepWhHasMore = true
+        sweepHint = ""
+        var candidates: [SweepSelectedItem] = []
+        let token = iboxToken
+        let gid = sweepGid
+        do {
+            while candidates.count < n && gen == sweepAutoSelectGen {
+                let page = max(1, sweepWhPage)
+                if page > 1 && !sweepWhHasMore { break }
+                sweepWhLoading = true
+                let r = try await SweepBrowse.warehouseItems(token: token, sellerSso: sso, groupId: gid, page: page)
+                if gen != sweepAutoSelectGen { return }
+                let tagged = r.items.map { item -> SweepWhItem in
+                    var x = item
+                    x.groupId = gid
+                    return x
+                }
+                sweepWhItems = page == 1 ? tagged : sweepWhItems + tagged
+                sweepWhHasMore = r.hasMore
+                sweepWhPage = page + 1
+                for it in tagged {
+                    if it.digitalCollectionId <= 0 || !it.hasPrice { continue }
+                    if it.price > maxP + 0.009 { continue }
+                    if candidates.contains(where: { $0.digitalCollectionId == it.digitalCollectionId }) { continue }
+                    candidates.append(SweepSelectedItem(digitalCollectionId: it.digitalCollectionId, tokenId: it.tokenId, price: it.price, groupId: it.groupId))
+                }
+                if r.items.isEmpty || !r.hasMore { break }
+            }
+            if gen != sweepAutoSelectGen { return }
+            let picked = Array(candidates.sorted { $0.price < $1.price }.prefix(n))
+            sweepSelected = picked
+            sweepAutoSelectMsg = picked.count >= n ? "已自动勾选 \(picked.count)/\(n)" : "仅找到 \(picked.count) 件符合（目标 \(n)）"
+            sweepAutoSelecting = false
+            sweepWhLoading = false
+        } catch {
+            if gen == sweepAutoSelectGen {
+                sweepHint = error.localizedDescription
+                sweepAutoSelectMsg = ""
+                sweepAutoSelecting = false
+                sweepWhLoading = false
+            }
+        }
+    }
+
+    func startSweep() {
+        guard requireVip(), iboxLoggedIn else { appendLog("请先登录 iBox", type: "error", mode: .sweep); return }
+        guard let seller = sweepSeller else { appendLog("未确认卖家", type: "error", mode: .sweep); return }
+        guard !sweepSelected.isEmpty else { appendLog("未勾选目标", type: "error", mode: .sweep); return }
+        let maxP = Double(sweepMaxPrice) ?? 0
+        guard maxP > 0 else { appendLog("请填写最高接受价", type: "error", mode: .sweep); return }
+        let qty = Int(sweepQty) ?? 0
+        guard qty >= 1 else { appendLog("请填写数量", type: "error", mode: .sweep); return }
+        if sweepSelected.count > qty { appendLog("已选超过数量", type: "error", mode: .sweep); return }
+        if sweepAutoPay && sweepPayPwd.trimmingCharacters(in: .whitespaces).isEmpty {
+            appendLog("开启自动支付需填写支付密码", type: "error", mode: .sweep); return
+        }
+        guard guardNotRunning(.sweep, prepKey: "sweep") else { return }
+        appendLog("⚡本地模式（请保持前台）", mode: .sweep)
+        let engine = SweepEngine(cfg: SweepConfig(
+            token: iboxToken,
+            sellerSso: seller.sso,
+            sellerName: seller.name,
+            markerGid: sweepMarkerGid,
+            groupId: sweepGid,
+            collectionName: sweepCname,
+            maxPrice: maxP,
+            quantity: qty,
+            selected: sweepSelected,
+            autoPay: sweepAutoPay,
+            payPassword: sweepPayPwd
+        ), onLog: { [weak self] m in
+            Task { @MainActor in self?.appendLog(m, type: m.contains("成功") || m.contains("确认") ? "buy" : "info", mode: .sweep) }
+        })
+        runner.start(kind: .sweep, stop: { engine.requestStop() }, keepAlive: true) { _ = await engine.run() }
     }
 
     func startBatch() {

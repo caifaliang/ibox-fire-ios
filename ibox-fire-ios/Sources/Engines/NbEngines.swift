@@ -417,50 +417,6 @@ final class NbSnipeEngine: @unchecked Sendable {
     }
 }
 
-struct SweepConfig {
-    var token: String
-    var groupId: Int64
-    var sellerUserId: Int64 = 0
-    var maxPrice: Double
-    var quantity: Int = 1
-}
-
-final class SweepEngine: @unchecked Sendable {
-    private let cfg: SweepConfig
-    private let onLog: (String) -> Void
-    private var stop = false
-
-    init(cfg: SweepConfig, onLog: @escaping (String) -> Void) {
-        self.cfg = cfg
-        self.onLog = onLog
-    }
-
-    func requestStop() { stop = true }
-
-    func run() async {
-        guard let uid = JwtUtil.uid(cfg.token) else { onLog("无uid"); return }
-        let client = IboxClient(token: cfg.token, deviceIdMode: .stableMD5)
-        onLog("点对点扫货 gid=\(cfg.groupId) ≤¥\(cfg.maxPrice)")
-        var bought = 0
-        while !stop && bought < cfg.quantity {
-            let path = "/public-market-service/digital-collection-groups/\(cfg.groupId)/consignment-orders?pageNo=1&pageSize=20&sortField=1&sortType=1&uid=\(uid)"
-            let page = await client.get(path)
-            for it in JSONX.dataList(page) {
-                if stop || bought >= cfg.quantity { break }
-                let price = JSONX.doubleVal(it["price"]) ?? 999999
-                guard price <= cfg.maxPrice, let oid = JSONX.int64Val(it["id"]) else { continue }
-                let r = await client.postJson("/order-create-service/consignment-orders/\(oid)/purchase?uid=\(uid)", body: ["paymentPlatformCode": 30])
-                if JSONX.code(r) == 0 {
-                    bought += 1
-                    onLog("扫到 ¥\(price) \(bought)/\(cfg.quantity)")
-                }
-            }
-            try? await Task.sleep(nanoseconds: 400_000_000)
-        }
-        onLog("扫货结束 \(bought)")
-    }
-}
-
 private extension NSLock {
     func withLock<T>(_ body: () throws -> T) rethrows -> T {
         lock()

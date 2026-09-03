@@ -452,6 +452,7 @@ struct ModePane: View {
                     case .buy: BuyPane()
                     case .sell: SellPane()
                     case .batch: BatchPane()
+                    case .sweep: SweepPane()
                     case .query: QueryPane()
                     case .nb_presale: NbPresalePane()
                     case .nb_snipe: NbSnipePane()
@@ -742,6 +743,196 @@ struct BatchPane: View {
                 )
             }
         }
+    }
+}
+
+struct SweepPane: View {
+    @EnvironmentObject var vm: AppViewModel
+    @EnvironmentObject var runner: TaskRunner
+    private var maxP: Double { Double(vm.sweepMaxPrice) ?? 0 }
+    private var qtyN: Int { Int(vm.sweepQty) ?? 1 }
+    private var canStart: Bool {
+        vm.sweepSeller != nil && !vm.sweepSelected.isEmpty && maxP > 0 && qtyN >= 1
+    }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("本地开火 · 点选暗号挂单定位卖家").font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                Button(vm.sweepHelp ? "收起 ▲" : "怎么用？") { vm.sweepHelp.toggle() }.font(.caption)
+            }
+            if vm.sweepHelp {
+                Text("1. 卖家在市场挂一个暗号藏品（可高价），并开放个人持仓\n2. 买家搜索暗号藏品 → 点选挂单 → 确认卖家昵称锁定\n3. 进入卖家仓库选分组；填最高接受价与数量后会自动勾选「有标价且≤最高价」的件\n4. 确认勾选后点「开始点对点」；只买已勾选件数")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+            if !vm.iboxLoggedIn {
+                IboxLoginCard()
+            } else if vm.sweepSeller == nil {
+                if vm.sweepMarkerGid <= 0 {
+                    CollSearchBox(
+                        query: Binding(get: { vm.sweepMarkerSearch }, set: { vm.searchMarkerColl($0) }),
+                        hits: vm.sweepMarkerHits,
+                        label: "搜索暗号藏品",
+                        onPick: { vm.pickColl($0, target: "sweepMarker") }
+                    )
+                } else {
+                    PickedBar(title: vm.sweepMarkerCname, subtitle: "GID \(vm.sweepMarkerGid)") {
+                        vm.clearSweepSeller()
+                        vm.sweepMarkerGid = 0
+                        vm.sweepMarkerCname = ""
+                        vm.sweepMarkerOrders = []
+                        vm.sweepMarkerSearch = ""
+                    }
+                    Text("市场挂单（价格降序，点选定位）").font(.caption).foregroundStyle(.secondary)
+                    ForEach(Array(vm.sweepMarkerOrders.enumerated()), id: \.element.id) { idx, o in
+                        Button { vm.pickMarkerOrder(o) } label: {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("¥\(fmtPrice(o.price))  #\(o.tokenId.isEmpty ? "-" : o.tokenId)").font(.subheadline)
+                                    Text(o.sellerName.isEmpty ? "卖家待解析" : o.sellerName).font(.caption2).foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                Text("选择").font(.caption).foregroundStyle(.blue)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        Divider()
+                        if idx == vm.sweepMarkerOrders.count - 1 {
+                            Color.clear.frame(height: 1).onAppear { vm.loadMarkerOrders(reset: false) }
+                        }
+                    }
+                    if vm.sweepMarkerLoading {
+                        Text("加载中…").font(.caption).foregroundStyle(.secondary)
+                    } else if vm.sweepMarkerOrders.isEmpty {
+                        Text("暂无挂单").font(.caption).foregroundStyle(.secondary)
+                    } else if !vm.sweepMarkerHasMore {
+                        Text("没有更多").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+            } else {
+                HStack {
+                    Text("已锁定卖家：\(vm.sweepSeller?.name ?? "未知")").font(.subheadline.bold()).foregroundStyle(.green)
+                    Spacer()
+                    Button("重选卖家") { vm.reselectSweepSeller() }.font(.caption)
+                }
+                HStack {
+                    TextField("最高接受价 ¥", text: Binding(get: { vm.sweepMaxPrice }, set: { vm.setSweepPriceQty(maxPrice: $0) }))
+                        .keyboardType(.decimalPad).fieldStyle()
+                    TextField("数量 N", text: Binding(get: { vm.sweepQty }, set: { vm.setSweepPriceQty(qty: $0) }))
+                        .keyboardType(.numberPad).fieldStyle().frame(width: 88)
+                }
+                Text("已选 \(vm.sweepSelected.count) / \(qtyN)" + (vm.sweepAutoSelectMsg.isEmpty ? "" : "  \(vm.sweepAutoSelectMsg)"))
+                    .font(.caption).foregroundStyle(.secondary)
+                if !vm.sweepWhGroups.isEmpty {
+                    ForEach(vm.sweepWhGroups) { g in
+                        Button { vm.selectWhGroup(g) } label: {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(g.name.isEmpty ? "GID \(g.groupId)" : g.name).font(.subheadline)
+                                Text("GID \(g.groupId) · \(g.count) 件").font(.caption2).foregroundStyle(.secondary)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(8)
+                            .background(vm.sweepGid == g.groupId ? Color.primary.opacity(0.12) : Color(.systemGray6))
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                } else if vm.sweepWhLoading && vm.sweepGid <= 0 {
+                    Text("加载仓库分组…").font(.caption).foregroundStyle(.secondary)
+                }
+                if !vm.sweepCname.isEmpty {
+                    Text("\(vm.sweepCname)  GID \(vm.sweepGid)").font(.subheadline.bold())
+                }
+                if vm.sweepGid > 0 {
+                    ForEach(Array(vm.sweepWhItems.enumerated()), id: \.element.id) { idx, it in
+                        SweepWhRow(
+                            item: it,
+                            selected: vm.sweepSelected.contains { $0.digitalCollectionId == it.digitalCollectionId },
+                            maxP: maxP,
+                            canToggle: {
+                                let selected = vm.sweepSelected.contains { $0.digitalCollectionId == it.digitalCollectionId }
+                                let over = it.hasPrice && maxP > 0 && it.price > maxP
+                                return selected || (!over && vm.sweepSelected.count < qtyN)
+                            }(),
+                            autoSelecting: vm.sweepAutoSelecting,
+                            onToggle: { vm.toggleWhItem(it) }
+                        )
+                        if idx == vm.sweepWhItems.count - 1 {
+                            Color.clear.frame(height: 1).onAppear { vm.loadWarehouseItems(reset: false) }
+                        }
+                    }
+                    if vm.sweepWhLoading {
+                        Text("加载中…").font(.caption).foregroundStyle(.secondary)
+                    } else if vm.sweepWhItems.isEmpty {
+                        Text("该分组暂无持仓").font(.caption).foregroundStyle(.secondary)
+                    } else if !vm.sweepWhHasMore {
+                        Text("没有更多").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                Toggle("自动支付（汇付钱包）", isOn: $vm.sweepAutoPay)
+                if vm.sweepAutoPay { SecureField("支付密码", text: $vm.sweepPayPwd).fieldStyle() }
+                StopStartButton(
+                    running: runner.isRunning(.sweep),
+                    startTitle: "开始点对点（本地 · \(vm.sweepSelected.count)件）",
+                    stopTitle: "停止",
+                    enabled: vm.isVip && canStart,
+                    onStart: { vm.startSweep() },
+                    onStop: { runner.stop(.sweep) }
+                )
+            }
+            if !vm.sweepHint.isEmpty {
+                Text(vm.sweepHint).font(.caption).foregroundStyle(.red)
+            }
+        }
+        .alert("确认卖家", isPresented: Binding(
+            get: { vm.sweepSellerConfirm != nil },
+            set: { if !$0 { vm.cancelSweepSellerConfirm() } }
+        )) {
+            Button("取消", role: .cancel) { vm.cancelSweepSellerConfirm() }
+            Button("确认") { vm.confirmSweepSeller() }
+        } message: {
+            Text("定位到卖家：\(vm.sweepSellerConfirm?.name ?? "未知")，确认是 TA？")
+        }
+    }
+    private func fmtPrice(_ p: Double) -> String {
+        p.truncatingRemainder(dividingBy: 1) == 0 ? String(format: "%.0f", p) : String(format: "%.2f", p)
+    }
+}
+
+private struct SweepWhRow: View {
+    let item: SweepWhItem
+    let selected: Bool
+    let maxP: Double
+    let canToggle: Bool
+    let autoSelecting: Bool
+    let onToggle: () -> Void
+    private var over: Bool { item.hasPrice && maxP > 0 && item.price > maxP }
+    var body: some View {
+        Button {
+            if canToggle && !autoSelecting { onToggle() }
+        } label: {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: selected ? "checkmark.square.fill" : "square")
+                    .foregroundStyle(selected ? Color.primary : .secondary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("#\(item.tokenId.isEmpty ? "-" : item.tokenId)" + (item.hasPrice ? "  ¥\(fmtPrice(item.price))" : ""))
+                        .font(.subheadline)
+                        .opacity(over && !selected ? 0.4 : 1)
+                    if !item.hasPrice {
+                        Text("无标价，按上限约束").font(.caption2).foregroundStyle(.orange)
+                    } else if over {
+                        Text("高于最高接受价").font(.caption2).foregroundStyle(.secondary)
+                    }
+                }
+                Spacer()
+            }
+        }
+        .buttonStyle(.plain)
+        .disabled(!canToggle || autoSelecting)
+        Divider()
+    }
+    private func fmtPrice(_ p: Double) -> String {
+        p.truncatingRemainder(dividingBy: 1) == 0 ? String(format: "%.0f", p) : String(format: "%.2f", p)
     }
 }
 
