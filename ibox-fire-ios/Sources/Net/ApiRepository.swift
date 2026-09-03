@@ -662,14 +662,6 @@ final class ApiRepository {
             return PresaleItem(saleId: saleId, name: name, price: price, startTime: start)
         }
     }
-}
-
-private extension Array {
-    func asyncMap<T>(_ transform: (Element) async throws -> T) async rethrows -> [T] {
-        var out: [T] = []
-        for e in self { out.append(try await transform(e)) }
-        return out
-    }
 
     struct SnipeLoopStart {
         let taskId: String
@@ -754,6 +746,14 @@ private extension Array {
         var req = URLRequest(url: URL(string: "\(base())/snipe/stop-loop?task_id=\(enc)")!)
         req.httpMethod = "POST"
         _ = try? await siteSession().data(for: req)
+    }
+}
+
+private extension Array {
+    func asyncMap<T>(_ transform: (Element) async throws -> T) async rethrows -> [T] {
+        var out: [T] = []
+        for e in self { out.append(try await transform(e)) }
+        return out
     }
 }
 
