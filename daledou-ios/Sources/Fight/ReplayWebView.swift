@@ -136,6 +136,13 @@ struct ReplayWebView: UIViewRepresentable {
             didInject = true
             statusLine.wrappedValue = "注入战报…"
             inject(into: webView, attempt: 0)
+            // 补丁 SWF：倒计时后 ENTER_FRAME 若卡住，原生再踢两次
+            DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) { [weak webView] in
+                webView?.evaluateJavaScript("window.__kickStartRound && window.__kickStartRound()", completionHandler: nil)
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 7.0) { [weak webView] in
+                webView?.evaluateJavaScript("window.__kickStartRound && window.__kickStartRound()", completionHandler: nil)
+            }
         }
 
         private func inject(into webView: WKWebView, attempt: Int) {

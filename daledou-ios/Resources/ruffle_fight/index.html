@@ -153,8 +153,31 @@
       }
     };
 
-    /** 包内 SWF 无此 EI；站桩主因是动作包解析慢，已改 SIMD */
-    window.__kickStartRound = function() { return false; };
+    /** 补丁版 PetFunFight：ENTER_FRAME ready_go + kickStartRound EI */
+    window.__kickStartRound = function() {
+      try {
+        if (player && typeof player.kickStartRound === 'function') {
+          player.kickStartRound();
+          setStatus('kickStartRound ok');
+          notifyAndroid('ready_kick', { ok: true });
+          return true;
+        }
+        try {
+          var r = player && player.ruffle && player.ruffle();
+          if (r && typeof r.callExternalInterface === 'function') {
+            r.callExternalInterface('kickStartRound');
+            setStatus('kickStartRound via callEI');
+            notifyAndroid('ready_kick', { ok: true, via: 'callEI' });
+            return true;
+          }
+        } catch (_) {}
+        setStatus('kickStartRound: no EI');
+        notifyAndroid('ready_kick', { ok: false, err: 'no_ei' });
+      } catch (e) {
+        notifyAndroid('ready_kick', { ok: false, err: String(e) });
+      }
+      return false;
+    };
 
     /** Playback speed: 1 / 2 / 3 → Flash setFightSpeed → stage.frameRate 30 / 60 / 90. */
     let pendingSpeed = 1;
@@ -208,6 +231,9 @@
         setStatus('replay injected act=' + pendingAct.act.length);
         notifyAndroid('injected', { ok: true, actLen: pendingAct.act.length });
         applyPendingSpeed();
+        // 倒计时后若 Timer 饿死，补丁 SWF 的 kick 会走 doReadyGo('kick')
+        setTimeout(function() { window.__kickStartRound && window.__kickStartRound(); }, 2800);
+        setTimeout(function() { window.__kickStartRound && window.__kickStartRound(); }, 5500);
         return true;
       } catch (e) {
         notifyAndroid('inject_fail', { err: String(e) });

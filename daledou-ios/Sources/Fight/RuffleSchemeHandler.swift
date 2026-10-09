@@ -63,10 +63,10 @@ final class RuffleSchemeHandler: NSObject, WKURLSchemeHandler {
             let wantMm = ActionPackPrefetch.sessionPreferMm
             let isMm = lowRel.contains("action_mm")
             let isGg = lowRel.contains("action_gg")
-            let wrong = (wantMm && isGg) || (!wantMm && isMm)
-            // gg2/mm2 是二包，放行；只 stub 根包错性别
+            // 不再 stub 错性别根包：误判会导致空动作包 → 321 后无双人/站桩
             let isPack2 = lowRel.contains("gg2") || lowRel.contains("mm2")
-            if wrong && !isPack2 {
+            _ = wantMm; _ = isMm; _ = isGg; _ = wrong
+            if false, wrong, !isPack2 {
                 finish(urlSchemeTask, url: url, data: Self.emptySwf, mime: "application/x-shockwave-flash")
                 return
             }
