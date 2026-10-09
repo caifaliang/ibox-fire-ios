@@ -25,6 +25,7 @@ struct ReplayWebView: UIViewRepresentable {
         config.preferences.setValue(true, forKey: "allowFileAccessFromFileURLs")
         config.setValue(true, forKey: "allowUniversalAccessFromFileURLs")
 
+        // 保留 scheme 作兜底；主路径改走本机 HTTP（Ruffle Loader 只认 http/https）
         let handler = RuffleSchemeHandler()
         config.setURLSchemeHandler(handler, forURLScheme: RuffleSchemeHandler.scheme)
         context.coordinator.handler = handler
@@ -63,12 +64,26 @@ struct ReplayWebView: UIViewRepresentable {
         }
         log.append("bundleOK root=\(handler.rootPath)")
 
-        let url = URL(
-            string: "\(RuffleSchemeHandler.scheme)://local/ruffle_fight/index.html?renderer=canvas&preferMm=\(preferMm ? 1 : 0)"
-        )!
+        let server = RuffleLocalServer.shared
+        server.onLog = { [weak coordinator = context.coordinator] msg in
+            coordinator?.logLine(msg)
+        }
+        let pageURL: URL
+        do {
+            let base = try server.start(root: URL(fileURLWithPath: handler.rootPath))
+            pageURL = URL(
+                string: "\(base.absoluteString)ruffle_fight/index.html?renderer=canvas&preferMm=\(preferMm ? 1 : 0)"
+            )!
+            log.append("HTTP \(base.absoluteString)")
+        } catch {
+            log.append("HTTP start FAIL \(error.localizedDescription) → scheme fallback")
+            pageURL = URL(
+                string: "\(RuffleSchemeHandler.scheme)://local/ruffle_fight/index.html?renderer=canvas&preferMm=\(preferMm ? 1 : 0)"
+            )!
+        }
         statusLine = "加载播放器…"
-        log.append("load \(url.absoluteString)")
-        wv.load(URLRequest(url: url))
+        log.append("load \(pageURL.absoluteString)")
+        wv.load(URLRequest(url: pageURL))
         return wv
     }
 

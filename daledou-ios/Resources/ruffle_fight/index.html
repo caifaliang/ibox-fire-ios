@@ -55,87 +55,13 @@
       setStatus('js ' + (ev && ev.message ? ev.message : 'error'));
     });
 
-    // 主动作包：app-ruffle scheme → Flash Loader IO_ERROR；HTTPS CDN → 自定义页 CORS TypeError。
-    // 对齐思路：原生/scheme 先把字节拉进 JS，再 createObjectURL，Loader 只吃 blob:。
-    const actionBlobUrls = Object.create(null);
-    const actionBlobPending = Object.create(null);
+    // 页面必须在 http(s) 同源下打开（本机 RuffleLocalServer）。
+    // app-ruffle / blob: 即使 fetch 200，Flash Loader 仍会 sal_base_err io。
     let preferMm = false;
-    let emptySwfBlobUrl = null;
-
-    function actionPackFileName(url) {
-      try {
-        const u = new URL(String(url), location.href);
-        const name = (u.pathname || '').split('/').pop() || '';
-        if (/^action_(gg|mm)/i.test(name)) return name;
-      } catch (_) {}
-      return '';
-    }
-
-    function isWrongGenderPack(name) {
-      const n = String(name || '').toLowerCase();
-      if (preferMm) return n.indexOf('action_gg') === 0; // 女号只要 mm
-      return n.indexOf('action_mm') === 0; // 男号只要 gg
-    }
-
-    function ensureEmptySwfBlob() {
-      if (emptySwfBlobUrl) return emptySwfBlobUrl;
-      // 最小合法 FWS（对齐 Android emptySwfResponse）
-      const bytes = new Uint8Array([
-        0x46, 0x57, 0x53, 0x0A,
-        0x18, 0x00, 0x00, 0x00,
-        0x70, 0x00, 0x13, 0x88, 0x00, 0x00, 0xEA, 0x60,
-        0x00, 0x0C, 0x01, 0x00, 0x40, 0x00, 0x00, 0x00
-      ]);
-      emptySwfBlobUrl = URL.createObjectURL(new Blob([bytes], { type: 'application/x-shockwave-flash' }));
-      return emptySwfBlobUrl;
-    }
-
-    async function ensureActionBlob(name) {
-      const key = String(name || '');
-      if (!key) throw new Error('empty pack name');
-      if (actionBlobUrls[key]) return actionBlobUrls[key];
-      if (isWrongGenderPack(key)) {
-        actionBlobUrls[key] = ensureEmptySwfBlob();
-        setStatus('pack stub ' + key);
-        return actionBlobUrls[key];
-      }
-      if (actionBlobPending[key]) return actionBlobPending[key];
-      actionBlobPending[key] = (async function() {
-        setStatus('pack→blob ' + key + '…');
-        // 同源 scheme：磁盘缓存 / 原生 CDN 代理（无 CORS，日志已证明 200）
-        const localUrl = location.origin + '/gres/' + key;
-        const res = await _fetch(localUrl);
-        if (!res.ok) throw new Error('HTTP ' + res.status);
-        const buf = await res.arrayBuffer();
-        if (!buf || buf.byteLength < 1000) throw new Error('too small ' + (buf && buf.byteLength));
-        const blobUrl = URL.createObjectURL(
-          new Blob([buf], { type: 'application/x-shockwave-flash' })
-        );
-        actionBlobUrls[key] = blobUrl;
-        setStatus('pack blob ok ' + key + ' ' + buf.byteLength + 'B');
-        notifyAndroid('pack_blob', { name: key, bytes: buf.byteLength });
-        return blobUrl;
-      })();
-      try {
-        return await actionBlobPending[key];
-      } finally {
-        delete actionBlobPending[key];
-      }
-    }
 
     function rewriteFightUrl(url) {
       try {
         const u = new URL(url, location.href);
-        const path = u.pathname || '';
-        const packName = actionPackFileName(u.href);
-        if (packName) {
-          if (actionBlobUrls[packName]) {
-            try { setStatus('action→blob ' + packName); } catch (_) {}
-            return actionBlobUrls[packName];
-          }
-          // blob 尚未就绪时仍走同源 scheme（fetch 包装会先 ensure）；勿改 HTTPS CDN
-          return location.origin + '/gres/' + packName + (u.search || '');
-        }
         if (u.hostname === 'fight.pet.qq.com' && u.pathname.indexOf('/cgi-bin/petpk') >= 0) {
           return location.origin + '/__cgi/petpk' + u.search;
         }
@@ -159,30 +85,6 @@
     const _fetch = window.fetch.bind(window);
     window.fetch = async function(input, init) {
       let url = String(input && input.url ? input.url : input);
-      // blob: 已是最终地址，直接拉
-      if (url.indexOf('blob:') === 0) {
-        return _fetch(input, init);
-      }
-      const packName = actionPackFileName(url);
-      if (packName) {
-        try {
-          const blobUrl = await ensureActionBlob(packName);
-          setStatus('net blob:' + packName);
-          const res = await _fetch(blobUrl, init);
-          if (!res.ok) {
-            setStatus('FAIL ' + res.status + ' blob:' + packName);
-            notifyAndroid('net_fail', { url: blobUrl, status: res.status });
-          } else {
-            setStatus('ok ' + res.status + ' blob:' + packName);
-            notifyAndroid('net_ok', { url: 'blob:' + packName, status: res.status, bytes: res.headers.get('content-length') });
-          }
-          return res;
-        } catch (e) {
-          setStatus('ERR blob:' + packName + ' ' + e);
-          notifyAndroid('net_err', { url: packName, err: String(e) });
-          throw e;
-        }
-      }
       const rewritten = rewriteFightUrl(url);
       if (rewritten !== url) input = rewritten;
       const short = String(rewritten).split('/').slice(-2).join('/');
@@ -205,13 +107,7 @@
     };
     const XO = XMLHttpRequest.prototype.open;
     XMLHttpRequest.prototype.open = function(method, url) {
-      const raw = String(url);
-      const packName = actionPackFileName(raw);
-      if (packName && actionBlobUrls[packName]) {
-        arguments[1] = actionBlobUrls[packName];
-      } else {
-        arguments[1] = rewriteFightUrl(raw);
-      }
+      arguments[1] = rewriteFightUrl(String(url));
       return XO.apply(this, arguments);
     };
 
@@ -387,7 +283,6 @@
         const params = new URLSearchParams(location.search);
         const renderer = (params.get('renderer') || 'canvas');
         preferMm = params.get('preferMm') === '1';
-        const primaryPack = preferMm ? 'action_mm-v10.1300.swf' : 'action_gg-v10.1300.swf';
         // 仅显式 ?wasm=vanilla 时强制；失败后也会自动跳一次。
         const forceVanilla = params.get('wasm') === 'vanilla';
         if (forceVanilla) {
@@ -480,17 +375,7 @@
           });
         } catch (_) {}
 
-        // 开战前先把主动作包做成 blob:，避免 Loader 碰 app-ruffle / 外网 HTTPS
-        setStatus('prewarm ' + primaryPack + '…');
-        try {
-          await ensureActionBlob(primaryPack);
-          notifyAndroid('prewarm_ok', { pack: primaryPack, preferMm: preferMm });
-        } catch (pe) {
-          setStatus('prewarm FAIL ' + pe);
-          notifyAndroid('prewarm_fail', { pack: primaryPack, err: String(pe) });
-        }
-
-        setStatus('loading PetFunFight…');
+        setStatus('loading PetFunFight… origin=' + location.origin);
         // 与 0.1.120 一致：URL 加载 + blank.xml base
         await player.load(Object.assign({
           url: 'PetFunFight.swf',
