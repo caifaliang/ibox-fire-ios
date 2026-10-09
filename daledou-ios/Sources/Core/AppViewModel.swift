@@ -31,7 +31,10 @@ final class AppViewModel: ObservableObject {
     @Published var showReplay = false
     @Published var replayAct = ""
     @Published var replayId = ""
+    /// 开战时卸掉游戏页，把内存让给 Ruffle（对齐 APK 独立 :ruffle 进程）
+    @Published var suspendGameWebForReplay = false
     private var lastViewFightUrl: String?
+    private var resumeGameURL: URL?
 
     func bootstrap() {
         if session.isLoggedIn {
@@ -191,7 +194,21 @@ final class AppViewModel: ObservableObject {
             replayId = FightActFetcher.replayId(from: page)
             viewFightLoading = false
             statusText = "已取到战斗数据，打开官方动画"
+            // 先卸游戏 WebView，再开动画，避免双 WebContent 抢内存
+            resumeGameURL = gameWebView?.url
+            suspendGameWebForReplay = true
             showReplay = true
+        }
+    }
+
+    func onReplayDismissed() {
+        showReplay = false
+        suspendGameWebForReplay = false
+        if let u = resumeGameURL {
+            pendingURL = u
+            resumeGameURL = nil
+        } else if session.isLoggedIn {
+            pendingURL = URL(string: LoginURLs.ledouEntry)
         }
     }
 

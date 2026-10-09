@@ -58,7 +58,9 @@ struct RootView: View {
             CookiePasteSheet()
                 .environmentObject(vm)
         }
-        .fullScreenCover(isPresented: $vm.showReplay) {
+        .fullScreenCover(isPresented: $vm.showReplay, onDismiss: {
+            vm.onReplayDismissed()
+        }) {
             ReplaySheet(act: vm.replayAct, replayId: vm.replayId)
         }
     }

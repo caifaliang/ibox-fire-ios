@@ -99,6 +99,20 @@ struct GameWebView: UIViewRepresentable {
             return
         }
 
+        // 官方动画期间：游戏页改 about:blank，释放 WebContent 内存给 Ruffle
+        if context.coordinator.wasSuspended != vm.suspendGameWebForReplay {
+            context.coordinator.wasSuspended = vm.suspendGameWebForReplay
+            if vm.suspendGameWebForReplay {
+                webView.stopLoading()
+                webView.load(URLRequest(url: URL(string: "about:blank")!))
+                return
+            }
+        }
+
+        if vm.suspendGameWebForReplay {
+            return
+        }
+
         if let u = vm.pendingURL {
             context.coordinator.applyUA(webView, desktop: vm.preferDesktopUA)
             let dest = u
@@ -117,6 +131,7 @@ struct GameWebView: UIViewRepresentable {
         weak var webView: WKWebView?
         var lastReloadToken = 0
         var lastClearEpoch = 0
+        var wasSuspended = false
         var lastCookieInject = 0
         var defaultUA: String?
         private var captureTask: Task<Void, Never>?

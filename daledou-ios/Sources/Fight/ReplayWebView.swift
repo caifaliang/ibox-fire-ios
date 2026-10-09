@@ -76,6 +76,7 @@ struct ReplayWebView: UIViewRepresentable {
         server.onLog = { [weak coordinator = context.coordinator] msg in
             coordinator?.logLine(msg)
         }
+        RuffleMemPolicy.migrateIfNeeded()
         let forceVanilla = RuffleMemPolicy.shouldUseVanilla
         context.coordinator.useVanilla = forceVanilla
         let pageURL: URL
@@ -98,7 +99,10 @@ struct ReplayWebView: UIViewRepresentable {
         statusLine = forceVanilla ? "兼容模式加载…" : "加载播放器…"
         log.append("load \(pageURL.absoluteString)")
         context.coordinator.pageURL = pageURL
-        wv.load(URLRequest(url: pageURL))
+        // 稍等主游戏页 about:blank 落地，再开 Ruffle，减少双 WebContent 峰值
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+            wv.load(URLRequest(url: pageURL))
+        }
         return wv
     }
 
@@ -251,23 +255,24 @@ struct ReplayWebView: UIViewRepresentable {
             inject(into: webView, attempt: 0, generation: injectGeneration)
         }
 
-        /// WebContent 被 jetsam/OOM 杀掉：对齐 APK onRenderProcessGone（只救一次，避免反复重载更爆内存）
+        /// jetsam：不要改 sticky vanilla（慢解析更易再爆）。只重试一次同配置，再失败就停。
         func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
             oomCount += 1
-            RuffleMemPolicy.markWasmCrashed()
-            useVanilla = true
-            log.append("OOM/terminate WebContent count=\(oomCount)")
+            log.append("OOM/terminate WebContent count=\(oomCount) (jetsam, keep simd)")
             if oomCount >= 2 || recoveringFromOOM {
+                recoveringFromOOM = true
                 let msg = "内存不足，官方动画无法完成。请关闭后用文字战报，或杀掉后台再试。"
                 statusLine.wrappedValue = msg
                 log.append("OOM GIVE UP → \(msg)")
+                // 避免 didFinish 再去 inject
+                injectGeneration += 1
                 webView.loadHTMLString(
                     """
                     <html><body style="background:#111;color:#ccc;font:15px -apple-system;padding:28px;line-height:1.5">
                     <b style="color:#f66">内存不足</b><br/><br/>
                     解析官方动作包（约 40MB）时 WebContent 被系统回收。<br/>
-                    APK 用独立进程扛住了；iOS 同进程更容易爆。<br/><br/>
-                    请关掉本页，用文字战报；或清理后台后重开一次。
+                    APK 用独立 :ruffle 进程；本机需先卸掉游戏页再播。<br/><br/>
+                    请关掉本页用文字战报，或清理后台后重开一次。
                     </body></html>
                     """,
                     baseURL: nil
@@ -275,7 +280,7 @@ struct ReplayWebView: UIViewRepresentable {
                 return
             }
             recoveringFromOOM = true
-            statusLine.wrappedValue = "内存不足，降配重试…"
+            statusLine.wrappedValue = "内存不足，重试…"
             let preferMm = ActionPackPrefetch.preferMm(from: act)
             let base: String
             if let pageURL, let host = pageURL.host, host == "127.0.0.1" || host == "localhost",
@@ -286,10 +291,13 @@ struct ReplayWebView: UIViewRepresentable {
             } else {
                 base = "\(RuffleSchemeHandler.scheme)://local/"
             }
-            let url = ReplayWebView.fightPageURL(base: base, preferMm: preferMm, vanilla: true, lowmem: true)
+            // 继续 SIMD（与 APK 一致）；勿切 vanilla、勿 lowmem
+            let url = ReplayWebView.fightPageURL(base: base, preferMm: preferMm, vanilla: false, lowmem: false)
             pageURL = url
             log.append("reload \(url.absoluteString)")
-            webView.load(URLRequest(url: url))
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                webView.load(URLRequest(url: url))
+            }
         }
 
         private func inject(into webView: WKWebView, attempt: Int, generation: Int) {
@@ -323,27 +331,33 @@ struct ReplayWebView: UIViewRepresentable {
     }
 }
 
-/// 对齐 Android `ruffle_warm` 降配。
-/// iOS 与主进程同 WebContent：解析 ~37MB action 包易 jetsam，默认 vanilla；OOM 后 sticky。
+/// 对齐 Android `ruffle_warm`：默认 SIMD（解析快），仅 WASM 编译崩溃才 sticky vanilla。
+/// 注意：jetsam/OOM ≠ wasm crash；用 vanilla 会解析更久、峰值更久，反而更容易被杀。
 enum RuffleMemPolicy {
     private static let keyCrashed = "ruffle_wasm_crashed"
-    private static let keyPreferSimd = "ruffle_prefer_simd"
+    private static let keyPolicyV = "ruffle_mem_policy_v"
     private static let defaults = UserDefaults.standard
     static let sharedProcessPool = WKProcessPool()
 
-    static var shouldUseVanilla: Bool {
-        if defaults.bool(forKey: keyCrashed) { return true }
-        // 未显式打开 SIMD 时默认兼容包（对齐 APK 降配思路）
-        return !defaults.bool(forKey: keyPreferSimd)
+    /// 一次性清掉旧版「默认 vanilla / OOM→vanilla」错误 sticky
+    static func migrateIfNeeded() {
+        if defaults.integer(forKey: keyPolicyV) < 2 {
+            defaults.set(false, forKey: keyCrashed)
+            defaults.set(2, forKey: keyPolicyV)
+        }
     }
 
+    static var shouldUseVanilla: Bool {
+        migrateIfNeeded()
+        return defaults.bool(forKey: keyCrashed)
+    }
+
+    /// 仅 WASM RuntimeError / unreachable 时调用；jetsam 不要调
     static func markWasmCrashed() {
         defaults.set(true, forKey: keyCrashed)
-        defaults.set(false, forKey: keyPreferSimd)
     }
 
     static func markFightHealthy() {
-        // 开战成功只清 crash 标记；不自动切回 SIMD，避免再次 OOM
         defaults.set(false, forKey: keyCrashed)
     }
 }
