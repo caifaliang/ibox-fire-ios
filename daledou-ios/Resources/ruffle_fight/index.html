@@ -283,9 +283,7 @@
         const params = new URLSearchParams(location.search);
         const renderer = (params.get('renderer') || 'canvas');
         preferMm = params.get('preferMm') === '1';
-        // iOS 同进程：默认 lowmem（半分辨率画布 + 低画质）；对齐 APK quality:low，额外省 canvas 像素内存
-        const lowmem = params.get('lowmem') !== '0';
-        const canvasScale = lowmem ? 0.5 : 1;
+        // 对齐 APK：quality low；勿做半分辨率 transform（会把画面挤出视口，且与 CSS !important 冲突）
         // 仅显式 ?wasm=vanilla 时强制；失败后也会自动跳一次。
         const forceVanilla = params.get('wasm') === 'vanilla';
         if (forceVanilla) {
@@ -315,7 +313,6 @@
           document.head.appendChild(s);
         });
         // 对齐 APK：quality low + letterbox on + scale showAll + canvas
-        // lowmem：舞台按半分辨率栅格化，CSS 放大回满屏（省约 75% 像素缓冲）
         const baseCfg = {
           publicPath: rufflePublicPath,
           preferredRenderer: renderer,
@@ -336,35 +333,26 @@
         notifyAndroid('boot', {
           renderer: renderer,
           wasm: forceVanilla ? 'vanilla' : 'auto',
-          lowmem: lowmem,
-          canvasScale: canvasScale,
           publicPath: rufflePublicPath,
           sdkHint: navigator.userAgent
         });
         window.RufflePlayer.config = Object.assign({}, window.RufflePlayer.config || {}, baseCfg);
-        setStatus('renderer ' + renderer + (forceVanilla ? ' · vanilla' : '') + (lowmem ? ' · lowmem' : ''));
+        setStatus('renderer ' + renderer + (forceVanilla ? ' · vanilla' : ''));
         const r = window.RufflePlayer.newest();
         player = r.createPlayer();
         function fitPlayerToViewport() {
           const w = (window.visualViewport && window.visualViewport.width) || window.innerWidth || document.documentElement.clientWidth;
           const h = (window.visualViewport && window.visualViewport.height) || window.innerHeight || document.documentElement.clientHeight;
           const box = document.getElementById('player');
-          const cw = Math.max(1, Math.floor(w * canvasScale));
-          const ch = Math.max(1, Math.floor(h * canvasScale));
           if (box) {
             box.style.width = w + 'px';
             box.style.height = h + 'px';
-            box.style.overflow = 'hidden';
+            box.style.transform = '';
           }
           if (player) {
-            player.style.width = cw + 'px';
-            player.style.height = ch + 'px';
-            if (canvasScale !== 1) {
-              player.style.transformOrigin = '0 0';
-              player.style.transform = 'scale(' + (1 / canvasScale) + ')';
-            } else {
-              player.style.transform = '';
-            }
+            player.style.width = w + 'px';
+            player.style.height = h + 'px';
+            player.style.transform = '';
           }
         }
         fitPlayerToViewport();

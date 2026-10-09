@@ -26,11 +26,12 @@ final class RuffleLocalServer {
         0x00, 0x0C, 0x01, 0x00, 0x40, 0x00, 0x00, 0x00,
     ])
 
-    /// 回放时 stub 的路径片段（小写）。保留 action_/npc/mercenary/wuxing/bg/ui/xmls/loading/spchack。
+    /// 回放 stub（小写）。勿 stub leisure/ui/loading/xmls/spchack——缺了会卡死等 EI。
+    /// 只砍大厅装饰，给 action_gg 腾内存。
     static func shouldStubReplayAsset(_ lowPath: String) -> Bool {
         let keys = [
             "activehall", "worldmap", "fenxiang", "huangzuan", "choujiang", "stronger",
-            "xianxia", "leisure", "button/", "guanzhong", "zhenfa", "fenxiang",
+            "xianxia", "button/", "guanzhong", "zhenfa",
             "yuanwuge", "worldtree", "dragonarea", "shikong", "huashan", "huanjin",
             "rongyao", "haidao", "huodong", "limitbless", "xieshen", "horseyear",
             "almanac", "weiduan", "todaymust",

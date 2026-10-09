@@ -102,9 +102,10 @@ struct ReplayWebView: UIViewRepresentable {
         return wv
     }
 
-    private static func fightPageURL(base: String, preferMm: Bool, vanilla: Bool, lowmem: Bool = true) -> URL {
+    private static func fightPageURL(base: String, preferMm: Bool, vanilla: Bool, lowmem: Bool = false) -> URL {
         var s = base
         if !s.hasSuffix("/") { s += "/" }
+        // lowmem 半分辨率已停用（会把画面挤出视口）；保留参数兼容旧链接
         var q = "renderer=canvas&preferMm=\(preferMm ? 1 : 0)&replay=1&lowmem=\(lowmem ? 1 : 0)"
         if vanilla { q += "&wasm=vanilla" }
         return URL(string: "\(s)ruffle_fight/index.html?\(q)")!
