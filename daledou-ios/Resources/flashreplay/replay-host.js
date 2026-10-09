@@ -102,6 +102,16 @@
     }, 0);
   }
   window.FightReady = function () { ready = true; dispatch(); };
+  // iOS：loadingSWC 卡住时不会回调 FightReady；主 SWF loaded 后兜底推进
+  window.__daledouKickReady = function () {
+    if (!ready && active && payload && !failed) {
+      ready = true;
+      state('preparing', 'kick FightReady');
+      dispatch();
+      return true;
+    }
+    return false;
+  };
   window.FightComplete = function () { if (active) state('complete', '播放结束'); };
   window.getCookie = function (name) {
     // Use the binary URLLoader path: all requests go through the native interceptor.
@@ -151,8 +161,16 @@
       publicPath: origin + '/assets/flashreplay/ruffle/',
       upgradeToHttps: false, splashScreen: false, contextMenu: 'off',
       showSwfDownload: false, openUrlMode: 'deny', logLevel: 'warn',
-      // The original movie requires BitmapData.draw; only the wgpu renderer supports it.
-      preferredRenderer: 'wgpu-webgl', quality: 'low',
+      // Android 饭店助手用 wgpu-webgl；iOS WKWebView 下嵌套 Loader(loadingSWC) 会 2s 死循环。
+      // webgl 可过加载层；BitmapData.draw 在本 build 的 webgl 路径可用。强制 wgpu：?renderer=wgpu-webgl
+      preferredRenderer: (function () {
+        try {
+          var q = new URLSearchParams(location.search).get('renderer');
+          if (q === 'wgpu-webgl' || q === 'wgpu' || q === 'canvas' || q === 'webgl') return q === 'wgpu' ? 'wgpu-webgl' : q;
+        } catch (_) {}
+        return 'webgl';
+      })(),
+      quality: 'low',
       frameRate: 30,
       deviceFontRenderer: 'canvas',
       maxExecutionDuration: 60,
@@ -244,6 +262,14 @@
         if (desiredPaused) movie.player.ruffle().suspend();
         else movie.player.ruffle().resume();
         if (expected === generation) dispatch();
+        // 6s 仍无 FightReady（loadingSWC 死循环）则强制 kick
+        setTimeout(function () {
+          if (expected !== generation) return;
+          if (!ready) {
+            state('preparing', 'FightReady timeout → kick');
+            window.__daledouKickReady && window.__daledouKickReady();
+          }
+        }, 6000);
       } catch (_) {
         if (expected === generation) fail('动画播放器加载失败，请重试');
       }

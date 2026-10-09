@@ -223,6 +223,13 @@ final class RuffleLocalServer {
         }
 
         let name = remoteURL.lastPathComponent
+        // iOS：loadingSWC 嵌套 Loader 即使包内良品也 COMPLETE 不了 → 2s 死循环。
+        // 回放模式用空 SWF 让 Load.COMPLETE 立刻成功，越过加载层进 FightReady。
+        if name.lowercased().contains("loadingswc") {
+            log("STUB loadingSWC → empty (break nested Loader loop)")
+            respond(conn, status: 200, mime: "application/x-shockwave-flash", body: Self.emptySwf, headOnly: headOnly)
+            return
+        }
         // 复用 ActionPackPrefetch 已落盘的 action_gg/mm
         if low.contains("/swf/gres/action_") || low.contains("gres/action_") {
             let pref = ActionPackPrefetch.localURL(for: "gres/\(name)")

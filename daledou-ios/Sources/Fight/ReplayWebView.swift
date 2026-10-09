@@ -105,13 +105,14 @@ struct ReplayWebView: UIViewRepresentable {
         }
         do {
             let base = try server.start(flashRoot: flashRoot)
-            let pageURL = URL(string: base.absoluteString + "assets/flashreplay/index.html")!
-            context.coordinator.pageURL = pageURL
-            log.append("HTTP \(base.absoluteString) stack=fandian wgpu-webgl PetFunFight-v10.19")
+            // iOS 用 webgl（wgpu-webgl 会卡死 loadingSWC 嵌套 Loader）
+            let page = URL(string: base.absoluteString + "assets/flashreplay/index.html?renderer=webgl")!
+            context.coordinator.pageURL = page
+            log.append("HTTP \(base.absoluteString) stack=fandian webgl PetFunFight-v10.19")
             statusLine = "加载饭店助手播放器…"
-            log.append("load \(pageURL.absoluteString)")
+            log.append("load \(page.absoluteString)")
             DispatchQueue.main.async {
-                wv.load(URLRequest(url: pageURL))
+                wv.load(URLRequest(url: page))
             }
         } catch {
             let msg = "HTTP start FAIL \(error.localizedDescription)"
