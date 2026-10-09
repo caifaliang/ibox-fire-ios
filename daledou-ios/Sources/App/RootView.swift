@@ -20,12 +20,16 @@ struct RootView: View {
         }
         .onAppear { vm.bootstrap() }
         .confirmationDialog("菜单", isPresented: $vm.showMenu, titleVisibility: .visible) {
-            Button("一键登陆") { vm.openOneClickLogin() }
-            Button("扫码登陆") { vm.openScanLogin() }
+            Button("扫码登陆（推荐）") { vm.openScanLogin() }
+            Button("Cookie 登陆") { vm.openCookieLoginSheet() }
             Button("进入游戏首页") { vm.openGameHome() }
             Button("刷新") { vm.reload() }
             Button("退出登录", role: .destructive) { vm.logout() }
             Button("取消", role: .cancel) {}
+        }
+        .sheet(isPresented: $vm.showCookieSheet) {
+            CookiePasteSheet()
+                .environmentObject(vm)
         }
     }
 
@@ -51,5 +55,44 @@ struct RootView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .background(.ultraThinMaterial)
+    }
+}
+
+struct CookiePasteSheet: View {
+    @EnvironmentObject var vm: AppViewModel
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("从安卓已登录客户端或抓包复制 Cookie，粘贴下方。至少包含 skey=…")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                TextEditor(text: $vm.cookieDraft)
+                    .font(.system(.footnote, design: .monospaced))
+                    .frame(minHeight: 180)
+                    .padding(8)
+                    .background(Color(.systemGray6))
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                if !vm.cookieError.isEmpty {
+                    Text(vm.cookieError)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                }
+                Spacer()
+            }
+            .padding()
+            .navigationTitle("Cookie 登陆")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("写入并进入") { vm.applyPastedCookie() }
+                        .fontWeight(.semibold)
+                }
+            }
+        }
     }
 }

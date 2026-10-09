@@ -83,6 +83,21 @@ struct GameWebView: UIViewRepresentable {
             DispatchQueue.main.async { vm.pendingURL = nil }
         }
 
+        if context.coordinator.lastCookieInject != vm.cookieInjectToken {
+            context.coordinator.lastCookieInject = vm.cookieInjectToken
+            let header = SessionStore.shared.cookieHeader
+            let next = vm.pendingURL ?? URL(string: LoginURLs.ledouEntry)
+            Task { @MainActor in
+                if !header.isEmpty {
+                    await CookieBridge.inject(cookieHeader: header, into: webView)
+                }
+                if let u = next {
+                    webView.load(URLRequest(url: u))
+                    vm.pendingURL = nil
+                }
+            }
+        }
+
         if context.coordinator.lastReloadToken != vm.webReloadToken {
             context.coordinator.lastReloadToken = vm.webReloadToken
             webView.reload()
@@ -94,6 +109,7 @@ struct GameWebView: UIViewRepresentable {
         weak var webView: WKWebView?
         var lastReloadToken = 0
         var lastClearEpoch = 0
+        var lastCookieInject = 0
         var defaultUA: String?
         private var captureTask: Task<Void, Never>?
         private var lastContinueURL = ""

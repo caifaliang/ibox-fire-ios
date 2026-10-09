@@ -47,7 +47,7 @@ enum LoginURLs {
       p{color:#666;font-size:14px;line-height:1.5}
     </style></head><body><div class="box">
     <h1>大乐斗</h1>
-    <p>请点右上角菜单<br/>「一键登陆」或「扫码登陆」</p>
+    <p>请点右上角菜单<br/>「扫码登陆」或「Cookie 登陆」</p>
     </div></body></html>
     """
 
@@ -157,6 +157,5 @@ enum LoginURLs {
 
 enum LoginMode: String {
     case idle
-    case oneClick
     case scan
 }
