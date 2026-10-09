@@ -450,7 +450,7 @@
         };
         notifyAndroid('boot', {
           renderer: renderer,
-          wasm: forceVanilla ? 'vanilla' : 'auto',
+          wasm: forceVanilla ? 'vanilla' : 'lazy-shapes',
           publicPath: rufflePublicPath,
           dpr: window.__replayDpr,
           quality: qName,
