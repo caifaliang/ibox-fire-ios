@@ -113,6 +113,16 @@ final class AppViewModel: ObservableObject {
         if LoginURLs.isConnectMarketing(url), loginMode == .scan {
             statusText = "误入 QQ 互联首页，请重新扫码登陆"
             pendingURL = URL(string: LoginURLs.scanLedou)
+            return
+        }
+
+        // 已进 phonepk 首页：把「正在进入…」改成正式已登录
+        if session.isLoggedIn, LoginURLs.isInGameShell(url) {
+            let q = qqLabel.isEmpty ? (session.qq.isEmpty ? "?" : session.qq) : qqLabel
+            statusText = "已登录 QQ \(q)"
+            titleHint = "大乐斗"
+            preferDesktopUA = false
+            loginMode = .idle
         }
     }
 
