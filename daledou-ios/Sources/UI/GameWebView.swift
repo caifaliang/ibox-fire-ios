@@ -249,10 +249,9 @@ struct GameWebView: UIViewRepresentable {
                 let header = await CookieBridge.readCookieHeader(from: webView)
                 if LoginURLs.hasRealSkey(header) {
                     vm.onCookiesCaptured(header)
-                } else if vm.loginMode == .oneClick,
+                } else if vm.loginMode == .scan,
                           let u = webView.url,
                           LoginURLs.isGameHost(u) || LoginURLs.isOauthLanding(u) {
-                    // 再等一轮跳转写 Cookie
                     try? await Task.sleep(nanoseconds: 800_000_000)
                     let h2 = await CookieBridge.readCookieHeader(from: webView)
                     if LoginURLs.hasRealSkey(h2) {
