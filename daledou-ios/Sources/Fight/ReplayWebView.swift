@@ -64,7 +64,7 @@ struct ReplayWebView: UIViewRepresentable {
         log.append("bundleOK root=\(handler.rootPath)")
 
         let url = URL(
-            string: "\(RuffleSchemeHandler.scheme)://local/ruffle_fight/index.html?renderer=canvas"
+            string: "\(RuffleSchemeHandler.scheme)://local/ruffle_fight/index.html?renderer=canvas&preferMm=\(preferMm ? 1 : 0)"
         )!
         statusLine = "加载播放器…"
         log.append("load \(url.absoluteString)")

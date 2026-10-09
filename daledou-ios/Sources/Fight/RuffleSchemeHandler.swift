@@ -69,6 +69,17 @@ final class RuffleSchemeHandler: NSObject, WKURLSchemeHandler {
             notifyPack("parsed")
         }
 
+        // 对齐 Android：错性别主动作包回空 SWF，避免双包抢 Loader
+        if lowRel.contains("action_gg") || lowRel.contains("action_mm") {
+            let preferMm = ActionPackPrefetch.sessionPreferMm
+            let wrong = preferMm ? lowRel.contains("action_gg") : lowRel.contains("action_mm")
+            if wrong {
+                logRes("STUB wrong-gender \(rel)")
+                finish(urlSchemeTask, url: url, data: Self.emptySwf, mime: mime(for: rel))
+                return
+            }
+        }
+
         // 预下载缓存（Documents/ruffle_cdn）
         let cached = ActionPackPrefetch.localURL(for: rel.hasPrefix("gres/") ? rel : (path.contains("/gres/") ? "gres/" + (rel as NSString).lastPathComponent : rel))
         if (lowRel.contains("action_gg") || lowRel.contains("action_mm") || lowRel.hasPrefix("gres/")),
