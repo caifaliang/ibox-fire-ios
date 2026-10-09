@@ -15,11 +15,15 @@
 | `daledouapp://` 回调 | VIP / OTA |
 | 尝试一键唤 QQ | 后台保活 |
 
-## 登录说明
+## 登录说明（仅两种）
 
-- **主路径**：App 内 `WKWebView` 打开腾讯登录页，落地 `phonepk` 后从 `WKHTTPCookieStore` 读 Cookie。  
-- 页内若跳 `wtloginmqq`/`mqq`：**拦截并留在壳内**（改加载 https jump 或密码页），避免 QQ → 系统浏览器。  
-- iOS **不能**像安卓那样注册默认浏览器；真·唤 QQ 一键登录在 iOS 上易丢到 Safari，MVP 不用。
+| 方式 | 行为 |
+|------|------|
+| **一键登陆** | 真唤 `wtloginmqq` + `schemacallback=daledouapp://`；QQ 若回 App，壳内加载 jump 写 Cookie |
+| **扫码登陆** | 壳内 `graph.qq.com` + 桌面 UA；确认后 `continueAuthorize` → 游戏 |
+
+- 不做密码登录（WKWebView 风控过不去）。  
+- 一键若 QQ 不回调、落到 Safari/互联页 → 请改用扫码。
 
 ## 本机无 Mac
 

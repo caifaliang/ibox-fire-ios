@@ -20,10 +20,8 @@ struct RootView: View {
         }
         .onAppear { vm.bootstrap() }
         .confirmationDialog("菜单", isPresented: $vm.showMenu, titleVisibility: .visible) {
-            Button("壳内登录（推荐）") { vm.openInAppLogin() }
-            Button("密码登录（壳内）") { vm.openPasswordLogin() }
-            Button("扫码登录（壳内）") { vm.openScanLogin() }
-            Button("一键登录→壳内密码") { vm.tryOneClickWakeQQ() }
+            Button("一键登陆") { vm.openOneClickLogin() }
+            Button("扫码登陆") { vm.openScanLogin() }
             Button("进入游戏首页") { vm.openGameHome() }
             Button("刷新") { vm.reload() }
             Button("退出登录", role: .destructive) { vm.logout() }
