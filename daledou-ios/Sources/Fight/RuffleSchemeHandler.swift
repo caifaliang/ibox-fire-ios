@@ -83,27 +83,31 @@ final class RuffleSchemeHandler: NSObject, WKURLSchemeHandler {
         // 预下载缓存（Documents/ruffle_cdn）
         let cached = ActionPackPrefetch.localURL(for: rel.hasPrefix("gres/") ? rel : (path.contains("/gres/") ? "gres/" + (rel as NSString).lastPathComponent : rel))
         if (lowRel.contains("action_gg") || lowRel.contains("action_mm") || lowRel.hasPrefix("gres/")),
-           FileManager.default.fileExists(atPath: cached.path),
-           let data = try? Data(contentsOf: cached), data.count > 1000 {
-            logRes("CACHE \(rel) \(data.count)B")
-            finish(urlSchemeTask, url: url, data: data, mime: mime(for: rel))
-            if lowRel.contains("action_gg") || lowRel.contains("action_mm"),
-               !lowRel.contains("gg2"), !lowRel.contains("mm2") {
-                notifyPack("delivered")
+           FileManager.default.fileExists(atPath: cached.path) {
+            if lowRel.hasSuffix(".swf") { _ = SwfPrefixStrip.stripFileIfNeeded(cached) }
+            if let data = try? Data(contentsOf: cached), data.count > 1000 {
+                logRes("CACHE \(rel) \(data.count)B sigOK=\(SwfPrefixStrip.hasValidSig(data))")
+                finish(urlSchemeTask, url: url, data: data, mime: mime(for: rel))
+                if lowRel.contains("action_gg") || lowRel.contains("action_mm"),
+                   !lowRel.contains("gg2"), !lowRel.contains("mm2") {
+                    notifyPack("delivered")
+                }
+                return
             }
-            return
         }
         // 兼容 rel 已是 gres/xxx
         let cached2 = ActionPackPrefetch.localURL(for: rel)
-        if FileManager.default.fileExists(atPath: cached2.path),
-           let data = try? Data(contentsOf: cached2), data.count > 1000 {
-            logRes("CACHE2 \(rel) \(data.count)B")
-            finish(urlSchemeTask, url: url, data: data, mime: mime(for: rel))
-            if lowRel.contains("action_gg") || lowRel.contains("action_mm"),
-               !lowRel.contains("gg2"), !lowRel.contains("mm2") {
-                notifyPack("delivered")
+        if FileManager.default.fileExists(atPath: cached2.path) {
+            if lowRel.hasSuffix(".swf") { _ = SwfPrefixStrip.stripFileIfNeeded(cached2) }
+            if let data = try? Data(contentsOf: cached2), data.count > 1000 {
+                logRes("CACHE2 \(rel) \(data.count)B")
+                finish(urlSchemeTask, url: url, data: data, mime: mime(for: rel))
+                if lowRel.contains("action_gg") || lowRel.contains("action_mm"),
+                   !lowRel.contains("gg2"), !lowRel.contains("mm2") {
+                    notifyPack("delivered")
+                }
+                return
             }
-            return
         }
 
         let local = root.appendingPathComponent(rel)
@@ -234,10 +238,18 @@ final class RuffleSchemeHandler: NSObject, WKURLSchemeHandler {
                 self.fail(task, err)
                 return
             }
-            let payload = data ?? Data()
+            var payload = data ?? Data()
             let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
-            let mime = (resp as? HTTPURLResponse)?.mimeType
+            var mime = (resp as? HTTPURLResponse)?.mimeType
                 ?? self.mime(for: remote.lastPathComponent)
+            if remote.pathExtension.lowercased() == "swf" {
+                let before = payload.count
+                payload = SwfPrefixStrip.stripData(payload)
+                if payload.count != before {
+                    self.logRes("STRIP CDN \(remote.lastPathComponent) -\(before - payload.count)B")
+                }
+                mime = "application/x-shockwave-flash"
+            }
             self.logRes("CDN OK \(code) \(remote.lastPathComponent) \(payload.count)B")
             // 大动作包落盘，下次直接读缓存
             if let rel, payload.count > 1_000_000,

@@ -183,16 +183,20 @@ final class RuffleLocalServer {
             return [ActionPackPrefetch.localURL(for: fileRel)]
         }()
         for cached in cacheCandidates {
-            if FileManager.default.fileExists(atPath: cached.path),
-               let data = try? Data(contentsOf: cached), data.count > 1000 {
-                if low.contains("action_gg") || low.contains("action_mm") {
-                    log("CACHE \(fileRel) \(data.count)B")
-                    if !low.contains("gg2"), !low.contains("mm2") {
-                        log("PACK delivered via HTTP \(data.count)B")
-                    }
+            if FileManager.default.fileExists(atPath: cached.path) {
+                if low.hasSuffix(".swf"), SwfPrefixStrip.stripFileIfNeeded(cached) {
+                    log("STRIP \(fileRel)")
                 }
-                respond(conn, status: 200, mime: mime(fileRel), body: data, headOnly: headOnly)
-                return
+                if let data = try? Data(contentsOf: cached), data.count > 1000 {
+                    if low.contains("action_gg") || low.contains("action_mm") {
+                        log("CACHE \(fileRel) \(data.count)B sigOK=\(SwfPrefixStrip.hasValidSig(data))")
+                        if !low.contains("gg2"), !low.contains("mm2") {
+                            log("PACK delivered via HTTP \(data.count)B")
+                        }
+                    }
+                    respond(conn, status: 200, mime: mime(fileRel), body: data, headOnly: headOnly)
+                    return
+                }
             }
         }
 
@@ -246,9 +250,17 @@ final class RuffleLocalServer {
                 self.respond(conn, status: 502, mime: "text/plain", body: Data("cdn fail".utf8))
                 return
             }
-            let payload = data ?? Data()
+            var payload = data ?? Data()
             let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
-            let mime = (resp as? HTTPURLResponse)?.mimeType ?? self.mime(remote.lastPathComponent)
+            var mime = (resp as? HTTPURLResponse)?.mimeType ?? self.mime(remote.lastPathComponent)
+            if remote.pathExtension.lowercased() == "swf" {
+                let before = payload.count
+                payload = SwfPrefixStrip.stripData(payload)
+                if payload.count != before {
+                    self.log("STRIP CDN \(remote.lastPathComponent) -\(before - payload.count)B")
+                }
+                mime = "application/x-shockwave-flash"
+            }
             self.log("CDN OK \(code) \(remote.lastPathComponent) \(payload.count)B")
             if let rel, payload.count > 1_000_000,
                rel.contains("action_gg") || rel.contains("action_mm") {
@@ -285,10 +297,37 @@ final class RuffleLocalServer {
         head += "Access-Control-Allow-Origin: *\r\n"
         head += "Connection: close\r\n"
         head += "\r\n"
-        var packet = Data(head.utf8)
-        if !headOnly { packet.append(body) }
-        conn.send(content: packet, completion: .contentProcessed { _ in
+        let headerData = Data(head.utf8)
+        if headOnly || body.isEmpty {
+            conn.send(content: headerData, completion: .contentProcessed { _ in
+                conn.cancel()
+            })
+            return
+        }
+        // 大包分块发送，避免单次 send 37MB 后提前 cancel 截断
+        conn.send(content: headerData, completion: .contentProcessed { [weak self] error in
+            if error != nil {
+                conn.cancel()
+                return
+            }
+            self?.sendBody(body, on: conn, offset: 0)
+        })
+    }
+
+    private func sendBody(_ body: Data, on conn: NWConnection, offset: Int) {
+        let chunk = 256 * 1024
+        if offset >= body.count {
             conn.cancel()
+            return
+        }
+        let end = min(offset + chunk, body.count)
+        let slice = body.subdata(in: offset..<end)
+        conn.send(content: slice, completion: .contentProcessed { [weak self] error in
+            if error != nil {
+                conn.cancel()
+                return
+            }
+            self?.sendBody(body, on: conn, offset: end)
         })
     }
 

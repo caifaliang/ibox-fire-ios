@@ -35,7 +35,10 @@ enum ActionPackPrefetch {
         let f = localURL(for: rel)
         guard let attrs = try? FileManager.default.attributesOfItem(atPath: f.path),
               let size = attrs[.size] as? NSNumber else { return false }
-        return size.int64Value > 1_000_000
+        guard size.int64Value > 1_000_000 else { return false }
+        // 已缓存但仍带 CDN 前缀时当场剥掉，避免开战 sal_base_err io
+        _ = SwfPrefixStrip.stripFileIfNeeded(f)
+        return !SwfPrefixStrip.needsStrip(fileURL: f)
     }
 
     static func ensure(
@@ -68,6 +71,11 @@ enum ActionPackPrefetch {
         let size = (try? FileManager.default.attributesOfItem(atPath: tmpURL.path)[.size] as? NSNumber)?.int64Value ?? 0
         try? FileManager.default.removeItem(at: dest)
         try FileManager.default.moveItem(at: tmpURL, to: dest)
-        await onProgress("动作包就绪 \(max(1, size / 1024 / 1024))MB")
+        // CDN 可能带 NUL 前缀；不剥则 Flash Loader 立刻 sal_base_err io
+        if SwfPrefixStrip.stripFileIfNeeded(dest) {
+            await onProgress("已剥离 CDN 前缀")
+        }
+        let finalSize = (try? FileManager.default.attributesOfItem(atPath: dest.path)[.size] as? NSNumber)?.int64Value ?? size
+        await onProgress("动作包就绪 \(max(1, finalSize / 1024 / 1024))MB")
     }
 }

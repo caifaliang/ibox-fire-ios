@@ -16,6 +16,12 @@ struct ReplayWebView: UIViewRepresentable {
         let preferMm = ActionPackPrefetch.preferMm(from: act)
         ActionPackPrefetch.sessionPreferMm = preferMm
         log.append("boot replayId=\(replayId) actLen=\(act.count) preferMm=\(preferMm)")
+        let packRel = preferMm ? ActionPackPrefetch.mmRel : ActionPackPrefetch.ggRel
+        let packFile = ActionPackPrefetch.localURL(for: packRel)
+        if FileManager.default.fileExists(atPath: packFile.path) {
+            let stripped = SwfPrefixStrip.stripFileIfNeeded(packFile)
+            log.append("packFile strip=\(stripped) needs=\(SwfPrefixStrip.needsStrip(fileURL: packFile))")
+        }
         log.append("diskReady=\(ActionPackPrefetch.isDiskReady(preferMm: preferMm))")
 
         let config = WKWebViewConfiguration()
