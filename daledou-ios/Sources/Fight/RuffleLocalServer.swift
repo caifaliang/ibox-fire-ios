@@ -211,18 +211,22 @@ final class RuffleLocalServer {
                 }
                 let size = (try? FileManager.default.attributesOfItem(atPath: cached.path)[.size] as? NSNumber)?.int64Value ?? 0
                 if size > 1000 {
+                    if low.contains("action_gg") || low.contains("action_mm"),
+                       !low.contains("gg2"), !low.contains("mm2") {
+                        // 最后一道闸：若仍是 ZWS，同步 inflate 后再送
+                        if SwfZwsInflate.signature(of: cached) == "ZWS" {
+                            log("PACK still ZWS → force inflate before HTTP")
+                            _ = SwfZwsInflate.inflateFileIfNeeded(cached) { log($0) }
+                        }
+                        let sig = SwfZwsInflate.signature(of: cached)
+                        let sz = (try? FileManager.default.attributesOfItem(atPath: cached.path)[.size] as? NSNumber)?.int64Value ?? size
+                        log("CACHE stream \(fileRel) \(sz)B sig=\(sig)")
+                        log("PACK delivered via HTTP \(sz)B sig=\(sig)")
+                        respondFile(conn, fileURL: cached, mime: mime(fileRel), headOnly: headOnly)
+                        return
+                    }
                     if low.contains("action_gg") || low.contains("action_mm") {
-                        // 记录签名，确认路线 A 是否已 FWS（无 LZMA）
-                        var sig = "?"
-                        if let fh = try? FileHandle(forReadingFrom: cached) {
-                            let h = fh.readData(ofLength: 3)
-                            try? fh.close()
-                            if h.count == 3, let s = String(bytes: h, encoding: .ascii) { sig = s }
-                        }
-                        log("CACHE stream \(fileRel) \(size)B sig=\(sig)")
-                        if !low.contains("gg2"), !low.contains("mm2") {
-                            log("PACK delivered via HTTP \(size)B sig=\(sig)")
-                        }
+                        log("CACHE stream \(fileRel) \(size)B sig=\(SwfZwsInflate.signature(of: cached))")
                     }
                     // 大文件流式读盘，避免 App 进程再吞一份 37MB
                     respondFile(conn, fileURL: cached, mime: mime(fileRel), headOnly: headOnly)

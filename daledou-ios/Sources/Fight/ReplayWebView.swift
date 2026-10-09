@@ -26,9 +26,24 @@ struct ReplayWebView: UIViewRepresentable {
         let packFile = ActionPackPrefetch.localURL(for: packRel)
         if FileManager.default.fileExists(atPath: packFile.path) {
             let stripped = SwfPrefixStrip.stripFileIfNeeded(packFile)
-            log.append("packFile strip=\(stripped) needs=\(SwfPrefixStrip.needsStrip(fileURL: packFile))")
+            let beforeSig = SwfZwsInflate.signature(of: packFile)
+            let beforeSize = (try? FileManager.default.attributesOfItem(atPath: packFile.path)[.size] as? NSNumber)?.int64Value ?? 0
+            log.append("packFile strip=\(stripped) sig=\(beforeSig) size=\(beforeSize)")
+            // 双保险：ensure 若未 inflate，开战前在此强制 ZWS→FWS（写入本日志）
+            if beforeSig == "ZWS" {
+                statusLine = "预解压动作包…"
+                let ok = SwfZwsInflate.inflateFileIfNeeded(packFile) { msg in
+                    log.append(msg)
+                }
+                let afterSig = SwfZwsInflate.signature(of: packFile)
+                let afterSize = (try? FileManager.default.attributesOfItem(atPath: packFile.path)[.size] as? NSNumber)?.int64Value ?? 0
+                log.append("packInflate ok=\(ok) → sig=\(afterSig) size=\(afterSize)")
+                if afterSig == "ZWS" {
+                    log.append("WARN still ZWS — WebContent will LZMA (OOM risk)")
+                }
+            }
         }
-        log.append("diskReady=\(ActionPackPrefetch.isDiskReady(preferMm: preferMm))")
+        log.append("diskReady=\(ActionPackPrefetch.isDiskReady(preferMm: preferMm)) sig=\(SwfZwsInflate.signature(of: packFile))")
 
         let warm = RuffleWarmHolder.shared
         if warm.canReuse(preferMm: preferMm), let wv = warm.webView {
