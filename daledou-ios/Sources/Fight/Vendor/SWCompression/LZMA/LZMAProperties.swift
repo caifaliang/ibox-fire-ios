@@ -3,6 +3,8 @@
 //
 // See LICENSE for license information
 
+import Foundation
+
 
 /// Properties of LZMA. This API is intended to be used by advanced users.
 public struct LZMAProperties {
