@@ -216,7 +216,7 @@ final class RuffleLocalServer {
                         // 最后一道闸：若仍是 ZWS，同步 inflate 后再送
                         if SwfZwsInflate.signature(of: cached) == "ZWS" {
                             log("PACK still ZWS → force inflate before HTTP")
-                            _ = SwfZwsInflate.inflateFileIfNeeded(cached) { log($0) }
+                            _ = SwfZwsInflate.inflateFileIfNeeded(cached) { self.log($0) }
                         }
                         let sig = SwfZwsInflate.signature(of: cached)
                         let sz = (try? FileManager.default.attributesOfItem(atPath: cached.path)[.size] as? NSNumber)?.int64Value ?? size
