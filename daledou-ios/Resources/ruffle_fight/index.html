@@ -231,19 +231,25 @@
           } catch (_) {}
         }
 
-        setStatus('loading ruffle…');
+        // 自定义 scheme 下必须显式 publicPath，否则找不到同目录 .wasm
+        const rufflePublicPath = new URL('ruffle/', location.href).href;
+        setStatus('loading ruffle… ' + rufflePublicPath);
+        window.RufflePlayer = window.RufflePlayer || {};
+        window.RufflePlayer.config = Object.assign({}, window.RufflePlayer.config || {}, {
+          publicPath: rufflePublicPath
+        });
         await new Promise((resolve, reject) => {
           const s = document.createElement('script');
-          s.src = 'ruffle/ruffle.js';
+          s.src = rufflePublicPath + 'ruffle.js';
           s.onload = resolve;
           s.onerror = () => reject(new Error('ruffle.js'));
           document.head.appendChild(s);
         });
-        window.RufflePlayer = window.RufflePlayer || {};
         // 对齐 0.1.120 可用配置；勿加 maxExecutionDuration（部分构建会异常）
         // showAll：整场舞台完整可见（血条/名称在边缘，不可裁切）
         // letterbox on：按手机横屏比例等比缩放，多余区域留黑边
         const baseCfg = {
+          publicPath: rufflePublicPath,
           preferredRenderer: renderer,
           quality: 'low',
           letterbox: 'on',
@@ -252,7 +258,7 @@
           unmuteOverlay: 'hidden',
           warnOnUnsupportedContent: false,
           deviceFontRenderer: 'canvas',
-          fontSources: ['fonts/hud_cjk.ttf'],
+          fontSources: [new URL('fonts/hud_cjk.ttf', location.href).href],
           defaultFonts: {
             sans: ['Noto Sans SC'],
             serif: ['Noto Sans SC'],
@@ -262,6 +268,7 @@
         notifyAndroid('boot', {
           renderer: renderer,
           wasm: forceVanilla ? 'vanilla' : 'auto',
+          publicPath: rufflePublicPath,
           sdkHint: navigator.userAgent
         });
         window.RufflePlayer.config = Object.assign({}, window.RufflePlayer.config || {}, baseCfg);
