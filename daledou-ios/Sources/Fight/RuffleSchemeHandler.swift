@@ -168,7 +168,9 @@ final class RuffleSchemeHandler: NSObject, WKURLSchemeHandler {
         switch ext {
         case "html", "htm": return "text/html"
         case "js": return "text/javascript"
-        case "wasm": return "application/wasm"
+        // WKWebView + 自定义 scheme：application/wasm 会走 instantiateStreaming 并失败；
+        // octet-stream 迫使 Ruffle/wasm-bindgen 走 arrayBuffer + instantiate 回退路径。
+        case "wasm": return "application/octet-stream"
         case "json": return "application/json"
         case "xml": return "text/xml"
         case "swf": return "application/x-shockwave-flash"
