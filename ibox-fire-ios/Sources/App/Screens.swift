@@ -61,13 +61,13 @@ struct MainShell: View {
                             HStack(spacing: 4) {
                                 Text(k).font(.caption2.bold())
                                 Button("停") {
-                                    if let kind = TaskKind(rawValue: k) { runner.stop(kind) }
+                                    if let kind = TaskKind(rawValue: k) { vm.stopTask(kind) }
                                 }.font(.caption2).foregroundStyle(.red)
                             }
                             .padding(.horizontal, 8).padding(.vertical, 4)
                             .background(Color.green.opacity(0.15)).clipShape(Capsule())
                         }
-                        Button("全部停止") { runner.stopAll() }
+                        Button("全部停止") { vm.stopAllTasks() }
                             .font(.caption2.bold()).foregroundStyle(.red)
                     }.padding(.horizontal)
                 }.padding(.vertical, 4)
@@ -81,6 +81,21 @@ struct MainShell: View {
             }
 
             if vm.techMode != .profile {
+                if vm.appPlatform == .ibox {
+                    HStack(spacing: 0) {
+                        ForEach(FeatureCat.allCases) { cat in
+                            Button(cat.label) { vm.selectFeatureCat(cat) }
+                                .font(.caption.bold())
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 8)
+                                .background(vm.featureCat == cat ? Color.primary : Color(.systemGray5))
+                                .foregroundStyle(vm.featureCat == cat ? Color(.systemBackground) : .primary)
+                        }
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .padding(.horizontal)
+                    .padding(.bottom, 4)
+                }
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
                         ForEach(vm.appPlatform == .ibox ? vm.iboxTabs : vm.nbTabs) { t in
@@ -112,7 +127,12 @@ struct MainShell: View {
     private func platformBtn(_ p: AppPlatform, _ title: String) -> some View {
         Button(title) {
             vm.appPlatform = p
-            vm.techMode = p == .ibox ? .announce : .nb_presale
+            if p == .ibox {
+                vm.featureCat = .tech
+                vm.techMode = .seg_snipe
+            } else {
+                vm.techMode = .nb_presale
+            }
         }
         .font(.headline)
         .foregroundStyle(vm.appPlatform == p ? .primary : .secondary)
@@ -289,7 +309,7 @@ struct ModeLogPanel: View {
                 HStack {
                     Text("日志").font(.caption.bold())
                     Text("\(vm.currentLogs.count)").font(.caption2).foregroundStyle(.secondary)
-                    if !runner.runningKinds.isEmpty {
+                    if vm.isCurrentModeLive {
                         Text("LIVE").font(.caption2.bold()).foregroundStyle(.red)
                     }
                     Spacer()
@@ -456,6 +476,8 @@ struct ModePane: View {
             ScrollView {
                 Group {
                     switch vm.techMode {
+                    case .seg_snipe: SegSnipePane()
+                    case .recommend_lock: RecommendLockPane()
                     case .announce: AnnouncePane()
                     case .synth: SynthPane()
                     case .presale: PresalePane()
@@ -464,7 +486,12 @@ struct ModePane: View {
                     case .precision: PrecisionPane()
                     case .batch: BatchPane()
                     case .sweep: SweepPane()
-                    case .query: QueryPane()
+                    case .query, .query_purchase, .query_consignment: QueryPane()
+                    case .holdings: HoldingsPane()
+                    case .market_push: MarketPushPane()
+                    case .price_alert: PriceAlertPane()
+                    case .announce_push: AnnouncePushPane()
+                    case .discover_push: DiscoverPushPane()
                     case .nb_presale: NbPresalePane()
                     case .nb_snipe: NbSnipePane()
                     default: EmptyView()
@@ -1069,7 +1096,10 @@ struct QueryPane: View {
     @EnvironmentObject var runner: TaskRunner
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("查求购数 / 挂单数 · 深度翻页 + 价格分布").font(.caption).foregroundStyle(.secondary)
+            Text(vm.techMode == .query_consignment || vm.queryKind == "consignment"
+                 ? "查挂单数 · 深度翻页 + 价格分布"
+                 : "查求购数 · 深度翻页 + 价格分布")
+                .font(.caption).foregroundStyle(.secondary)
             if !vm.iboxLoggedIn {
                 IboxLoginCard()
             } else if vm.queryGid <= 0 {
@@ -1079,9 +1109,11 @@ struct QueryPane: View {
                     vm.queryGid = 0; vm.queryCname = ""
                     vm.queryTiers = []; vm.queryScanned = 0; vm.queryApiTotal = 0
                 })
+                if vm.techMode == .query {
                 HStack {
                     ModeChip(title: "查求购数", selected: vm.queryKind == "purchase") { vm.queryKind = "purchase" }
                     ModeChip(title: "查挂单数", selected: vm.queryKind == "consignment") { vm.queryKind = "consignment" }
+                }
                 }
                 Text("查询深度").font(.caption)
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 4), spacing: 6) {
@@ -1104,8 +1136,12 @@ struct QueryPane: View {
                     }
                     .padding(10).background(Color(.systemGray6)).clipShape(RoundedRectangle(cornerRadius: 10))
                 }
-                StopStartButton(running: runner.isRunning(.query), startTitle: "开始查询（本地）", stopTitle: "停止查询", enabled: vm.isVip, onStart: { vm.startQuery() }, onStop: { runner.stop(.query) })
+                StopStartButton(running: runner.isRunning(.query), startTitle: "开始查询（本地）", stopTitle: "停止查询", enabled: vm.isVip, onStart: { vm.startQuery() }, onStop: { vm.stopTask(.query) })
             }
+        }
+        .onAppear {
+            if vm.techMode == .query_purchase { vm.queryKind = "purchase" }
+            if vm.techMode == .query_consignment { vm.queryKind = "consignment" }
         }
     }
 }
@@ -1206,5 +1242,371 @@ struct NbSnipePane: View {
         case "batch": return "批量：batchBuy（汇付140），间隔 2s"
         default: return "交叉：批量→快捷→快捷→批量…，间隔 1s"
         }
+    }
+}
+
+// MARK: - 全盘捡漏 / 推荐锁定 / 推送 / 持仓
+
+struct SegSnipePane: View {
+    @EnvironmentObject var vm: AppViewModel
+    @EnvironmentObject var runner: TaskRunner
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("扫板块地板 · 相对启动基线跌幅达标后下单 · 成功自动停 · 音频保活可锁屏")
+                .font(.caption).foregroundStyle(.secondary)
+            if !vm.iboxLoggedIn {
+                IboxLoginCard()
+            } else {
+            Group {
+            HStack {
+                Text("选择板块").font(.subheadline.bold())
+                Spacer()
+                Button(vm.segSnipeSegmentsLoading ? "加载中…" : "刷新板块") {
+                    Task { await vm.loadSegSnipeSegments(silent: false) }
+                }.font(.caption).disabled(vm.segSnipeSegmentsLoading || runner.isRunning(.segSnipe))
+            }
+            if vm.segSnipeSegments.isEmpty {
+                Text("暂无板块，点「刷新板块」").font(.caption).foregroundStyle(.secondary)
+            } else {
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 3), spacing: 6) {
+                    ForEach(vm.segSnipeSegments) { seg in
+                        ModeChip(title: seg.name, selected: vm.segSnipeSegmentId == seg.id) {
+                            if !runner.isRunning(.segSnipe) { vm.selectSegSnipe(seg) }
+                        }
+                    }
+                }
+            }
+            if !vm.segSnipeSegmentName.isEmpty {
+                Text("当前：\(vm.segSnipeSegmentName)").font(.caption2).foregroundStyle(.secondary)
+            }
+            HStack {
+                TextField("间隔秒", text: $vm.segSnipeIntervalSec).keyboardType(.decimalPad).fieldStyle()
+                TextField("跌幅%", text: $vm.segSnipeDropPct).keyboardType(.decimalPad).fieldStyle()
+            }
+            HStack {
+                TextField("数量", text: $vm.segSnipeQty).keyboardType(.numberPad).fieldStyle()
+                TextField("成功上限", text: $vm.segSnipeMaxSuccess).keyboardType(.numberPad).fieldStyle()
+            }
+            TextField("最高买入价（可选）", text: $vm.segSnipeMaxPrice).keyboardType(.decimalPad).fieldStyle()
+            Toggle("自动支付（汇付）", isOn: $vm.segSnipeAutoPay)
+                .disabled(runner.isRunning(.segSnipe))
+            if vm.segSnipeAutoPay {
+                SecureField("支付密码", text: $vm.segSnipePayPwd).fieldStyle()
+                    .disabled(runner.isRunning(.segSnipe))
+            }
+            StopStartButton(
+                running: runner.isRunning(.segSnipe),
+                startTitle: "开始全盘捡漏",
+                stopTitle: "停止全盘捡漏",
+                enabled: vm.isVip && vm.segSnipeSegmentId >= 0,
+                onStart: { vm.startSegSnipe() },
+                onStop: { vm.stopTask(.segSnipe) }
+            )
+            }
+            }
+        }
+        .onAppear { if vm.segSnipeSegments.isEmpty { Task { await vm.loadSegSnipeSegments(silent: true) } } }
+    }
+}
+
+struct RecommendLockPane: View {
+    @EnvironmentObject var vm: AppViewModel
+    @EnvironmentObject var runner: TaskRunner
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("约300ms 扫发现趋势（同公告锁）· 上新批量锁该图 · 出支付链接 · 月/年卡 · 日志实时")
+                .font(.caption).foregroundStyle(.secondary)
+            if !vm.iboxLoggedIn {
+                IboxLoginCard()
+            } else {
+            TextField("批量数量", text: $vm.recommendLockQty).keyboardType(.numberPad).fieldStyle()
+                .disabled(runner.isRunning(.recommendLock))
+            TextField("最高单价（可选，空=用地板，≥11）", text: $vm.recommendLockMaxPrice).keyboardType(.decimalPad).fieldStyle()
+                .disabled(runner.isRunning(.recommendLock))
+            StopStartButton(
+                running: runner.isRunning(.recommendLock),
+                startTitle: "开始推荐锁定",
+                stopTitle: "停止推荐锁定",
+                enabled: vm.canAnnounce,
+                onStart: { vm.startRecommendLock() },
+                onStop: { vm.stopTask(.recommendLock) }
+            )
+            }
+        }
+    }
+}
+
+struct PushWatchHeader: View {
+    @EnvironmentObject var vm: AppViewModel
+    @EnvironmentObject var runner: TaskRunner
+    let kind: String
+    let subtitle: String
+    private var enabled: Bool {
+        switch kind {
+        case "price": return vm.pushPriceEnabled
+        case "announce": return vm.pushAnnounceEnabled
+        case "discover": return vm.pushDiscoverEnabled
+        default: return vm.pushMarketEnabled
+        }
+    }
+    private var titleOn: String {
+        switch kind {
+        case "price": return "单图预警监视中"
+        case "announce": return "公告推送中"
+        case "discover": return "发现趋势推送中"
+        default: return "全图异动监视中"
+        }
+    }
+    private var stopKind: TaskKind {
+        switch kind {
+        case "price": return .priceAlert
+        case "announce": return .announcePush
+        case "discover": return .discoverPush
+        default: return .marketPush
+        }
+    }
+    private var isRunning: Bool {
+        switch kind {
+        case "announce": return runner.isRunning(.announcePush)
+        case "discover": return runner.isRunning(.discoverPush)
+        default: return runner.isRunning(.marketPush) && enabled
+        }
+    }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(enabled ? (isRunning ? titleOn : "\(titleOn)（待启动）") : titleOn.replacingOccurrences(of: "中", with: "未开"))
+                        .font(.subheadline.bold())
+                    Text(subtitle).font(.caption2).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Toggle("", isOn: Binding(
+                    get: { enabled },
+                    set: { vm.setPushWatchEnabled($0, kind: kind) }
+                )).labelsHidden().disabled(!vm.isVip)
+            }
+            HStack(spacing: 8) {
+                Button(vm.pushWatchLoading ? "同步中…" : "同步网站配置") {
+                    Task { await vm.refreshPushWatchConfig(silent: false) }
+                }.buttonStyle(.bordered).font(.caption).disabled(vm.pushWatchLoading)
+                if enabled && isRunning {
+                    Button("停止本路") {
+                        if kind == "market" || kind == "price" {
+                            vm.setPushWatchEnabled(false, kind: kind)
+                        } else {
+                            runner.stop(stopKind)
+                            vm.setPushWatchEnabled(false, kind: kind)
+                        }
+                    }.buttonStyle(.borderedProminent).tint(.red).font(.caption)
+                }
+            }
+            Text("微信推送（WxPusher UID）").font(.caption.bold())
+            TextField("UID（网站绑定过可自动同步）", text: $vm.pushWxUid).fieldStyle()
+            Button("绑定微信 UID") { vm.bindPushWx() }
+                .buttonStyle(.bordered).frame(maxWidth: .infinity).font(.caption)
+        }
+        .padding(10).background(Color(.systemGray6)).clipShape(RoundedRectangle(cornerRadius: 10))
+    }
+}
+
+struct MarketPushPane: View {
+    @EnvironmentObject var vm: AppViewModel
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("本机 30s 扫行情 · 关注藏品成交≥5 / 1h±15% · 系统通知 + 微信")
+                .font(.caption).foregroundStyle(.secondary)
+            if !vm.siteLoggedIn {
+                Text("请先登录网站会员").font(.caption).foregroundStyle(.orange)
+            } else {
+            PushWatchHeader(kind: "market", subtitle: "仅控制全图异动 · 与单图预警开关独立 · 需登录 iBox")
+            Text("关注列表 · \(vm.pushFollows.count)").font(.subheadline.bold())
+            TextField("搜索藏品并关注", text: Binding(
+                get: { vm.pushFollowSearch },
+                set: { v in vm.pushFollowSearch = v; vm.searchColl(v) }
+            )).fieldStyle()
+            if !vm.collHits.isEmpty && !vm.pushFollowSearch.isEmpty {
+                ForEach(vm.collHits.prefix(8)) { hit in
+                    Button { vm.togglePushFollow(hit) } label: {
+                        HStack {
+                            Text(hit.name).font(.caption).lineLimit(1)
+                            Spacer()
+                            Text("关注/取消").font(.caption2).foregroundStyle(.blue)
+                        }
+                    }
+                    Divider()
+                }
+            }
+            ForEach(Array(vm.pushFollows.prefix(40))) { f in
+                let blocked = vm.pushBlocks.contains { $0.groupId == f.groupId }
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(f.groupName).font(.caption).lineLimit(1)
+                        Text("GID \(f.groupId)").font(.caption2).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button(blocked ? "取消屏蔽" : "屏蔽") { vm.togglePushBlock(groupId: f.groupId, groupName: f.groupName) }
+                        .font(.caption2)
+                    Button("取消") { vm.togglePushFollow(CollHit(id: f.groupId, name: f.groupName)) }
+                        .font(.caption2).foregroundStyle(.red)
+                }
+                Divider()
+            }
+            if vm.pushFollows.isEmpty {
+                Text("暂无关注 · 与网站 /follow 同步").font(.caption2).foregroundStyle(.secondary)
+            }
+            }
+        }
+        .onAppear { Task { await vm.refreshPushWatchConfig(silent: true) } }
+    }
+}
+
+struct PriceAlertPane: View {
+    @EnvironmentObject var vm: AppViewModel
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(vm.pushAlertDraftGid > 0
+                 ? "设置该图上涨/下跌线 · 保存后由本机监视触发"
+                 : "搜索选图 → 进入该图预警页 · 系统通知 + 微信")
+                .font(.caption).foregroundStyle(.secondary)
+            if !vm.siteLoggedIn {
+                Text("请先登录网站会员").font(.caption).foregroundStyle(.orange)
+            } else {
+            if vm.pushAlertDraftGid > 0 {
+                HStack {
+                    Button { vm.clearPushAlertDraft() } label: { Image(systemName: "chevron.left") }
+                    VStack(alignment: .leading) {
+                        Text(vm.pushAlertDraftName).font(.subheadline.bold()).lineLimit(2)
+                        Text("GID \(vm.pushAlertDraftGid)").font(.caption2).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                }
+                HStack {
+                    TextField("上涨≥", text: $vm.pushAlertDraftUp).keyboardType(.decimalPad).fieldStyle()
+                    TextField("下跌≤", text: $vm.pushAlertDraftDown).keyboardType(.decimalPad).fieldStyle()
+                }
+                Button("保存预警") { vm.savePushAlert() }
+                    .buttonStyle(.borderedProminent).frame(maxWidth: .infinity)
+                PushWatchHeader(kind: "price", subtitle: "仅控制单图预警 · 与全图异动开关独立")
+            } else {
+                PushWatchHeader(kind: "price", subtitle: "仅控制单图预警 · 与全图异动开关独立 · 需登录 iBox")
+                Text("添加单图预警").font(.subheadline.bold())
+                TextField("搜索藏品", text: Binding(
+                    get: { vm.pushFollowSearch },
+                    set: { v in vm.pushFollowSearch = v; vm.searchColl(v) }
+                )).fieldStyle()
+                if !vm.collHits.isEmpty && !vm.pushFollowSearch.isEmpty {
+                    ForEach(vm.collHits.prefix(12)) { hit in
+                        Button { vm.pickPushAlertColl(hit) } label: {
+                            VStack(alignment: .leading) {
+                                Text(hit.name).font(.caption)
+                                Text("GID \(hit.id)").font(.caption2).foregroundStyle(.secondary)
+                            }.frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        Divider()
+                    }
+                }
+            }
+            if !vm.pushAlerts.isEmpty {
+                Text("已设预警 · \(vm.pushAlerts.count)").font(.subheadline.bold())
+                ForEach(vm.pushAlerts) { a in
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(a.groupName).font(.caption).lineLimit(1)
+                            Text([
+                                a.alertUp.map { "涨≥\(Int($0))" },
+                                a.alertDown.map { "跌≤\(Int($0))" }
+                            ].compactMap { $0 }.joined(separator: " · ")).font(.caption2).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Button("删") { vm.deletePushAlert(groupId: a.groupId, name: a.groupName) }
+                            .font(.caption2).foregroundStyle(.red)
+                    }
+                    Divider()
+                }
+            }
+            }
+        }
+        .onAppear { Task { await vm.refreshPushWatchConfig(silent: true) } }
+    }
+}
+
+struct AnnouncePushPane: View {
+    @EnvironmentObject var vm: AppViewModel
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("约1s 扫公告列表 · 上新系统通知 + 微信 · 日志实时")
+                .font(.caption).foregroundStyle(.secondary)
+            if !vm.siteLoggedIn {
+                Text("请先登录网站会员").font(.caption).foregroundStyle(.orange)
+            } else {
+                PushWatchHeader(kind: "announce", subtitle: "仅控制公告推送 · 需登录 iBox")
+            }
+        }
+        .onAppear { Task { await vm.refreshPushWatchConfig(silent: true) } }
+    }
+}
+
+struct DiscoverPushPane: View {
+    @EnvironmentObject var vm: AppViewModel
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("约1s 扫发现趋势 · 上新系统通知 + 微信 · 与「推荐锁定」开关独立 · 日志实时")
+                .font(.caption).foregroundStyle(.secondary)
+            if !vm.siteLoggedIn {
+                Text("请先登录网站会员").font(.caption).foregroundStyle(.orange)
+            } else {
+                PushWatchHeader(kind: "discover", subtitle: "仅控制发现趋势推送 · 需登录 iBox")
+            }
+        }
+        .onAppear { Task { await vm.refreshPushWatchConfig(silent: true) } }
+    }
+}
+
+struct HoldingsPane: View {
+    @EnvironmentObject var vm: AppViewModel
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("个人持仓 · 本地直连计价（max地板/求购）").font(.caption).foregroundStyle(.secondary)
+            if !vm.iboxLoggedIn {
+                IboxLoginCard()
+            } else {
+            TextField("搜索分组名", text: $vm.holdingsKeyword).fieldStyle()
+            HStack {
+                Button("刷新") { Task { await vm.loadHoldings(reset: true) } }
+                    .buttonStyle(.bordered).disabled(vm.holdingsLoading)
+                if vm.holdingsHasMore {
+                    Button("加载更多") { Task { await vm.loadHoldings(reset: false) } }
+                        .buttonStyle(.bordered).disabled(vm.holdingsLoading)
+                }
+                Spacer()
+                if vm.holdingsLoading { ProgressView().scaleEffect(0.8) }
+            }
+            if !vm.holdingsError.isEmpty {
+                Text(vm.holdingsError).font(.caption).foregroundStyle(.red)
+            }
+            ForEach(vm.holdingsItems) { g in
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(g.name).font(.subheadline).lineLimit(1)
+                        Text("持有\(g.holdNum) · 寄售\(g.consignNum) · 锁定\(g.lockCount)")
+                            .font(.caption2).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    if let u = g.unit {
+                        Text(u == u.rounded() ? "¥\(Int(u))" : String(format: "¥%.2f", u))
+                            .font(.caption.bold())
+                    } else {
+                        Text("…").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                Divider()
+            }
+            if vm.holdingsItems.isEmpty && !vm.holdingsLoading {
+                Text("暂无持仓").font(.caption).foregroundStyle(.secondary)
+            }
+            }
+        }
+        .onAppear { if vm.holdingsItems.isEmpty { Task { await vm.loadHoldings(reset: true) } } }
     }
 }

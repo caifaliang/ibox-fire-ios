@@ -747,6 +747,158 @@ final class ApiRepository {
         req.httpMethod = "POST"
         _ = try? await siteSession().data(for: req)
     }
+
+    func fetchPushEnabled(platformToken: String) async throws -> Bool {
+        var req = URLRequest(url: URL(string: "\(base())/user/proxy")!)
+        req.setValue(JwtUtil.bearer(platformToken), forHTTPHeaderField: "Authorization")
+        let (data, resp) = try await siteSession().data(for: req)
+        let o = jsonObject(data)
+        if ((resp as? HTTPURLResponse)?.statusCode ?? 0) >= 400 {
+            throw NSError(domain: "push", code: 1, userInfo: [NSLocalizedDescriptionKey: o["detail"] as? String ?? "读取推送开关失败"])
+        }
+        return o["push_enabled"] as? Bool ?? false
+    }
+
+    func setPushEnabled(platformToken: String, enabled: Bool) async throws {
+        var req = URLRequest(url: URL(string: "\(base())/user/push-toggle?enabled=\(enabled)")!)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue(JwtUtil.bearer(platformToken), forHTTPHeaderField: "Authorization")
+        req.httpBody = Data()
+        _ = try await siteSession().data(for: req)
+    }
+
+    func bindWxpusher(platformToken: String, uid: String) async throws {
+        let u = uid.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? uid
+        var req = URLRequest(url: URL(string: "\(base())/push/bind?uid=\(u)")!)
+        req.httpMethod = "POST"
+        req.setValue(JwtUtil.bearer(platformToken), forHTTPHeaderField: "Authorization")
+        req.httpBody = Data()
+        let (data, resp) = try await siteSession().data(for: req)
+        if ((resp as? HTTPURLResponse)?.statusCode ?? 0) >= 400 {
+            let o = jsonObject(data)
+            throw NSError(domain: "push", code: 1, userInfo: [NSLocalizedDescriptionKey: o["detail"] as? String ?? "绑定失败"])
+        }
+    }
+
+    func followList(platformToken: String) async throws -> [FollowItem] {
+        var req = URLRequest(url: URL(string: "\(base())/follow/list")!)
+        req.setValue(JwtUtil.bearer(platformToken), forHTTPHeaderField: "Authorization")
+        let (data, _) = try await siteSession().data(for: req)
+        return parseFollowArray(data)
+    }
+
+    func followToggle(platformToken: String, groupId: Int64, groupName: String) async throws -> String {
+        let name = groupName.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? groupName
+        var req = URLRequest(url: URL(string: "\(base())/follow/toggle?group_id=\(groupId)&group_name=\(name)")!)
+        req.httpMethod = "POST"
+        req.setValue(JwtUtil.bearer(platformToken), forHTTPHeaderField: "Authorization")
+        req.httpBody = Data()
+        let (data, resp) = try await siteSession().data(for: req)
+        let o = jsonObject(data)
+        if ((resp as? HTTPURLResponse)?.statusCode ?? 0) >= 400 {
+            throw NSError(domain: "push", code: 1, userInfo: [NSLocalizedDescriptionKey: o["detail"] as? String ?? "关注失败"])
+        }
+        return o["status"] as? String ?? "ok"
+    }
+
+    func blockList(platformToken: String) async throws -> [FollowItem] {
+        var req = URLRequest(url: URL(string: "\(base())/push/blocked")!)
+        req.setValue(JwtUtil.bearer(platformToken), forHTTPHeaderField: "Authorization")
+        let (data, _) = try await siteSession().data(for: req)
+        return parseFollowArray(data)
+    }
+
+    func blockToggle(platformToken: String, groupId: Int64) async throws -> String {
+        var req = URLRequest(url: URL(string: "\(base())/push/block?group_id=\(groupId)")!)
+        req.httpMethod = "POST"
+        req.setValue(JwtUtil.bearer(platformToken), forHTTPHeaderField: "Authorization")
+        req.httpBody = Data()
+        let (data, resp) = try await siteSession().data(for: req)
+        let o = jsonObject(data)
+        if ((resp as? HTTPURLResponse)?.statusCode ?? 0) >= 400 {
+            throw NSError(domain: "push", code: 1, userInfo: [NSLocalizedDescriptionKey: o["detail"] as? String ?? "屏蔽失败"])
+        }
+        return o["status"] as? String ?? "ok"
+    }
+
+    func alertList(platformToken: String) async throws -> [PriceAlertItem] {
+        var req = URLRequest(url: URL(string: "\(base())/alert/list")!)
+        req.setValue(JwtUtil.bearer(platformToken), forHTTPHeaderField: "Authorization")
+        let (data, _) = try await siteSession().data(for: req)
+        let any = (try? JSONSerialization.jsonObject(with: data)) ?? []
+        let arr = any as? [[String: Any]] ?? []
+        return arr.compactMap { a in
+            let gid = JSONX.int64Val(a["group_id"]) ?? 0
+            guard gid > 0 else { return nil }
+            let up = JSONX.doubleVal(a["alert_up"]).flatMap { $0 > 0 ? $0 : nil }
+            let down = JSONX.doubleVal(a["alert_down"]).flatMap { $0 > 0 ? $0 : nil }
+            return PriceAlertItem(
+                groupId: gid,
+                groupName: JSONX.stringVal(a["group_name"]).isEmpty ? "GID \(gid)" : JSONX.stringVal(a["group_name"]),
+                alertUp: up,
+                alertDown: down,
+                enabled: (JSONX.int64Val(a["enabled"]) ?? 1) == 1
+            )
+        }
+    }
+
+    func alertSet(platformToken: String, groupId: Int64, groupName: String, alertUp: Double, alertDown: Double) async throws {
+        let name = groupName.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? groupName
+        var req = URLRequest(url: URL(string: "\(base())/alert/set?group_id=\(groupId)&group_name=\(name)&alert_up=\(alertUp)&alert_down=\(alertDown)")!)
+        req.httpMethod = "POST"
+        req.setValue(JwtUtil.bearer(platformToken), forHTTPHeaderField: "Authorization")
+        req.httpBody = Data()
+        let (data, resp) = try await siteSession().data(for: req)
+        if ((resp as? HTTPURLResponse)?.statusCode ?? 0) >= 400 {
+            let o = jsonObject(data)
+            throw NSError(domain: "push", code: 1, userInfo: [NSLocalizedDescriptionKey: o["detail"] as? String ?? "设置预警失败"])
+        }
+    }
+
+    func alertDelete(platformToken: String, groupId: Int64) async throws {
+        var req = URLRequest(url: URL(string: "\(base())/alert/delete?group_id=\(groupId)")!)
+        req.httpMethod = "POST"
+        req.setValue(JwtUtil.bearer(platformToken), forHTTPHeaderField: "Authorization")
+        req.httpBody = Data()
+        let (data, resp) = try await siteSession().data(for: req)
+        if ((resp as? HTTPURLResponse)?.statusCode ?? 0) >= 400 {
+            let o = jsonObject(data)
+            throw NSError(domain: "push", code: 1, userInfo: [NSLocalizedDescriptionKey: o["detail"] as? String ?? "删除预警失败"])
+        }
+    }
+
+    func pushAlert(platformToken: String, content: String, wxpusherUid: String = "") async throws {
+        let body: [String: Any] = [
+            "platform_token": platformToken,
+            "wxpusher_uid": wxpusherUid,
+            "content": content,
+            "summary": String(content.prefix(40)),
+            "action": "alert"
+        ]
+        var req = URLRequest(url: URL(string: "\(base())/snipe/push-link")!)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONSerialization.data(withJSONObject: body)
+        let (raw, resp) = try await siteSession().data(for: req)
+        let o = jsonObject(raw)
+        if ((resp as? HTTPURLResponse)?.statusCode ?? 0) >= 400 {
+            throw NSError(domain: "push", code: 1, userInfo: [NSLocalizedDescriptionKey: o["detail"] as? String ?? o["message"] as? String ?? "HTTP"])
+        }
+        if o["status"] as? String != "ok" {
+            throw NSError(domain: "push", code: 2, userInfo: [NSLocalizedDescriptionKey: o["message"] as? String ?? o["detail"] as? String ?? "微信推送失败"])
+        }
+    }
+
+    private func parseFollowArray(_ data: Data) -> [FollowItem] {
+        let any = (try? JSONSerialization.jsonObject(with: data)) ?? []
+        let arr = any as? [[String: Any]] ?? []
+        return arr.compactMap { a in
+            let gid = JSONX.int64Val(a["group_id"]) ?? 0
+            guard gid > 0 else { return nil }
+            return FollowItem(groupId: gid, groupName: JSONX.stringVal(a["group_name"]))
+        }
+    }
 }
 
 private extension Array {

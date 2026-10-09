@@ -4,6 +4,12 @@ import UIKit
 
 enum TaskKind: String {
     case query, buy, sell, batch, announce, synth, presale, nbPresale, nbSnipe, sweep
+    case segSnipe = "seg_snipe"
+    case recommendLock = "recommend_lock"
+    case marketPush = "market_push"
+    case priceAlert = "price_alert"
+    case announcePush = "announce_push"
+    case discoverPush = "discover_push"
 }
 
 @MainActor

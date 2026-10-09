@@ -6,13 +6,29 @@ enum AppPlatform: String {
     case ibox, newbee
 }
 
+enum FeatureCat: String, CaseIterable, Identifiable {
+    case tech, query_info, push_cat
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .tech: return "科技"
+        case .query_info: return "查询信息"
+        case .push_cat: return "推送"
+        }
+    }
+}
+
 enum TechMode: String, CaseIterable, Identifiable {
-    case announce, synth, presale, buy, sell, precision, batch, sweep, query
+    case seg_snipe, recommend_lock, announce, synth, presale, buy, sell, precision, batch, sweep
+    case query_purchase, query_consignment, holdings, query
+    case price_alert, market_push, announce_push, discover_push
     case nb_presale, nb_snipe
     case profile
     var id: String { rawValue }
     var label: String {
         switch self {
+        case .seg_snipe: return "全盘捡漏"
+        case .recommend_lock: return "推荐锁定"
         case .announce: return "公告锁定"
         case .synth: return "抢合"
         case .presale: return "抢购"
@@ -21,10 +37,51 @@ enum TechMode: String, CaseIterable, Identifiable {
         case .precision: return "精准射"
         case .batch: return "上下架"
         case .sweep: return "点对点"
+        case .query_purchase: return "查求购"
+        case .query_consignment: return "查挂单"
+        case .holdings: return "个人持仓"
         case .query: return "查询"
+        case .price_alert: return "单图价格预警"
+        case .market_push: return "全图异动推送"
+        case .announce_push: return "公告推送"
+        case .discover_push: return "发现趋势推送"
         case .nb_presale: return "抢购"
         case .nb_snipe: return "捡漏"
         case .profile: return "我的"
+        }
+    }
+    var category: FeatureCat {
+        switch self {
+        case .query_purchase, .query_consignment, .holdings, .query: return .query_info
+        case .price_alert, .market_push, .announce_push, .discover_push: return .push_cat
+        default: return .tech
+        }
+    }
+    /// 日志桶：查求购/查挂单共用 query
+    var logKey: String {
+        switch self {
+        case .query_purchase, .query_consignment: return TechMode.query.rawValue
+        default: return rawValue
+        }
+    }
+    var taskKind: TaskKind {
+        switch self {
+        case .query, .query_purchase, .query_consignment: return .query
+        case .buy: return .buy
+        case .sell: return .sell
+        case .batch: return .batch
+        case .announce: return .announce
+        case .synth: return .synth
+        case .presale: return .presale
+        case .nb_presale: return .nbPresale
+        case .nb_snipe: return .nbSnipe
+        case .sweep: return .sweep
+        case .seg_snipe: return .segSnipe
+        case .recommend_lock: return .recommendLock
+        case .market_push, .price_alert: return .marketPush
+        case .announce_push: return .announcePush
+        case .discover_push: return .discoverPush
+        default: return .query
         }
     }
 }
@@ -65,10 +122,52 @@ final class AppViewModel: ObservableObject {
     @Published var nbError = ""
 
     @Published var appPlatform: AppPlatform = .ibox
-    @Published var techMode: TechMode = .announce
+    @Published var featureCat: FeatureCat = .tech
+    @Published var techMode: TechMode = .seg_snipe
 
     @Published var collSearch = ""
     @Published var collHits: [CollHit] = []
+
+    // 全盘捡漏
+    @Published var segSnipeSegments: [SegmentInfo] = []
+    @Published var segSnipeSegmentsLoading = false
+    @Published var segSnipeSegmentId = -1
+    @Published var segSnipeSegmentName = ""
+    @Published var segSnipeIntervalSec = "3"
+    @Published var segSnipeDropPct = "10"
+    @Published var segSnipeQty = "1"
+    @Published var segSnipeMaxSuccess = "1"
+    @Published var segSnipeMaxPrice = ""
+    @Published var segSnipeAutoPay = false
+    @Published var segSnipePayPwd = ""
+
+    // 推荐锁定
+    @Published var recommendLockQty = "1"
+    @Published var recommendLockMaxPrice = ""
+
+    // 推送
+    @Published var pushMarketEnabled = false
+    @Published var pushPriceEnabled = false
+    @Published var pushAnnounceEnabled = false
+    @Published var pushDiscoverEnabled = false
+    @Published var pushWxUid = ""
+    @Published var pushFollows: [FollowItem] = []
+    @Published var pushBlocks: [FollowItem] = []
+    @Published var pushAlerts: [PriceAlertItem] = []
+    @Published var pushFollowSearch = ""
+    @Published var pushWatchLoading = false
+    @Published var pushAlertDraftGid: Int64 = 0
+    @Published var pushAlertDraftName = ""
+    @Published var pushAlertDraftUp = ""
+    @Published var pushAlertDraftDown = ""
+
+    // 持仓
+    @Published var holdingsItems: [HoldingGroup] = []
+    @Published var holdingsPage = 1
+    @Published var holdingsHasMore = false
+    @Published var holdingsLoading = false
+    @Published var holdingsKeyword = ""
+    @Published var holdingsError = ""
 
     @Published var buyGid: Int64 = 0
     @Published var buyCname = ""
@@ -228,29 +327,86 @@ final class AppViewModel: ObservableObject {
             nbLoggedIn = true
             Task { await refreshNbPresaleList(silent: true) }
         }
+        let s = AlertWatchStore.shared
+        pushMarketEnabled = s.marketWatchEnabled
+        pushPriceEnabled = s.priceAlertWatchEnabled
+        pushAnnounceEnabled = s.announcePushEnabled
+        pushDiscoverEnabled = s.discoverPushEnabled
+        pushWxUid = s.wxpusherUid
+        pushFollows = s.loadFollows()
+        pushBlocks = s.loadBlocks()
+        pushAlerts = s.loadAlerts()
+    }
+
+    var isCurrentModeLive: Bool {
+        runner.isRunning(techMode.taskKind)
+    }
+
+    func stopTask(_ kind: TaskKind) {
+        switch kind {
+        case .announcePush:
+            pushAnnounceEnabled = false
+            AlertWatchStore.shared.announcePushEnabled = false
+        case .discoverPush:
+            pushDiscoverEnabled = false
+            AlertWatchStore.shared.discoverPushEnabled = false
+        case .marketPush:
+            pushMarketEnabled = false
+            pushPriceEnabled = false
+            AlertWatchStore.shared.marketWatchEnabled = false
+            AlertWatchStore.shared.priceAlertWatchEnabled = false
+        default:
+            break
+        }
+        runner.stop(kind)
+    }
+
+    func stopAllTasks() {
+        pushMarketEnabled = false
+        pushPriceEnabled = false
+        pushAnnounceEnabled = false
+        pushDiscoverEnabled = false
+        syncAlertStore()
+        runner.stopAll()
     }
 
     var isVip: Bool { siteUser?.isVip == true || siteUser?.isAdmin == true }
     var isYearVip: Bool { siteUser?.isYearVip == true || siteUser?.isAdmin == true }
     var isMonthVip: Bool { siteUser?.isMonthVip == true }
     var canAnnounce: Bool { siteUser?.isAdmin == true || isYearVip || isMonthVip || siteUser?.isVip == true }
-    var iboxTabs: [TechMode] { [.announce, .synth, .presale, .buy, .sell, .precision, .batch, .sweep, .query] }
+
+    static let techTabs: [TechMode] = [
+        .seg_snipe, .recommend_lock, .announce, .buy, .batch, .sell, .synth, .presale, .sweep, .precision
+    ]
+    static let queryTabs: [TechMode] = [.query_purchase, .query_consignment, .holdings]
+    static let pushTabs: [TechMode] = [.price_alert, .market_push, .announce_push, .discover_push]
+
+    var iboxTabs: [TechMode] {
+        switch featureCat {
+        case .tech: return Self.techTabs
+        case .query_info: return Self.queryTabs
+        case .push_cat: return Self.pushTabs
+        }
+    }
     var nbTabs: [TechMode] { [.nb_presale, .nb_snipe] }
 
     var currentLogs: [LogLine] {
-        modeLogs[techMode.rawValue] ?? []
+        modeLogs[techMode.logKey] ?? []
     }
 
     func appendLog(_ msg: String, type: String = "info", mode: TechMode? = nil) {
-        let key = (mode ?? techMode).rawValue
+        let key = (mode ?? techMode).logKey
         var list = modeLogs[key] ?? []
         list.insert(LogLine(time: bjTimeString(), msg: msg, type: type), at: 0)
         if list.count > 300 { list = Array(list.prefix(300)) }
         modeLogs[key] = list
+        if key == techMode.logKey && runner.isRunning(techMode.taskKind) {
+            logExpanded = true
+        }
     }
 
     func clearLogs(_ mode: TechMode? = nil) {
-        modeLogs[(mode ?? techMode).rawValue] = []
+        modeLogs[(mode ?? techMode).logKey] = []
     }
 
     func syncServerLogs(_ entries: [[String: Any]], mode: TechMode) {
@@ -266,7 +422,42 @@ final class AppViewModel: ObservableObject {
     }
 
     func logsText(_ mode: TechMode? = nil) -> String {
-        (modeLogs[(mode ?? techMode).rawValue] ?? []).map { "[\($0.time)] \($0.msg)" }.joined(separator: "\n")
+        (modeLogs[(mode ?? techMode).logKey] ?? []).map { "[\($0.time)] \($0.msg)" }.joined(separator: "\n")
+    }
+
+    func selectFeatureCat(_ cat: FeatureCat) {
+        featureCat = cat
+        let tabs = iboxTabs
+        if !tabs.contains(techMode), let first = tabs.first {
+            techMode = first
+            onTechModeChanged(first)
+        }
+    }
+
+    private func syncAlertStore() {
+        let s = AlertWatchStore.shared
+        s.iboxToken = iboxToken
+        s.platformToken = siteUser?.token ?? ""
+        s.siteBase = api.siteBase
+        s.marketWatchEnabled = pushMarketEnabled
+        s.priceAlertWatchEnabled = pushPriceEnabled
+        s.announcePushEnabled = pushAnnounceEnabled
+        s.discoverPushEnabled = pushDiscoverEnabled
+        s.wxpusherUid = pushWxUid
+    }
+
+    private func wxPush(_ content: String, mode: TechMode) {
+        guard let pt = siteUser?.token, !pt.isEmpty else { return }
+        let uid = pushWxUid
+        Task {
+            do {
+                try await api.pushAlert(platformToken: pt, content: content, wxpusherUid: uid)
+            } catch {
+                await MainActor.run {
+                    appendLog("微信推送失败: \(String(error.localizedDescription.prefix(40)))", type: "error", mode: mode)
+                }
+            }
+        }
     }
 
     private func restoreSite(_ token: String) async {
@@ -283,6 +474,7 @@ final class AppViewModel: ObservableObject {
     }
 
     private func onIboxReady() async {
+        syncAlertStore()
         await refreshActivities("")
         await refreshPresaleList(silent: true)
         await refreshAllQuotas(force: true)
@@ -328,7 +520,7 @@ final class AppViewModel: ObservableObject {
         siteLoggedIn = false
         siteUser = nil
         prefs.removeObject(forKey: kSite)
-        runner.stopAll()
+        stopAllTasks()
     }
 
     func refreshAllQuotas(force: Bool = false) async {
@@ -345,17 +537,29 @@ final class AppViewModel: ObservableObject {
 
     /// 对齐 Android setTechMode：切 Tab 后延迟刷新，12s 节流。
     func onTechModeChanged(_ mode: TechMode) {
+        featureCat = mode.category
+        switch mode {
+        case .query_purchase: queryKind = "purchase"
+        case .query_consignment: queryKind = "consignment"
+        default: break
+        }
         Task {
             try? await Task.sleep(nanoseconds: 120_000_000)
             guard techMode == mode else { return }
             switch mode {
-            case .announce, .synth:
+            case .announce, .synth, .recommend_lock:
                 await refreshAllQuotas(force: true)
             case .presale:
                 await refreshAllQuotas(force: true)
                 if iboxLoggedIn { await refreshPresaleList(silent: true) }
             case .nb_presale:
                 if nbLoggedIn { await refreshNbPresaleList(silent: true) }
+            case .seg_snipe:
+                if iboxLoggedIn && segSnipeSegments.isEmpty { await loadSegSnipeSegments(silent: true) }
+            case .market_push, .price_alert, .announce_push, .discover_push:
+                if siteLoggedIn { await refreshPushWatchConfig(silent: true) }
+            case .holdings:
+                if iboxLoggedIn && holdingsItems.isEmpty { await loadHoldings(reset: true) }
             default:
                 break
             }
@@ -1618,6 +1822,335 @@ final class AppViewModel: ObservableObject {
             Task { @MainActor in self?.appendLog(m, mode: .nb_snipe) }
         })
         runner.start(kind: .nbSnipe, stop: { engine.requestStop() }, keepAlive: true) { await engine.run() }
+    }
+
+    // MARK: - 全盘捡漏
+
+    func loadSegSnipeSegments(silent: Bool = false) async {
+        guard iboxLoggedIn else {
+            if !silent { appendLog("请先登录 iBox", type: "error", mode: .seg_snipe) }
+            return
+        }
+        segSnipeSegmentsLoading = true
+        defer { segSnipeSegmentsLoading = false }
+        let client = IboxClient(token: iboxToken, deviceIdMode: .stableMD5)
+        let list = await SegmentSnipeEngine.loadSegments(client)
+        segSnipeSegments = list
+        if !silent { appendLog("已加载 \(list.count) 个板块", mode: .seg_snipe) }
+    }
+
+    func selectSegSnipe(_ seg: SegmentInfo) {
+        segSnipeSegmentId = seg.id
+        segSnipeSegmentName = seg.name
+    }
+
+    func startSegSnipe() {
+        guard requireVip(), iboxLoggedIn else { return }
+        guard segSnipeSegmentId >= 0 else { appendLog("请选择板块", type: "error", mode: .seg_snipe); return }
+        let interval = Double(segSnipeIntervalSec) ?? 3
+        guard interval >= 1 && interval <= 60 else { appendLog("间隔请填 1～60 秒", type: "error", mode: .seg_snipe); return }
+        let drop = Double(segSnipeDropPct) ?? 0
+        guard drop >= 0.1 else { appendLog("跌幅请 ≥ 0.1%", type: "error", mode: .seg_snipe); return }
+        let qty = Int(segSnipeQty) ?? 0
+        guard qty >= 1 else { appendLog("数量请 ≥ 1", type: "error", mode: .seg_snipe); return }
+        let maxOk = Int(segSnipeMaxSuccess) ?? 0
+        guard maxOk >= 1 else { appendLog("成功上限请 ≥ 1", type: "error", mode: .seg_snipe); return }
+        if segSnipeAutoPay && segSnipePayPwd.trimmingCharacters(in: .whitespaces).isEmpty {
+            appendLog("开启自动支付需填写支付密码", type: "error", mode: .seg_snipe); return
+        }
+        guard guardNotRunning(.segSnipe, prepKey: "seg_snipe") else { return }
+        let maxP = Double(segSnipeMaxPrice)
+        let cfg = SegmentSnipeConfig(
+            token: iboxToken,
+            segmentId: segSnipeSegmentId,
+            segmentName: segSnipeSegmentName,
+            intervalMs: UInt64(interval * 1000),
+            dropPercent: drop,
+            maxBuyPrice: (maxP ?? 0) > 0 ? maxP : nil,
+            quantity: qty,
+            maxSuccess: maxOk,
+            autoPay: segSnipeAutoPay,
+            payPassword: segSnipePayPwd
+        )
+        let engine = SegmentSnipeEngine(cfg: cfg, onLog: { [weak self] m in
+            Task { @MainActor in self?.appendLog(m, mode: .seg_snipe) }
+        })
+        appendLog("全盘捡漏已启动 · 音频保活可锁屏", mode: .seg_snipe)
+        runner.start(kind: .segSnipe, stop: { engine.requestStop() }, keepAlive: true) { _ = await engine.run() }
+    }
+
+    // MARK: - 推荐锁定
+
+    func startRecommendLock() {
+        guard requireAnnounceVip(), iboxLoggedIn else {
+            if !iboxLoggedIn { appendLog("请先登录 iBox", type: "error", mode: .recommend_lock) }
+            return
+        }
+        let qty = Int(recommendLockQty) ?? 0
+        guard qty >= 1 else { appendLog("数量请 ≥ 1", type: "error", mode: .recommend_lock); return }
+        guard guardNotRunning(.recommendLock, prepKey: "recommend_lock") else { return }
+        let maxPrice = Double(recommendLockMaxPrice.trimmingCharacters(in: .whitespaces)) ?? 0
+        let cfg = RecommendLockConfig(token: iboxToken, quantity: qty, maxSinglePrice: maxPrice, pollMs: 300)
+        let engine = RecommendLockEngine(cfg: cfg, onLog: { [weak self] m in
+            Task { @MainActor in self?.appendLog(m, mode: .recommend_lock) }
+        })
+        appendLog("推荐锁定已启动 · 批量x\(qty) · 间隔300ms（同公告锁）", mode: .recommend_lock)
+        runner.start(kind: .recommendLock, stop: { engine.requestStop() }, keepAlive: true) { _ = await engine.run() }
+    }
+
+    // MARK: - 推送四路
+
+    func refreshPushWatchConfig(silent: Bool = false) async {
+        guard let pt = siteUser?.token else { return }
+        pushWatchLoading = true
+        defer { pushWatchLoading = false }
+        do {
+            async let follows = api.followList(platformToken: pt)
+            async let blocks = api.blockList(platformToken: pt)
+            async let alerts = api.alertList(platformToken: pt)
+            pushFollows = try await follows
+            pushBlocks = try await blocks
+            pushAlerts = try await alerts
+            AlertWatchStore.shared.saveFollows(pushFollows)
+            AlertWatchStore.shared.saveBlocks(pushBlocks)
+            AlertWatchStore.shared.saveAlerts(pushAlerts)
+            pushMarketEnabled = AlertWatchStore.shared.marketWatchEnabled
+            pushPriceEnabled = AlertWatchStore.shared.priceAlertWatchEnabled
+            pushAnnounceEnabled = AlertWatchStore.shared.announcePushEnabled
+            pushDiscoverEnabled = AlertWatchStore.shared.discoverPushEnabled
+            if pushWxUid.isEmpty { pushWxUid = AlertWatchStore.shared.wxpusherUid }
+            if !silent {
+                appendLog(
+                    "已同步关注\(pushFollows.count) · 屏蔽\(pushBlocks.count) · 预警\(pushAlerts.count)" +
+                    " · 异动\(pushMarketEnabled ? "开" : "关") · 预警\(pushPriceEnabled ? "开" : "关")" +
+                    " · 公告\(pushAnnounceEnabled ? "开" : "关") · 趋势\(pushDiscoverEnabled ? "开" : "关")",
+                    mode: techMode.category == .push_cat ? techMode : .market_push
+                )
+            }
+        } catch {
+            if !silent { appendLog("同步推送配置失败: \(String(error.localizedDescription.prefix(40)))", type: "error", mode: .market_push) }
+        }
+    }
+
+    func bindPushWx() {
+        guard let pt = siteUser?.token else { appendLog("请先登录网站", type: "error", mode: .market_push); return }
+        let u = pushWxUid.trimmingCharacters(in: .whitespaces)
+        guard !u.isEmpty else { appendLog("请填写 WxPusher UID", type: "error", mode: .market_push); return }
+        Task {
+            do {
+                try await api.bindWxpusher(platformToken: pt, uid: u)
+                AlertWatchStore.shared.wxpusherUid = u
+                appendLog("微信 UID 已绑定", mode: techMode)
+            } catch {
+                appendLog("绑定失败: \(error.localizedDescription)", type: "error", mode: techMode)
+            }
+        }
+    }
+
+    /// kind: market|price|announce|discover
+    func setPushWatchEnabled(_ enabled: Bool, kind: String) {
+        guard requireVip() else { return }
+        if enabled && !iboxLoggedIn {
+            appendLog("监视需先登录 iBox", type: "error", mode: .market_push)
+            return
+        }
+        syncAlertStore()
+        let store = AlertWatchStore.shared
+        let mode: TechMode
+        switch kind {
+        case "price":
+            store.priceAlertWatchEnabled = enabled; pushPriceEnabled = enabled
+            mode = .price_alert
+        case "announce":
+            store.announcePushEnabled = enabled; pushAnnounceEnabled = enabled
+            mode = .announce_push
+        case "discover":
+            store.discoverPushEnabled = enabled; pushDiscoverEnabled = enabled
+            mode = .discover_push
+        default:
+            store.marketWatchEnabled = enabled; pushMarketEnabled = enabled
+            mode = .market_push
+        }
+        if enabled {
+            ensurePushJob(kind: kind, mode: mode)
+            appendLog(
+                kind == "price" ? "单图价格预警监视已开 · 30s" :
+                kind == "announce" ? "公告推送已开 · 约1s 扫列表" :
+                kind == "discover" ? "发现趋势推送已开 · 约1s" :
+                "全图异动监视已开 · 30s",
+                mode: mode
+            )
+            Task { try? await api.setPushEnabled(platformToken: siteUser?.token ?? "", enabled: store.anyWatchEnabled) }
+        } else {
+            switch kind {
+            case "announce": runner.stop(.announcePush)
+            case "discover": runner.stop(.discoverPush)
+            default:
+                // 全图/单图共用 marketPush 任务
+                if !store.marketOrPriceEnabled {
+                    runner.stop(.marketPush)
+                }
+            }
+            appendLog(
+                (kind == "price" ? "单图价格预警已关" :
+                 kind == "announce" ? "公告推送已关" :
+                 kind == "discover" ? "发现趋势推送已关" : "全图异动监视已关")
+                + (store.anyWatchEnabled ? " · 另一路仍在跑" : ""),
+                mode: mode
+            )
+            Task { try? await api.setPushEnabled(platformToken: siteUser?.token ?? "", enabled: store.anyWatchEnabled) }
+        }
+    }
+
+    private func ensurePushJob(kind: String, mode: TechMode) {
+        syncAlertStore()
+        let store = AlertWatchStore.shared
+        switch kind {
+        case "announce":
+            if runner.isRunning(.announcePush) { return }
+            let eng = AnnouncePushEngine(store: store, onLog: { [weak self] m in
+                Task { @MainActor in self?.appendLog(m, mode: .announce_push) }
+            }, onHit: { [weak self] title, body, _ in
+                LocalNotify.post(title: "【公告】\(title)", body: body)
+                Task { @MainActor in self?.wxPush(body, mode: .announce_push) }
+            })
+            runner.start(kind: .announcePush, stop: { eng.requestStop() }, keepAlive: true) { await eng.run() }
+        case "discover":
+            if runner.isRunning(.discoverPush) { return }
+            let eng = DiscoverPushEngine(store: store, onLog: { [weak self] m in
+                Task { @MainActor in self?.appendLog(m, mode: .discover_push) }
+            }, onHit: { [weak self] msg, _, _ in
+                LocalNotify.post(title: "发现趋势上新", body: msg)
+                Task { @MainActor in self?.wxPush(msg, mode: .discover_push) }
+            })
+            runner.start(kind: .discoverPush, stop: { eng.requestStop() }, keepAlive: true) { await eng.run() }
+        default:
+            // market / price 共用一路 AlertWatchEngine（用 marketPush kind）
+            if runner.isRunning(.marketPush) { return }
+            let eng = AlertWatchEngine(store: store, onLog: { [weak self] m in
+                Task { @MainActor in
+                    let sink: TechMode = store.marketWatchEnabled ? .market_push : .price_alert
+                    self?.appendLog(m, mode: sink)
+                }
+            }, onWxPush: { [weak self] msg in
+                Task { @MainActor in self?.wxPush(msg, mode: .market_push) }
+            })
+            runner.start(kind: .marketPush, stop: { eng.requestStop() }, keepAlive: true) { await eng.run() }
+        }
+    }
+
+    func togglePushFollow(_ hit: CollHit) {
+        guard let pt = siteUser?.token else { appendLog("请先登录网站", type: "error", mode: .market_push); return }
+        Task {
+            do {
+                let status = try await api.followToggle(platformToken: pt, groupId: hit.id, groupName: hit.name)
+                appendLog(status == "removed" ? "已取消关注 \(hit.name)" : "已关注 \(hit.name)", mode: .market_push)
+                await refreshPushWatchConfig(silent: true)
+            } catch {
+                appendLog("关注失败: \(error.localizedDescription)", type: "error", mode: .market_push)
+            }
+        }
+    }
+
+    func togglePushBlock(groupId: Int64, groupName: String) {
+        guard let pt = siteUser?.token else { appendLog("请先登录网站", type: "error", mode: .market_push); return }
+        Task {
+            do {
+                let status = try await api.blockToggle(platformToken: pt, groupId: groupId)
+                appendLog(status == "unblocked" ? "已取消屏蔽 \(groupName)" : "已屏蔽 \(groupName)", mode: .market_push)
+                await refreshPushWatchConfig(silent: true)
+            } catch {
+                appendLog("屏蔽失败: \(error.localizedDescription)", type: "error", mode: .market_push)
+            }
+        }
+    }
+
+    func pickPushAlertColl(_ hit: CollHit) {
+        pushAlertDraftGid = hit.id
+        pushAlertDraftName = hit.name
+        pushAlertDraftUp = ""
+        pushAlertDraftDown = ""
+        pushFollowSearch = ""
+        collHits = []
+        if let existing = pushAlerts.first(where: { $0.groupId == hit.id }) {
+            if let u = existing.alertUp { pushAlertDraftUp = "\(Int(u))" }
+            if let d = existing.alertDown { pushAlertDraftDown = "\(Int(d))" }
+        }
+        appendLog("已选 \(hit.name) · 填写涨/跌预警线后保存", mode: .price_alert)
+    }
+
+    func clearPushAlertDraft() {
+        pushAlertDraftGid = 0
+        pushAlertDraftName = ""
+        pushAlertDraftUp = ""
+        pushAlertDraftDown = ""
+    }
+
+    func savePushAlert() {
+        guard let pt = siteUser?.token else { appendLog("请先登录网站", type: "error", mode: .price_alert); return }
+        let gid = pushAlertDraftGid
+        guard gid > 0 else { appendLog("请先搜索并选择藏品", type: "error", mode: .price_alert); return }
+        let up = Double(pushAlertDraftUp) ?? 0
+        let down = Double(pushAlertDraftDown) ?? 0
+        guard up > 0 || down > 0 else { appendLog("请填写上涨或下跌预警价", type: "error", mode: .price_alert); return }
+        Task {
+            do {
+                try await api.alertSet(platformToken: pt, groupId: gid, groupName: pushAlertDraftName, alertUp: up, alertDown: down)
+                appendLog("已设置预警 \(pushAlertDraftName)", mode: .price_alert)
+                clearPushAlertDraft()
+                await refreshPushWatchConfig(silent: true)
+            } catch {
+                appendLog("设置失败: \(error.localizedDescription)", type: "error", mode: .price_alert)
+            }
+        }
+    }
+
+    func deletePushAlert(groupId: Int64, name: String) {
+        guard let pt = siteUser?.token else { return }
+        Task {
+            do {
+                try await api.alertDelete(platformToken: pt, groupId: groupId)
+                appendLog("已删除预警 \(name)", mode: .price_alert)
+                await refreshPushWatchConfig(silent: true)
+            } catch {
+                appendLog("删除失败: \(error.localizedDescription)", type: "error", mode: .price_alert)
+            }
+        }
+    }
+
+    // MARK: - 持仓
+
+    func loadHoldings(reset: Bool) async {
+        guard iboxLoggedIn else { return }
+        if reset {
+            holdingsPage = 1
+            holdingsItems = []
+            holdingsError = ""
+        }
+        holdingsLoading = true
+        defer { holdingsLoading = false }
+        do {
+            let page = reset ? 1 : holdingsPage + 1
+            let r = try await HoldingsBrowse.page(token: iboxToken, pageNo: page, keyword: holdingsKeyword)
+            if reset { holdingsItems = r.items } else { holdingsItems += r.items }
+            holdingsPage = r.page
+            holdingsHasMore = r.hasMore
+            // 异步补价
+            let token = iboxToken
+            let snapshot = holdingsItems
+            Task.detached {
+                for (i, g) in snapshot.enumerated() {
+                    if g.unit != nil { continue }
+                    let u = await HoldingsBrowse.quote(token: token, gid: g.id, floorHint: g.floorHint)
+                    await MainActor.run { [weak self] in
+                        guard let self, i < self.holdingsItems.count, self.holdingsItems[i].id == g.id else { return }
+                        self.holdingsItems[i].unit = u
+                    }
+                }
+            }
+        } catch {
+            holdingsError = String(error.localizedDescription.prefix(120))
+        }
     }
 }
 
