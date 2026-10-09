@@ -10,11 +10,16 @@ final class RuffleSchemeHandler: NSObject, WKURLSchemeHandler {
     private var tasks: [ObjectIdentifier: URLSessionDataTask] = [:]
     private let lock = NSLock()
 
+    /// Bundle 内资源根是否可用（供 UI 报错）
+    var rootExists: Bool { FileManager.default.fileExists(atPath: root.path) }
+    var rootPath: String { root.path }
+
     override init() {
         let bundle = Bundle.main
         if let u = bundle.url(forResource: "index", withExtension: "html", subdirectory: "ruffle_fight") {
             root = u.deletingLastPathComponent()
-        } else if let u = bundle.resourceURL?.appendingPathComponent("ruffle_fight") {
+        } else if let u = bundle.resourceURL?.appendingPathComponent("ruffle_fight"),
+                  FileManager.default.fileExists(atPath: u.path) {
             root = u
         } else {
             root = bundle.bundleURL.appendingPathComponent("ruffle_fight")
@@ -24,16 +29,15 @@ final class RuffleSchemeHandler: NSObject, WKURLSchemeHandler {
 
     func webView(_ webView: WKWebView, start urlSchemeTask: WKURLSchemeTask) {
         guard let url = urlSchemeTask.request.url else {
-            urlSchemeTask.didFailWithError(URLError(.badURL))
+            fail(urlSchemeTask, URLError(.badURL))
             return
         }
         let path = url.path
-        // /__cgi/petpk → stub
-        if path.contains("/__cgi/petpk") || path.hasSuffix("/__cgi/petpk") {
+
+        if path.contains("/__cgi/petpk") {
             respondStubCGI(urlSchemeTask, url: url)
             return
         }
-        // /__proxy/remote?u=
         if path.contains("/__proxy/remote"),
            let comps = URLComponents(url: url, resolvingAgainstBaseURL: false),
            let remote = comps.queryItems?.first(where: { $0.name == "u" })?.value,
@@ -42,7 +46,6 @@ final class RuffleSchemeHandler: NSObject, WKURLSchemeHandler {
             return
         }
 
-        // Strip optional /ruffle_fight prefix for file lookup
         var rel = path
         if rel.hasPrefix("/ruffle_fight/") {
             rel = String(rel.dropFirst("/ruffle_fight/".count))
@@ -51,7 +54,6 @@ final class RuffleSchemeHandler: NSObject, WKURLSchemeHandler {
         }
         if rel.isEmpty { rel = "index.html" }
 
-        // /gres/... may be under root/gres
         let local = root.appendingPathComponent(rel)
         if FileManager.default.fileExists(atPath: local.path),
            let data = try? Data(contentsOf: local) {
@@ -59,13 +61,12 @@ final class RuffleSchemeHandler: NSObject, WKURLSchemeHandler {
             return
         }
 
-        // CDN fallback for gres / img / images
         if let cdn = cdnURL(for: rel, originalPath: path) {
             proxy(cdn, task: urlSchemeTask)
             return
         }
 
-        urlSchemeTask.didFailWithError(URLError(.fileDoesNotExist))
+        fail(urlSchemeTask, URLError(.fileDoesNotExist))
     }
 
     func webView(_ webView: WKWebView, stop urlSchemeTask: WKURLSchemeTask) {
@@ -77,7 +78,7 @@ final class RuffleSchemeHandler: NSObject, WKURLSchemeHandler {
     }
 
     private func respondStubCGI(_ task: WKURLSchemeTask, url: URL) {
-        let query = url.query?.lowercased() ?? ""
+        let query = (url.query ?? "").lowercased()
         let stubURL = root.appendingPathComponent("petpk_query.json")
         var body = "{\"result\":\"0\",\"msg\":\"\"}"
         if query.contains("cmd=query"),
@@ -105,7 +106,6 @@ final class RuffleSchemeHandler: NSObject, WKURLSchemeHandler {
         if low.hasPrefix("images/") || pathLow.contains("/images/") {
             return URL(string: "https://fightimg.pet.qq.com/\(rel)")
         }
-        // action packs requested as bare gres name via rewrite
         if low.hasSuffix(".swf") && !low.contains("/") {
             return URL(string: "https://fightimg.pet.qq.com/swf/gres/\(rel)")
         }
@@ -121,13 +121,12 @@ final class RuffleSchemeHandler: NSObject, WKURLSchemeHandler {
             self.tasks[ObjectIdentifier(task)] = nil
             self.lock.unlock()
             if let err {
-                task.didFailWithError(err)
+                self.fail(task, err)
                 return
             }
             let mime = (resp as? HTTPURLResponse)?.mimeType
                 ?? self.mime(for: remote.lastPathComponent)
-            let payload = data ?? Data()
-            self.finish(task, url: task.request.url ?? remote, data: payload, mime: mime)
+            self.finish(task, url: task.request.url ?? remote, data: data ?? Data(), mime: mime)
         }
         lock.lock()
         tasks[ObjectIdentifier(task)] = dataTask
@@ -136,30 +135,42 @@ final class RuffleSchemeHandler: NSObject, WKURLSchemeHandler {
     }
 
     private func finish(_ task: WKURLSchemeTask, url: URL, data: Data, mime: String) {
-        let headers = [
-            "Content-Type": mime,
-            "Content-Length": "\(data.count)",
-            "Access-Control-Allow-Origin": "*",
-        ]
-        guard let response = HTTPURLResponse(
-            url: url, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: headers
-        ) else {
-            task.didFailWithError(URLError(.cannotParseResponse))
-            return
+        let work = {
+            // 自定义 scheme 必须用 URLResponse，不能用 HTTPURLResponse（否则 WebKit 可能整页空白）
+            let response = URLResponse(
+                url: url,
+                mimeType: mime,
+                expectedContentLength: data.count,
+                textEncodingName: mime.contains("charset") ? "utf-8" : nil
+            )
+            task.didReceive(response)
+            task.didReceive(data)
+            task.didFinish()
         }
-        task.didReceive(response)
-        task.didReceive(data)
-        task.didFinish()
+        if Thread.isMainThread {
+            work()
+        } else {
+            DispatchQueue.main.async(execute: work)
+        }
+    }
+
+    private func fail(_ task: WKURLSchemeTask, _ error: Error) {
+        let work = { task.didFailWithError(error) }
+        if Thread.isMainThread {
+            work()
+        } else {
+            DispatchQueue.main.async(execute: work)
+        }
     }
 
     private func mime(for path: String) -> String {
         let ext = (path as NSString).pathExtension.lowercased()
         switch ext {
-        case "html", "htm": return "text/html; charset=utf-8"
-        case "js": return "text/javascript; charset=utf-8"
+        case "html", "htm": return "text/html"
+        case "js": return "text/javascript"
         case "wasm": return "application/wasm"
         case "json": return "application/json"
-        case "xml": return "application/xml"
+        case "xml": return "text/xml"
         case "swf": return "application/x-shockwave-flash"
         case "ttf": return "font/ttf"
         case "png": return "image/png"

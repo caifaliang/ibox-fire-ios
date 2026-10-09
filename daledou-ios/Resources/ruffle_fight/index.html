@@ -19,7 +19,11 @@
       background: #000;
     }
     #player ruffle-player, #player canvas { width: 100% !important; height: 100% !important; }
-    #status { display: none; }
+    #status {
+      display: block; position: fixed; left: 8px; top: 48px; right: 8px; z-index: 20;
+      font: 12px/1.35 -apple-system, sans-serif; color: #9fef9f;
+      text-shadow: 0 1px 2px #000; pointer-events: none; white-space: pre-wrap;
+    }
   </style>
 </head>
 <body>
@@ -27,11 +31,23 @@
   <div id="player"></div>
   <script>
     const statusEl = document.getElementById('status');
-    function setStatus(_) {}
+    function setStatus(t) {
+      try { if (statusEl) statusEl.textContent = String(t || ''); } catch (_) {}
+      try {
+        if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.ruffleStatus) {
+          window.webkit.messageHandlers.ruffleStatus.postMessage(String(t || ''));
+        }
+      } catch (_) {}
+    }
     function notifyAndroid(type, payload) {
       try {
         if (window.RuffleBridge && window.RuffleBridge.onEvent) {
           window.RuffleBridge.onEvent(type, JSON.stringify(payload || {}));
+        }
+      } catch (_) {}
+      try {
+        if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.ruffleEvent) {
+          window.webkit.messageHandlers.ruffleEvent.postMessage({ type: String(type || ''), payload: payload || {} });
         }
       } catch (_) {}
     }

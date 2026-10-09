@@ -28,10 +28,11 @@ targets:
     platform: iOS
     sources:
       - path: Sources
-      - path: Resources
-        excludes:
-          - Info.plist
-          - "flashreplay/**"
+      - path: Resources/ruffle_fight
+        type: folder
+        buildPhase: resources
+      - path: Resources/Info.plist
+        buildPhase: none
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.daledou.app
