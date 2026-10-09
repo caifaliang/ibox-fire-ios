@@ -16,6 +16,8 @@ final class RuffleSchemeHandler: NSObject, WKURLSchemeHandler {
 
     /// 主动作包（action_gg/mm）已交给 Flash；gg2/mm2 表示解析完成
     var onActionPackEvent: ((String) -> Void)?
+    /// 资源访问调试日志
+    var onResourceLog: ((String) -> Void)?
 
     override init() {
         let bundle = Bundle.main
@@ -58,6 +60,9 @@ final class RuffleSchemeHandler: NSObject, WKURLSchemeHandler {
         if rel.isEmpty { rel = "index.html" }
 
         let lowRel = rel.lowercased()
+        if lowRel.contains("action_") || lowRel.hasSuffix(".swf") || lowRel.hasSuffix(".wasm") {
+            logRes("REQ \(rel)")
+        }
         // gg2/mm2 ≈ 根动作包已解析完（对齐 Android）
         if (lowRel.contains("action_gg") || lowRel.contains("action_mm")),
            lowRel.contains("gg2") || lowRel.contains("mm2") {
@@ -69,6 +74,7 @@ final class RuffleSchemeHandler: NSObject, WKURLSchemeHandler {
         if (lowRel.contains("action_gg") || lowRel.contains("action_mm") || lowRel.hasPrefix("gres/")),
            FileManager.default.fileExists(atPath: cached.path),
            let data = try? Data(contentsOf: cached), data.count > 1000 {
+            logRes("CACHE \(rel) \(data.count)B")
             finish(urlSchemeTask, url: url, data: data, mime: mime(for: rel))
             if lowRel.contains("action_gg") || lowRel.contains("action_mm"),
                !lowRel.contains("gg2"), !lowRel.contains("mm2") {
@@ -80,6 +86,7 @@ final class RuffleSchemeHandler: NSObject, WKURLSchemeHandler {
         let cached2 = ActionPackPrefetch.localURL(for: rel)
         if FileManager.default.fileExists(atPath: cached2.path),
            let data = try? Data(contentsOf: cached2), data.count > 1000 {
+            logRes("CACHE2 \(rel) \(data.count)B")
             finish(urlSchemeTask, url: url, data: data, mime: mime(for: rel))
             if lowRel.contains("action_gg") || lowRel.contains("action_mm"),
                !lowRel.contains("gg2"), !lowRel.contains("mm2") {
@@ -91,15 +98,20 @@ final class RuffleSchemeHandler: NSObject, WKURLSchemeHandler {
         let local = root.appendingPathComponent(rel)
         if FileManager.default.fileExists(atPath: local.path),
            let data = try? Data(contentsOf: local) {
+            if lowRel.contains("action_") || lowRel.hasSuffix(".wasm") || lowRel.hasSuffix("PetFunFight.swf") {
+                logRes("BUNDLE \(rel) \(data.count)B")
+            }
             finish(urlSchemeTask, url: url, data: data, mime: mime(for: rel))
             return
         }
 
         if let cdn = cdnURL(for: rel, originalPath: path) {
+            logRes("CDN \(rel) → \(cdn.lastPathComponent)")
             proxyAndCache(cdn, rel: rel, task: urlSchemeTask)
             return
         }
 
+        logRes("MISS \(rel)")
         fail(urlSchemeTask, URLError(.fileDoesNotExist))
     }
 
@@ -167,12 +179,15 @@ final class RuffleSchemeHandler: NSObject, WKURLSchemeHandler {
             self.tasks[ObjectIdentifier(task)] = nil
             self.lock.unlock()
             if let err {
+                self.logRes("CDN FAIL \(remote.lastPathComponent) \(err.localizedDescription)")
                 self.fail(task, err)
                 return
             }
             let payload = data ?? Data()
+            let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
             let mime = (resp as? HTTPURLResponse)?.mimeType
                 ?? self.mime(for: remote.lastPathComponent)
+            self.logRes("CDN OK \(code) \(remote.lastPathComponent) \(payload.count)B")
             // 大动作包落盘，下次直接读缓存
             if let rel, payload.count > 1_000_000,
                rel.contains("action_gg") || rel.contains("action_mm") {
@@ -197,6 +212,11 @@ final class RuffleSchemeHandler: NSObject, WKURLSchemeHandler {
     private func notifyPack(_ kind: String) {
         let cb = onActionPackEvent
         DispatchQueue.main.async { cb?(kind) }
+    }
+
+    private func logRes(_ msg: String) {
+        let cb = onResourceLog
+        DispatchQueue.main.async { cb?(msg) }
     }
 
     private func finish(_ task: WKURLSchemeTask, url: URL, data: Data, mime: String) {
