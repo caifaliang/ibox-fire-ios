@@ -39,6 +39,28 @@ enum LoginURLs {
         return p
     }
 
+    /// 从 wtloginmqq / mqq 链接里抠出 https，便于留在 WKWebView。
+    static func httpsPayload(fromQqScheme url: URL) -> URL? {
+        let s = url.absoluteString
+        if let comps = URLComponents(url: url, resolvingAgainstBaseURL: false),
+           let p = comps.queryItems?.first(where: { $0.name == "p" || $0.name == "url" })?.value,
+           let u = URL(string: p), u.scheme?.hasPrefix("http") == true {
+            return u
+        }
+        // 兜底：字符串里找第一个 https
+        if let r = s.range(of: #"https?://[^\s&]+"#, options: .regularExpression) {
+            var raw = String(s[r])
+            raw = raw.removingPercentEncoding ?? raw
+            if let u = URL(string: raw), u.scheme?.hasPrefix("http") == true { return u }
+        }
+        return nil
+    }
+
+    static func isQqWakeScheme(_ scheme: String?) -> Bool {
+        guard let s = scheme?.lowercased() else { return false }
+        return s.hasPrefix("wtlogin") || s.hasPrefix("mqq") || s == "tencent"
+    }
+
     static func hasRealSkey(_ cookie: String?) -> Bool {
         guard let c = cookie, !c.isEmpty else { return false }
         return c.range(of: #"(?:^|[;\s])skey="#, options: .regularExpression) != nil

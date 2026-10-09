@@ -58,24 +58,11 @@ final class AppViewModel: ObservableObject {
         webReloadToken &+= 1
     }
 
-    /// 尝试一键唤 QQ；失败则回退壳内登录页
+    /// iOS 一键唤 QQ 授权后常落到系统浏览器，MVP 改为壳内密码/互联页登录。
     func tryOneClickWakeQQ() {
-        statusText = "正在唤起 QQ…"
-        guard let url = URL(string: LoginURLs.oneClickWt) else {
-            openInAppLogin()
-            return
-        }
-        UIApplication.shared.open(url, options: [:]) { [weak self] ok in
-            Task { @MainActor in
-                guard let self else { return }
-                if ok {
-                    self.statusText = "已唤起 QQ，授权后应回 App（daledouapp://）"
-                } else {
-                    self.statusText = "唤起 QQ 失败，改用壳内登录"
-                    self.openInAppLogin()
-                }
-            }
-        }
+        statusText = "iOS 一键唤 QQ 易跳浏览器，已改壳内登录"
+        // 密码页在壳内完成整条 Set-Cookie，不经过 QQ App / Safari
+        openPasswordLogin()
     }
 
     /// `daledouapp://` 回调：在壳内打开 jump

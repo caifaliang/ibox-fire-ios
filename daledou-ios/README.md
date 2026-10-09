@@ -18,8 +18,8 @@
 ## 登录说明
 
 - **主路径**：App 内 `WKWebView` 打开腾讯登录页，落地 `phonepk` 后从 `WKHTTPCookieStore` 读 Cookie。  
-- **一键唤 QQ**：`wtloginmqq` + `schemacallback=daledouapp://`；若 QQ 回调成功，在壳内打开 jump URL 完成写 Cookie。  
-- iOS **不能**像安卓那样注册默认浏览器截获任意 https。
+- 页内若跳 `wtloginmqq`/`mqq`：**拦截并留在壳内**（改加载 https jump 或密码页），避免 QQ → 系统浏览器。  
+- iOS **不能**像安卓那样注册默认浏览器；真·唤 QQ 一键登录在 iOS 上易丢到 Safari，MVP 不用。
 
 ## 本机无 Mac
 
