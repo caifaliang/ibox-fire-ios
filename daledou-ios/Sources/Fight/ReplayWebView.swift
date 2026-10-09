@@ -87,9 +87,10 @@ struct ReplayWebView: UIViewRepresentable {
 
         func onPackEvent(_ kind: String) {
             if kind == "delivered" {
-                statusLine.wrappedValue = "动作包加载中…"
+                // 这就是用户问的「gg 包」：已从磁盘/CDN 交给 Flash
+                statusLine.wrappedValue = "动作包(gg/mm)已加载，Flash 解析中…"
             } else if kind == "parsed" {
-                statusLine.wrappedValue = "动作包已解析"
+                statusLine.wrappedValue = "动作包二包请求=解析完成"
             }
         }
 
@@ -107,11 +108,19 @@ struct ReplayWebView: UIViewRepresentable {
                 case "boot_fail", "inject_fail":
                     statusLine.wrappedValue = "\(type): \(dict["payload"] ?? "")"
                 case "injected":
-                    statusLine.wrappedValue = "已注入，解析动作中…"
+                    statusLine.wrappedValue = "已注入，等待动作包/开战…"
                 case "swf_ready":
                     statusLine.wrappedValue = "SWF 就绪…"
                 case "boot_fallback":
                     statusLine.wrappedValue = "改用兼容 wasm…"
+                case "velocimetry":
+                    if let p = dict["payload"] as? [String: Any] {
+                        let tag = p["tag"] as? String ?? ""
+                        let val = p["val"] as? String ?? ""
+                        statusLine.wrappedValue = "vel \(tag) \(val)"
+                    }
+                case "ready_kick":
+                    statusLine.wrappedValue = "已按 ready_skip 强制开打"
                 default:
                     break
                 }
@@ -136,13 +145,7 @@ struct ReplayWebView: UIViewRepresentable {
             didInject = true
             statusLine.wrappedValue = "注入战报…"
             inject(into: webView, attempt: 0)
-            // 补丁 SWF：倒计时后 ENTER_FRAME 若卡住，原生再踢两次
-            DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) { [weak webView] in
-                webView?.evaluateJavaScript("window.__kickStartRound && window.__kickStartRound()", completionHandler: nil)
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 7.0) { [weak webView] in
-                webView?.evaluateJavaScript("window.__kickStartRound && window.__kickStartRound()", completionHandler: nil)
-            }
+            // 不要盲目 kick：过早 startRound → 单人站桩。等 Flash setVelocimetry(ready_skip)
         }
 
         private func inject(into webView: WKWebView, attempt: Int) {

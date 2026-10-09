@@ -111,9 +111,44 @@
       get(_t, prop) {
         const name = String(prop);
         if (name === 'then' || name === 'toJSON' || name.startsWith('__')) return undefined;
-        return function() { return null; };
+        return function() {
+          if (name === 'CloseFlash') {
+            setStatus('CloseFlash');
+            notifyAndroid('console', { msg: 'CloseFlash' });
+          }
+          return null;
+        };
       }
     });
+    // Flash ExternalInterface.call('swfhand_Obj.CloseFlash') 字面名
+    window['swfhand_Obj.CloseFlash'] = function() {
+      setStatus('CloseFlash');
+      notifyAndroid('console', { msg: 'CloseFlash' });
+      return null;
+    };
+
+    /**
+     * Flash → JS：ExternalControl.callFunction('setVelocimetry', tag, val)
+     * 缺这个函数时 Ruffle 会抛错，AS3 开战逻辑中断 → 321 后只剩单人站桩。
+     */
+    var _readyKickTimer = null;
+    window.setVelocimetry = function(tag, val) {
+      var t = String(tag == null ? '' : tag);
+      var v = String(val == null ? '' : val);
+      setStatus('vel ' + t + ' ' + v);
+      notifyAndroid('velocimetry', { tag: t, val: v });
+      // 对齐 Android：仅 ready_skip 后延迟踢开打（不要盲目提前 kick）
+      if (t === 'ready_skip') {
+        if (_readyKickTimer) clearTimeout(_readyKickTimer);
+        _readyKickTimer = setTimeout(function() {
+          window.__kickStartRound && window.__kickStartRound();
+        }, 1800);
+      }
+      if (t === 'ready_go' || t === 'ra_startRound' || t === 'atk_start') {
+        if (_readyKickTimer) { clearTimeout(_readyKickTimer); _readyKickTimer = null; }
+      }
+      return null;
+    };
 
     let player = null;
     let pendingAct = null;
@@ -231,9 +266,6 @@
         setStatus('replay injected act=' + pendingAct.act.length);
         notifyAndroid('injected', { ok: true, actLen: pendingAct.act.length });
         applyPendingSpeed();
-        // 倒计时后若 Timer 饿死，补丁 SWF 的 kick 会走 doReadyGo('kick')
-        setTimeout(function() { window.__kickStartRound && window.__kickStartRound(); }, 2800);
-        setTimeout(function() { window.__kickStartRound && window.__kickStartRound(); }, 5500);
         return true;
       } catch (e) {
         notifyAndroid('inject_fail', { err: String(e) });
