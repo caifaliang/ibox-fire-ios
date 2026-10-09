@@ -79,8 +79,7 @@ final class RuffleSchemeHandler: NSObject, WKURLSchemeHandler {
                 return
             }
         }
-        let stubHeavy = ["activehall", "worldmap", "fenxiang", "huangzuan", "choujiang", "stronger"]
-        if stubHeavy.contains(where: { lowRel.contains($0) }) {
+        if RuffleLocalServer.shouldStubReplayAsset(lowRel) {
             logRes("STUB heavy \(rel)")
             finish(urlSchemeTask, url: url, data: Self.emptySwf, mime: mime(for: rel))
             return

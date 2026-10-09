@@ -26,6 +26,18 @@ final class RuffleLocalServer {
         0x00, 0x0C, 0x01, 0x00, 0x40, 0x00, 0x00, 0x00,
     ])
 
+    /// 回放时 stub 的路径片段（小写）。保留 action_/npc/mercenary/wuxing/bg/ui/xmls/loading/spchack。
+    static func shouldStubReplayAsset(_ lowPath: String) -> Bool {
+        let keys = [
+            "activehall", "worldmap", "fenxiang", "huangzuan", "choujiang", "stronger",
+            "xianxia", "leisure", "button/", "guanzhong", "zhenfa", "fenxiang",
+            "yuanwuge", "worldtree", "dragonarea", "shikong", "huashan", "huanjin",
+            "rongyao", "haidao", "huodong", "limitbless", "xieshen", "horseyear",
+            "almanac", "weiduan", "todaymust",
+        ]
+        return keys.contains(where: { lowPath.contains($0) })
+    }
+
     @discardableResult
     func start(root: URL) throws -> URL {
         if listener != nil, port > 0, self.root == root, let base = baseURL {
@@ -172,9 +184,9 @@ final class RuffleLocalServer {
             }
         }
 
-        // 对齐 Android stubHeavy：回放时砍掉大厅重资源，降低解析峰值内存
-        let stubHeavy = ["activehall", "worldmap", "fenxiang", "huangzuan", "choujiang", "stronger"]
-        if stubHeavy.contains(where: { low.contains($0) }) {
+        // 回放降配 stub：砍掉开战前大厅/装饰资源，给 action_gg 解析腾内存
+        //（APK 另有独立 :ruffle 进程；iOS 同进程必须 stub 更狠）
+        if Self.shouldStubReplayAsset(low) {
             log("STUB heavy \(fileRel)")
             respond(conn, status: 200, mime: mime(fileRel), body: Self.emptySwf, headOnly: headOnly)
             return

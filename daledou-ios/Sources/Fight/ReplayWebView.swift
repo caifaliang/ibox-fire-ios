@@ -25,6 +25,8 @@ struct ReplayWebView: UIViewRepresentable {
         log.append("diskReady=\(ActionPackPrefetch.isDiskReady(preferMm: preferMm))")
 
         let config = WKWebViewConfiguration()
+        // 独立进程池：尽量与游戏主 WebView 隔离（对齐 APK :ruffle 进程思路）
+        config.processPool = RuffleMemPolicy.sharedProcessPool
         config.defaultWebpagePreferences.allowsContentJavaScript = true
         config.allowsInlineMediaPlayback = true
         config.mediaTypesRequiringUserActionForPlayback = []
@@ -100,10 +102,10 @@ struct ReplayWebView: UIViewRepresentable {
         return wv
     }
 
-    private static func fightPageURL(base: String, preferMm: Bool, vanilla: Bool) -> URL {
+    private static func fightPageURL(base: String, preferMm: Bool, vanilla: Bool, lowmem: Bool = true) -> URL {
         var s = base
         if !s.hasSuffix("/") { s += "/" }
-        var q = "renderer=canvas&preferMm=\(preferMm ? 1 : 0)&replay=1"
+        var q = "renderer=canvas&preferMm=\(preferMm ? 1 : 0)&replay=1&lowmem=\(lowmem ? 1 : 0)"
         if vanilla { q += "&wasm=vanilla" }
         return URL(string: "\(s)ruffle_fight/index.html?\(q)")!
     }
@@ -130,6 +132,7 @@ struct ReplayWebView: UIViewRepresentable {
         var useVanilla = false
         private var injectGeneration = 0
         private var recoveringFromOOM = false
+        private var oomCount = 0
         private var statusLine: Binding<String>
 
         init(act: String, replayId: String, log: ReplayDebugLog, statusLine: Binding<String>) {
@@ -247,14 +250,31 @@ struct ReplayWebView: UIViewRepresentable {
             inject(into: webView, attempt: 0, generation: injectGeneration)
         }
 
-        /// WebContent 被 jetsam/OOM 杀掉：对齐 APK render_gone → sticky vanilla 降配重载
+        /// WebContent 被 jetsam/OOM 杀掉：对齐 APK onRenderProcessGone（只救一次，避免反复重载更爆内存）
         func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
-            log.append("OOM/terminate WebContent → vanilla reload")
-            statusLine.wrappedValue = "内存不足，降配重试…"
+            oomCount += 1
             RuffleMemPolicy.markWasmCrashed()
             useVanilla = true
-            guard !recoveringFromOOM else { return }
+            log.append("OOM/terminate WebContent count=\(oomCount)")
+            if oomCount >= 2 || recoveringFromOOM {
+                let msg = "内存不足，官方动画无法完成。请关闭后用文字战报，或杀掉后台再试。"
+                statusLine.wrappedValue = msg
+                log.append("OOM GIVE UP → \(msg)")
+                webView.loadHTMLString(
+                    """
+                    <html><body style="background:#111;color:#ccc;font:15px -apple-system;padding:28px;line-height:1.5">
+                    <b style="color:#f66">内存不足</b><br/><br/>
+                    解析官方动作包（约 40MB）时 WebContent 被系统回收。<br/>
+                    APK 用独立进程扛住了；iOS 同进程更容易爆。<br/><br/>
+                    请关掉本页，用文字战报；或清理后台后重开一次。
+                    </body></html>
+                    """,
+                    baseURL: nil
+                )
+                return
+            }
             recoveringFromOOM = true
+            statusLine.wrappedValue = "内存不足，降配重试…"
             let preferMm = ActionPackPrefetch.preferMm(from: act)
             let base: String
             if let pageURL, let host = pageURL.host, host == "127.0.0.1" || host == "localhost",
@@ -265,7 +285,7 @@ struct ReplayWebView: UIViewRepresentable {
             } else {
                 base = "\(RuffleSchemeHandler.scheme)://local/"
             }
-            let url = ReplayWebView.fightPageURL(base: base, preferMm: preferMm, vanilla: true)
+            let url = ReplayWebView.fightPageURL(base: base, preferMm: preferMm, vanilla: true, lowmem: true)
             pageURL = url
             log.append("reload \(url.absoluteString)")
             webView.load(URLRequest(url: url))
@@ -308,6 +328,7 @@ enum RuffleMemPolicy {
     private static let keyCrashed = "ruffle_wasm_crashed"
     private static let keyPreferSimd = "ruffle_prefer_simd"
     private static let defaults = UserDefaults.standard
+    static let sharedProcessPool = WKProcessPool()
 
     static var shouldUseVanilla: Bool {
         if defaults.bool(forKey: keyCrashed) { return true }
