@@ -160,6 +160,12 @@ struct GameWebView: UIViewRepresentable {
             }
             let scheme = (url.scheme ?? "").lowercased()
 
+            // about:blank 等：QQ 跳转链常见，必须放行，否则与登录状态文案死循环闪烁
+            if scheme == "about" || scheme.isEmpty {
+                decisionHandler(.allow)
+                return
+            }
+
             // ① 自定义 Scheme：拦截 code，绝不交给系统浏览器
             if LoginURLs.isCallbackScheme(scheme) || scheme == "daledouapp" {
                 decisionHandler(.cancel)
@@ -206,11 +212,8 @@ struct GameWebView: UIViewRepresentable {
                 return
             }
 
-            // 其它 scheme 一律拦下，防止蹦浏览器
+            // 其它未知 scheme：静默取消，不刷状态栏（避免与「已登录」闪烁）
             decisionHandler(.cancel)
-            Task { @MainActor in
-                vm.statusText = "已拦截外部跳转：\(scheme)"
-            }
         }
 
         func webView(
@@ -238,6 +241,10 @@ struct GameWebView: UIViewRepresentable {
             captureTask = Task { @MainActor in
                 try? await Task.sleep(nanoseconds: 500_000_000)
                 guard !Task.isCancelled else { return }
+                // 已登录且空闲：不再反复 capture → openGameHome，避免闪烁/打断游戏
+                if vm.session.isLoggedIn, vm.loginMode == .idle {
+                    return
+                }
                 if vm.loginMode == .scan,
                    let s = webView.url?.absoluteString,
                    let cont = LoginURLs.continueAuthorizeUrl(xloginUrl: s),
@@ -261,8 +268,7 @@ struct GameWebView: UIViewRepresentable {
                 if LoginURLs.hasRealSkey(header) {
                     vm.onCookiesCaptured(header)
                 } else if LoginURLs.isGameHost(url), !vm.session.isLoggedIn {
-                    // 能打开游戏页但读不到 skey：明确提示，勿卡在「授权回调」假状态
-                    vm.statusText = "已进游戏页，但未读到 skey（会话可能仅在本页）。可试 Cookie 登陆备份"
+                    vm.statusText = "已进游戏页，但未读到 skey。可试 Cookie 登陆备份"
                 }
             }
         }

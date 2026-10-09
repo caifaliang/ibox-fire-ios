@@ -121,17 +121,27 @@ final class AppViewModel: ObservableObject {
         }
     }
 
+    /// 本次启动是否已因捕获 Cookie 跳进过游戏（防反复 pendingURL）
+    private var didEnterGameFromCapture = false
+
     func onCookiesCaptured(_ header: String) {
         guard LoginURLs.hasRealSkey(header) else { return }
         session.save(cookieHeader: header)
         loginMode = .idle
         preferDesktopUA = false
-        refreshStatus()
-        // refreshStatus 已写成「已登录 QQ …」；再补一句确认 Cookie 已落盘
-        let q = qqLabel.isEmpty ? "?" : qqLabel
-        statusText = "已登录 QQ \(q) · Cookie 已保存"
-        if let cur = URL(string: currentURLString), !LoginURLs.isGameHost(cur) {
-            openGameHome()
+        if let extracted = LoginURLs.extractQq(header), !extracted.isEmpty {
+            qqLabel = extracted
+        }
+        let showQq = qqLabel.isEmpty ? "?" : qqLabel
+        statusText = "已登录 QQ \(showQq) · Cookie 已保存"
+        titleHint = "大乐斗"
+        // 只进一次游戏首页，避免与 about:blank / 二次 capture 打架
+        if !didEnterGameFromCapture {
+            didEnterGameFromCapture = true
+            let cur = URL(string: currentURLString)
+            if cur == nil || !LoginURLs.isGameHost(cur) {
+                pendingURL = URL(string: LoginURLs.ledouEntry)
+            }
         }
     }
 
@@ -140,6 +150,7 @@ final class AppViewModel: ObservableObject {
         loginMode = .idle
         preferDesktopUA = false
         cookieDraft = ""
+        didEnterGameFromCapture = false
         clearWebEpoch &+= 1
         loadWaitingPage = true
         pendingURL = nil
