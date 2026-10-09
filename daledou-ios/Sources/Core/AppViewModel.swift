@@ -1,9 +1,12 @@
 import Foundation
 import SwiftUI
+import WebKit
 
 @MainActor
 final class AppViewModel: ObservableObject {
     let session = SessionStore.shared
+    /// 游戏壳 WebView，取 petpk Act 时合并其 Cookie（对齐 Android CookieManager）
+    weak var gameWebView: WKWebView?
 
     @Published var statusText = ""
     @Published var showMenu = false
@@ -160,8 +163,15 @@ final class AppViewModel: ObservableObject {
         guard !viewFightLoading else { return }
         viewFightLoading = true
         statusText = "正在获取战斗数据…"
-        let cookie = session.cookieHeader
         Task {
+            var cookie = session.cookieHeader
+            if let wv = gameWebView {
+                let web = await CookieBridge.readCookieHeader(from: wv)
+                cookie = Self.mergeCookieHeaders(cookie, web)
+                if LoginURLs.hasRealSkey(cookie) {
+                    session.save(cookieHeader: cookie)
+                }
+            }
             let result = await FightActFetcher.fetch(pageUrl: page, cookieHeader: cookie)
             viewFightLoading = false
             if result.act.isEmpty {
@@ -173,6 +183,22 @@ final class AppViewModel: ObservableObject {
             statusText = "已取到战斗数据，打开官方动画"
             showReplay = true
         }
+    }
+
+    /// 合并两段 Cookie，后者同名覆盖前者
+    static func mergeCookieHeaders(_ a: String, _ b: String) -> String {
+        var map: [String: String] = [:]
+        for raw in [a, b] {
+            for part in raw.split(separator: ";") {
+                let s = part.trimmingCharacters(in: .whitespaces)
+                guard let eq = s.firstIndex(of: "=") else { continue }
+                let name = String(s[..<eq])
+                let val = String(s[s.index(after: eq)...])
+                guard !name.isEmpty, !val.isEmpty else { continue }
+                map[name] = val
+            }
+        }
+        return map.map { "\($0.key)=\($0.value)" }.sorted().joined(separator: "; ")
     }
 
     /// 本次启动是否已因捕获 Cookie 跳进过游戏（防反复 pendingURL）

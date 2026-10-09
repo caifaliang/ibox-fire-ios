@@ -27,6 +27,7 @@ struct GameWebView: UIViewRepresentable {
         }
         context.coordinator.webView = wv
         context.coordinator.defaultUA = wv.value(forKey: "userAgent") as? String
+        context.coordinator.vm.gameWebView = wv
 
         Task { @MainActor in
             let cookie = SessionStore.shared.cookieHeader
@@ -45,6 +46,7 @@ struct GameWebView: UIViewRepresentable {
     func updateUIView(_ webView: WKWebView, context: Context) {
         context.coordinator.webView = webView
         context.coordinator.vm = vm
+        vm.gameWebView = webView
         context.coordinator.applyUA(webView, desktop: vm.preferDesktopUA)
 
         if context.coordinator.lastClearEpoch != clearEpoch {
