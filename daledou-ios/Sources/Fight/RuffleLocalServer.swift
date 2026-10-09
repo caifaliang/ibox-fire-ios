@@ -26,15 +26,14 @@ final class RuffleLocalServer {
         0x00, 0x0C, 0x01, 0x00, 0x40, 0x00, 0x00, 0x00,
     ])
 
-    /// 回放 stub（小写）。勿 stub leisure/ui/loading/xmls/spchack——缺了会卡死等 EI。
-    /// 只砍大厅装饰，给 action_gg 腾内存。
+    /// 与 APK `FlashRuffleReplayWebView` stubHeavy **完全一致**（勿自行加砍）。
+    /// APK 不降分辨率；只 stub 这几个大厅装饰。错性别 action 另走 emptySwf。
     static func shouldStubReplayAsset(_ lowPath: String) -> Bool {
         let keys = [
-            "activehall", "worldmap", "fenxiang", "huangzuan", "choujiang", "stronger",
-            "xianxia", "button/", "guanzhong", "zhenfa",
-            "yuanwuge", "worldtree", "dragonarea", "shikong", "huashan", "huanjin",
-            "rongyao", "haidao", "huodong", "limitbless", "xieshen", "horseyear",
-            "almanac", "weiduan", "todaymust",
+            "worldmap",
+            "fenxiang",
+            "huangzuan",
+            "choujiang",
         ]
         return keys.contains(where: { lowPath.contains($0) })
     }
@@ -185,10 +184,9 @@ final class RuffleLocalServer {
             }
         }
 
-        // 回放降配 stub：砍掉开战前大厅/装饰资源，给 action_gg 解析腾内存
-        //（APK 另有独立 :ruffle 进程；iOS 同进程必须 stub 更狠）
+        // 与 APK stubHeavy 一致（非半分辨率降配）
         if Self.shouldStubReplayAsset(low) {
-            log("STUB heavy \(fileRel)")
+            log("STUB apk-heavy \(fileRel)")
             respond(conn, status: 200, mime: mime(fileRel), body: Self.emptySwf, headOnly: headOnly)
             return
         }

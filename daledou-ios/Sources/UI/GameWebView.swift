@@ -43,6 +43,18 @@ struct GameWebView: UIViewRepresentable {
         return wv
     }
 
+    static func dismantleUIView(_ uiView: WKWebView, coordinator: Coordinator) {
+        // 被 RootView 拆掉时尽快释放 WebContent（对齐开战让内存给 Ruffle）
+        uiView.stopLoading()
+        uiView.navigationDelegate = nil
+        uiView.uiDelegate = nil
+        if coordinator.vm.gameWebView === uiView {
+            coordinator.vm.gameWebView = nil
+        }
+        coordinator.webView = nil
+        uiView.load(URLRequest(url: URL(string: "about:blank")!))
+    }
+
     func updateUIView(_ webView: WKWebView, context: Context) {
         context.coordinator.webView = webView
         context.coordinator.vm = vm
@@ -99,16 +111,7 @@ struct GameWebView: UIViewRepresentable {
             return
         }
 
-        // 官方动画期间：游戏页改 about:blank，释放 WebContent 内存给 Ruffle
-        if context.coordinator.wasSuspended != vm.suspendGameWebForReplay {
-            context.coordinator.wasSuspended = vm.suspendGameWebForReplay
-            if vm.suspendGameWebForReplay {
-                webView.stopLoading()
-                webView.load(URLRequest(url: URL(string: "about:blank")!))
-                return
-            }
-        }
-
+        // 开战时 RootView 会拆掉本 View；此处不再 about:blank（拆树才真正杀 WebContent）
         if vm.suspendGameWebForReplay {
             return
         }
@@ -131,7 +134,6 @@ struct GameWebView: UIViewRepresentable {
         weak var webView: WKWebView?
         var lastReloadToken = 0
         var lastClearEpoch = 0
-        var wasSuspended = false
         var lastCookieInject = 0
         var defaultUA: String?
         private var captureTask: Task<Void, Never>?

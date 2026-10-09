@@ -2,6 +2,7 @@ import SwiftUI
 import WebKit
 import UIKit
 
+/// 容器承载 Ruffle WKWebView，便于 Warm detach（对齐 APK detachFromParent）。
 struct ReplayWebView: UIViewRepresentable {
     let act: String
     let replayId: String
@@ -12,7 +13,11 @@ struct ReplayWebView: UIViewRepresentable {
         Coordinator(act: act, replayId: replayId, log: log, statusLine: $statusLine)
     }
 
-    func makeUIView(context: Context) -> WKWebView {
+    func makeUIView(context: Context) -> UIView {
+        let box = UIView()
+        box.backgroundColor = .black
+        box.autoresizesSubviews = true
+
         let preferMm = ActionPackPrefetch.preferMm(from: act)
         ActionPackPrefetch.sessionPreferMm = preferMm
         log.append("boot replayId=\(replayId) actLen=\(act.count) preferMm=\(preferMm)")
@@ -24,8 +29,35 @@ struct ReplayWebView: UIViewRepresentable {
         }
         log.append("diskReady=\(ActionPackPrefetch.isDiskReady(preferMm: preferMm))")
 
+        let warm = RuffleWarmHolder.shared
+        if warm.canReuse(preferMm: preferMm), let wv = warm.webView {
+            log.append("WARM reuse actionReady=\(warm.actionPackReady)")
+            statusLine = warm.actionPackReady ? "暖机复用…" : "暖机等待动作包…"
+            context.coordinator.bind(webView: wv, cold: false)
+            Self.pin(wv, in: box)
+            context.coordinator.pageURL = wv.url
+            // 对齐 APK：包已就绪直接 reinject；否则挂 pending
+            if warm.actionPackReady {
+                DispatchQueue.main.async {
+                    context.coordinator.injectNow(into: wv)
+                }
+            } else {
+                warm.pendingAct = act
+                warm.pendingReplayId = replayId
+                DispatchQueue.main.async {
+                    context.coordinator.injectNow(into: wv)
+                }
+            }
+            return box
+        }
+
+        // Cold path — 性别/版本变化或首次
+        if warm.webView != nil {
+            log.append("WARM discard → cold")
+            warm.destroy()
+        }
+
         let config = WKWebViewConfiguration()
-        // 独立进程池：尽量与游戏主 WebView 隔离（对齐 APK :ruffle 进程思路）
         config.processPool = RuffleMemPolicy.sharedProcessPool
         config.defaultWebpagePreferences.allowsContentJavaScript = true
         config.allowsInlineMediaPlayback = true
@@ -33,7 +65,6 @@ struct ReplayWebView: UIViewRepresentable {
         config.preferences.setValue(true, forKey: "allowFileAccessFromFileURLs")
         config.setValue(true, forKey: "allowUniversalAccessFromFileURLs")
 
-        // 保留 scheme 作兜底；主路径改走本机 HTTP（Ruffle Loader 只认 http/https）
         let handler = RuffleSchemeHandler()
         config.setURLSchemeHandler(handler, forURLScheme: RuffleSchemeHandler.scheme)
         context.coordinator.handler = handler
@@ -44,13 +75,7 @@ struct ReplayWebView: UIViewRepresentable {
             coordinator?.logLine(msg)
         }
 
-        let uc = config.userContentController
-        uc.add(context.coordinator, name: "ruffleStatus")
-        uc.add(context.coordinator, name: "ruffleEvent")
-
         let wv = WKWebView(frame: .zero, configuration: config)
-        wv.navigationDelegate = context.coordinator
-        context.coordinator.webView = wv
         wv.isOpaque = true
         wv.backgroundColor = .black
         wv.scrollView.backgroundColor = .black
@@ -58,6 +83,9 @@ struct ReplayWebView: UIViewRepresentable {
         if #available(iOS 16.4, *) {
             wv.isInspectable = true
         }
+        warm.adopt(wv, preferMm: preferMm)
+        context.coordinator.bind(webView: wv, cold: true)
+        Self.pin(wv, in: box)
 
         guard handler.rootExists else {
             let msg = "资源缺失: \(handler.rootPath)"
@@ -68,7 +96,7 @@ struct ReplayWebView: UIViewRepresentable {
                     + "ruffle_fight 未打进包<br/>\(handler.rootPath)</body></html>",
                 baseURL: nil
             )
-            return wv
+            return box
         }
         log.append("bundleOK root=\(handler.rootPath)")
 
@@ -97,33 +125,49 @@ struct ReplayWebView: UIViewRepresentable {
             )
         }
         statusLine = forceVanilla ? "兼容模式加载…" : "加载播放器…"
-        log.append("load \(pageURL.absoluteString)")
+        log.append("load \(pageURL.absoluteString) (game WebView already torn down)")
         context.coordinator.pageURL = pageURL
-        // 稍等主游戏页 about:blank 落地，再开 Ruffle，减少双 WebContent 峰值
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+        // AppViewModel 已等 ~1.4s 拆游戏页；此处只再让一帧布局
+        DispatchQueue.main.async {
             wv.load(URLRequest(url: pageURL))
         }
-        return wv
+        return box
+    }
+
+    private static func pin(_ wv: WKWebView, in box: UIView) {
+        wv.removeFromSuperview()
+        wv.translatesAutoresizingMaskIntoConstraints = true
+        wv.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        wv.frame = box.bounds
+        box.addSubview(wv)
     }
 
     private static func fightPageURL(base: String, preferMm: Bool, vanilla: Bool, lowmem: Bool = false) -> URL {
         var s = base
         if !s.hasSuffix("/") { s += "/" }
-        // lowmem 半分辨率已停用（会把画面挤出视口）；保留参数兼容旧链接
         var q = "renderer=canvas&preferMm=\(preferMm ? 1 : 0)&replay=1&lowmem=\(lowmem ? 1 : 0)"
         if vanilla { q += "&wasm=vanilla" }
         return URL(string: "\(s)ruffle_fight/index.html?\(q)")!
     }
 
-    func updateUIView(_ uiView: WKWebView, context: Context) {
-        context.coordinator.webView = uiView
+    func updateUIView(_ uiView: UIView, context: Context) {
+        if let wv = uiView.subviews.first as? WKWebView {
+            context.coordinator.webView = wv
+            wv.frame = uiView.bounds
+        }
     }
 
-    static func dismantleUIView(_ uiView: WKWebView, coordinator: Coordinator) {
-        uiView.configuration.userContentController.removeScriptMessageHandler(forName: "ruffleStatus")
-        uiView.configuration.userContentController.removeScriptMessageHandler(forName: "ruffleEvent")
+    static func dismantleUIView(_ uiView: UIView, coordinator: Coordinator) {
+        // 对齐 APK：只 detach，不 destroy——保留已 parse 的 action_gg。
+        // 必须卸掉 message handler，否则 coordinator 释放后 JS 回调会崩。
         coordinator.handler?.onActionPackEvent = nil
         coordinator.handler?.onResourceLog = nil
+        if let wv = RuffleWarmHolder.shared.webView ?? uiView.subviews.first as? WKWebView {
+            wv.navigationDelegate = nil
+        }
+        RuffleWarmHolder.shared.uninstallHandlersIfNeeded()
+        RuffleWarmHolder.shared.detachFromParent()
+        coordinator.log.append("WARM detach (keep parsed pack)")
         coordinator.log.flushToDisk()
     }
 
@@ -139,6 +183,7 @@ struct ReplayWebView: UIViewRepresentable {
         private var recoveringFromOOM = false
         private var oomCount = 0
         private var statusLine: Binding<String>
+        private var isCold = true
 
         init(act: String, replayId: String, log: ReplayDebugLog, statusLine: Binding<String>) {
             self.act = act
@@ -147,12 +192,26 @@ struct ReplayWebView: UIViewRepresentable {
             self.statusLine = statusLine
         }
 
+        func bind(webView: WKWebView, cold: Bool) {
+            // 换 coordinator 时重绑 message handler / navigationDelegate
+            RuffleWarmHolder.shared.uninstallHandlersIfNeeded()
+            let uc = webView.configuration.userContentController
+            uc.add(self, name: "ruffleStatus")
+            uc.add(self, name: "ruffleEvent")
+            RuffleWarmHolder.shared.markHandlersInstalled(true)
+            webView.navigationDelegate = self
+            self.webView = webView
+            self.isCold = cold
+            oomCount = 0
+            recoveringFromOOM = false
+        }
+
         func logLine(_ msg: String) {
             log.append(msg)
-            // 关键重要行顶栏
             if msg.contains("action_gg") || msg.contains("action_mm")
                 || msg.contains("FAIL") || msg.contains("ERR")
-                || msg.hasPrefix("vel ") || msg.contains("inject") {
+                || msg.hasPrefix("vel ") || msg.contains("inject")
+                || msg.contains("WARM") {
                 statusLine.wrappedValue = msg
             }
         }
@@ -163,9 +222,14 @@ struct ReplayWebView: UIViewRepresentable {
                 statusLine.wrappedValue = msg
                 log.append(msg)
             } else if kind == "parsed" {
+                RuffleWarmHolder.shared.markActionPackReady()
                 let msg = "PACK parsed (收到 gg2/mm2 请求)"
                 statusLine.wrappedValue = msg
                 log.append(msg)
+                if let (a, id) = RuffleWarmHolder.shared.takePendingAct(), let wv = webView {
+                    log.append("WARM drain pending act=\(a.count)")
+                    injectAct(a, id: id, into: wv)
+                }
             }
         }
 
@@ -185,11 +249,11 @@ struct ReplayWebView: UIViewRepresentable {
                 switch type {
                 case "boot_fail", "inject_fail":
                     statusLine.wrappedValue = "\(type): \(stringify(payload))"
-                case "injected":
+                case "injected", "reinjected":
                     statusLine.wrappedValue = "已注入，等待动作包/开战…"
-                    // 成功注入后，若本轮已是 vanilla 且后续能开战，可清 sticky
                 case "swf_ready":
                     statusLine.wrappedValue = "SWF 就绪…"
+                    RuffleWarmHolder.shared.markPageReady()
                 case "boot_fallback":
                     RuffleMemPolicy.markWasmCrashed()
                     useVanilla = true
@@ -199,7 +263,9 @@ struct ReplayWebView: UIViewRepresentable {
                         let tag = p["tag"] as? String ?? ""
                         let val = p["val"] as? String ?? ""
                         statusLine.wrappedValue = "vel \(tag) \(val)"
-                        if tag == "sal_base_ok" || tag == "ready_go" || tag == "ra_startRound" {
+                        // APK：velocimetry 6 / CloseFlash ≈ action pack ready
+                        if tag == "6" || tag == "sal_base_ok" || tag == "ready_go" || tag == "ra_startRound" {
+                            RuffleWarmHolder.shared.markActionPackReady()
                             RuffleMemPolicy.markFightHealthy()
                         }
                     }
@@ -211,6 +277,9 @@ struct ReplayWebView: UIViewRepresentable {
                         let short = (u as NSString).lastPathComponent
                         if short.contains("action_") || type != "net_ok" {
                             statusLine.wrappedValue = "\(type) \(short)"
+                        }
+                        if short.contains("gg2") || short.contains("mm2") {
+                            RuffleWarmHolder.shared.markActionPackReady()
                         }
                     }
                 default:
@@ -249,30 +318,30 @@ struct ReplayWebView: UIViewRepresentable {
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             self.webView = webView
             recoveringFromOOM = false
+            RuffleWarmHolder.shared.markPageReady()
             statusLine.wrappedValue = "注入战报…"
             log.append("didFinish → queue inject gen=\(injectGeneration + 1)")
             injectGeneration += 1
             inject(into: webView, attempt: 0, generation: injectGeneration)
         }
 
-        /// jetsam：不要改 sticky vanilla（慢解析更易再爆）。只重试一次同配置，再失败就停。
+        /// jetsam：保持 SIMD；清缓存后再试一次；再失败则停并销毁 warm。
         func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
             oomCount += 1
             log.append("OOM/terminate WebContent count=\(oomCount) (jetsam, keep simd)")
             if oomCount >= 2 || recoveringFromOOM {
                 recoveringFromOOM = true
+                injectGeneration += 1
+                RuffleWarmHolder.shared.destroy()
                 let msg = "内存不足，官方动画无法完成。请关闭后用文字战报，或杀掉后台再试。"
                 statusLine.wrappedValue = msg
                 log.append("OOM GIVE UP → \(msg)")
-                // 避免 didFinish 再去 inject
-                injectGeneration += 1
                 webView.loadHTMLString(
                     """
                     <html><body style="background:#111;color:#ccc;font:15px -apple-system;padding:28px;line-height:1.5">
                     <b style="color:#f66">内存不足</b><br/><br/>
-                    解析官方动作包（约 40MB）时 WebContent 被系统回收。<br/>
-                    APK 用独立 :ruffle 进程；本机需先卸掉游戏页再播。<br/><br/>
-                    请关掉本页用文字战报，或清理后台后重开一次。
+                    解析官方动作包时 WebContent 被系统回收。<br/>
+                    已按 APK 策略拆掉游戏页；若仍失败请杀后台后只开一次动画。
                     </body></html>
                     """,
                     baseURL: nil
@@ -280,7 +349,8 @@ struct ReplayWebView: UIViewRepresentable {
                 return
             }
             recoveringFromOOM = true
-            statusLine.wrappedValue = "内存不足，重试…"
+            statusLine.wrappedValue = "内存不足，清缓存后重试…"
+            URLCache.shared.removeAllCachedResponses()
             let preferMm = ActionPackPrefetch.preferMm(from: act)
             let base: String
             if let pageURL, let host = pageURL.host, host == "127.0.0.1" || host == "localhost",
@@ -291,12 +361,35 @@ struct ReplayWebView: UIViewRepresentable {
             } else {
                 base = "\(RuffleSchemeHandler.scheme)://local/"
             }
-            // 继续 SIMD（与 APK 一致）；勿切 vanilla、勿 lowmem
             let url = ReplayWebView.fightPageURL(base: base, preferMm: preferMm, vanilla: false, lowmem: false)
             pageURL = url
-            log.append("reload \(url.absoluteString)")
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            log.append("reload after 1.2s \(url.absoluteString)")
+            // WebContent 已死：重置 warm 状态并重绑 handler，load 会重建进程
+            RuffleWarmHolder.shared.adopt(webView, preferMm: preferMm)
+            bind(webView: webView, cold: true)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
                 webView.load(URLRequest(url: url))
+            }
+        }
+
+        func injectNow(into webView: WKWebView) {
+            injectGeneration += 1
+            inject(into: webView, attempt: 0, generation: injectGeneration)
+        }
+
+        private func injectAct(_ act: String, id: String, into webView: WKWebView) {
+            let b64 = Data(act.utf8).base64EncodedString()
+            let idEsc = id
+                .replacingOccurrences(of: "\\", with: "\\\\")
+                .replacingOccurrences(of: "\"", with: "\\\"")
+            let js = "window.__injectFightActB64 && window.__injectFightActB64(\"\(b64)\",\"\(idEsc)\")"
+            webView.evaluateJavaScript(js) { [weak self] result, error in
+                guard let self else { return }
+                if let error {
+                    self.logLine("注入异常: \(error.localizedDescription)")
+                }
+                let ok = (result as? Bool) == true
+                self.logLine(ok ? "inject queued/ok (direct)" : "inject pending")
             }
         }
 
@@ -331,15 +424,13 @@ struct ReplayWebView: UIViewRepresentable {
     }
 }
 
-/// 对齐 Android `ruffle_warm`：默认 SIMD（解析快），仅 WASM 编译崩溃才 sticky vanilla。
-/// 注意：jetsam/OOM ≠ wasm crash；用 vanilla 会解析更久、峰值更久，反而更容易被杀。
+/// 对齐 Android：默认 SIMD；仅 WASM 编译崩溃才 sticky vanilla。jetsam ≠ wasm crash。
 enum RuffleMemPolicy {
     private static let keyCrashed = "ruffle_wasm_crashed"
     private static let keyPolicyV = "ruffle_mem_policy_v"
     private static let defaults = UserDefaults.standard
     static let sharedProcessPool = WKProcessPool()
 
-    /// 一次性清掉旧版「默认 vanilla / OOM→vanilla」错误 sticky
     static func migrateIfNeeded() {
         if defaults.integer(forKey: keyPolicyV) < 2 {
             defaults.set(false, forKey: keyCrashed)
@@ -352,7 +443,6 @@ enum RuffleMemPolicy {
         return defaults.bool(forKey: keyCrashed)
     }
 
-    /// 仅 WASM RuntimeError / unreachable 时调用；jetsam 不要调
     static func markWasmCrashed() {
         defaults.set(true, forKey: keyCrashed)
     }
@@ -463,7 +553,7 @@ struct ReplaySheet: View {
         if line.contains("vel ") || line.contains("velocimetry") {
             return .mint
         }
-        if line.contains("inject") || line.contains("kick") {
+        if line.contains("inject") || line.contains("kick") || line.contains("WARM") {
             return .yellow
         }
         return .green.opacity(0.9)

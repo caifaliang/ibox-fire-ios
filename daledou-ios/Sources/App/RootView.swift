@@ -16,8 +16,15 @@ struct RootView: View {
                         .padding(.vertical, 4)
                         .background(Color(.systemGray6))
                 }
-                GameWebView(vm: vm, clearEpoch: vm.clearWebEpoch)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                // 对齐 APK :ruffle：开战时从树里拆掉游戏 WKWebView（不是 about:blank），
+                // 让 WebContent 进程真正退出，把 jetsam 预算让给 Ruffle。
+                if vm.suspendGameWebForReplay {
+                    Color.black
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    GameWebView(vm: vm, clearEpoch: vm.clearWebEpoch)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
             }
 
             if vm.showViewFightFab {
