@@ -1,0 +1,46 @@
+name: DaLedou
+options:
+  bundleIdPrefix: com.daledou
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+  groupSortPosition: top
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    SWIFT_STRICT_CONCURRENCY: minimal
+    TARGETED_DEVICE_FAMILY: "1,2"
+    IPHONEOS_DEPLOYMENT_TARGET: "16.0"
+    PRODUCT_BUNDLE_IDENTIFIER: com.daledou.app
+    PRODUCT_NAME: DaLedou
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    GENERATE_INFOPLIST_FILE: NO
+    INFOPLIST_FILE: Resources/Info.plist
+    CODE_SIGNING_ALLOWED: NO
+    CODE_SIGNING_REQUIRED: NO
+    CODE_SIGN_IDENTITY: ""
+    DEVELOPMENT_TEAM: ""
+    ENABLE_BITCODE: NO
+targets:
+  DaLedou:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.daledou.app
+        PRODUCT_MODULE_NAME: daledou
+        INFOPLIST_FILE: Resources/Info.plist
+        TARGETED_DEVICE_FAMILY: "1,2"
+        ENABLE_TESTABILITY: YES
+schemes:
+  DaLedou:
+    build:
+      targets:
+        DaLedou: all
+    run:
+      config: Debug
+    archive:
+      config: Release
