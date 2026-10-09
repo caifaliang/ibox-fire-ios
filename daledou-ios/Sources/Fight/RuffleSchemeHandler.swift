@@ -57,22 +57,11 @@ final class RuffleSchemeHandler: NSObject, WKURLSchemeHandler {
         }
         if rel.isEmpty { rel = "index.html" }
 
-        // 主动作包：错误性别直接 stub，避免再拉另一份 ~40MB
         let lowRel = rel.lowercased()
-        if lowRel.contains("action_gg") || lowRel.contains("action_mm") {
-            let wantMm = ActionPackPrefetch.sessionPreferMm
-            let isMm = lowRel.contains("action_mm")
-            let isGg = lowRel.contains("action_gg")
-            // 不再 stub 错性别根包：误判会导致空动作包 → 321 后无双人/站桩
-            let isPack2 = lowRel.contains("gg2") || lowRel.contains("mm2")
-            _ = wantMm; _ = isMm; _ = isGg; _ = wrong
-            if false, wrong, !isPack2 {
-                finish(urlSchemeTask, url: url, data: Self.emptySwf, mime: "application/x-shockwave-flash")
-                return
-            }
-            if isPack2 {
-                notifyPack("parsed")
-            }
+        // gg2/mm2 ≈ 根动作包已解析完（对齐 Android）
+        if (lowRel.contains("action_gg") || lowRel.contains("action_mm")),
+           lowRel.contains("gg2") || lowRel.contains("mm2") {
+            notifyPack("parsed")
         }
 
         // 预下载缓存（Documents/ruffle_cdn）
