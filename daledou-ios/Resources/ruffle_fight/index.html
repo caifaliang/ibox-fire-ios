@@ -153,22 +153,8 @@
       }
     };
 
-    /** 倒计时后 AS3 卡住时，由原生/定时器强制开打（对齐 Android kickStartRound） */
-    window.__kickStartRound = function() {
-      try {
-        if (player && typeof player.kickStartRound === 'function') {
-          player.kickStartRound();
-          setStatus('kickStartRound ok');
-          notifyAndroid('ready_kick', { ok: true });
-          return true;
-        }
-        setStatus('kickStartRound: no EI');
-        notifyAndroid('ready_kick', { ok: false, err: 'no_ei' });
-      } catch (e) {
-        notifyAndroid('ready_kick', { ok: false, err: String(e) });
-      }
-      return false;
-    };
+    /** 包内 SWF 无此 EI；站桩主因是动作包解析慢，已改 SIMD */
+    window.__kickStartRound = function() { return false; };
 
     /** Playback speed: 1 / 2 / 3 → Flash setFightSpeed → stage.frameRate 30 / 60 / 90. */
     let pendingSpeed = 1;
@@ -222,9 +208,6 @@
         setStatus('replay injected act=' + pendingAct.act.length);
         notifyAndroid('injected', { ok: true, actLen: pendingAct.act.length });
         applyPendingSpeed();
-        // 注入后若停在 ready_skip / 倒计时结束，定时踢一把
-        setTimeout(function() { window.__kickStartRound && window.__kickStartRound(); }, 2500);
-        setTimeout(function() { window.__kickStartRound && window.__kickStartRound(); }, 5000);
         return true;
       } catch (e) {
         notifyAndroid('inject_fail', { err: String(e) });

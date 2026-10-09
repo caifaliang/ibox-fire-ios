@@ -23,6 +23,9 @@ struct ReplayWebView: UIViewRepresentable {
         let handler = RuffleSchemeHandler()
         config.setURLSchemeHandler(handler, forURLScheme: RuffleSchemeHandler.scheme)
         context.coordinator.handler = handler
+        handler.onActionPackEvent = { [weak coordinator = context.coordinator] kind in
+            coordinator?.onPackEvent(kind)
+        }
 
         let uc = config.userContentController
         uc.add(context.coordinator, name: "ruffleStatus")
@@ -30,6 +33,7 @@ struct ReplayWebView: UIViewRepresentable {
 
         let wv = WKWebView(frame: .zero, configuration: config)
         wv.navigationDelegate = context.coordinator
+        context.coordinator.webView = wv
         wv.isOpaque = true
         wv.backgroundColor = .black
         wv.scrollView.backgroundColor = .black
@@ -48,25 +52,30 @@ struct ReplayWebView: UIViewRepresentable {
             return wv
         }
 
+        // 与 APK 一致：优先 SIMD（动作包解析快）。失败时 index.html 自动 fallback vanilla
         let url = URL(
-            string: "\(RuffleSchemeHandler.scheme)://local/ruffle_fight/index.html?renderer=canvas&wasm=vanilla"
+            string: "\(RuffleSchemeHandler.scheme)://local/ruffle_fight/index.html?renderer=canvas"
         )!
         statusLine = "加载播放器…"
         wv.load(URLRequest(url: url))
         return wv
     }
 
-    func updateUIView(_ uiView: WKWebView, context: Context) {}
+    func updateUIView(_ uiView: WKWebView, context: Context) {
+        context.coordinator.webView = uiView
+    }
 
     static func dismantleUIView(_ uiView: WKWebView, coordinator: Coordinator) {
         uiView.configuration.userContentController.removeScriptMessageHandler(forName: "ruffleStatus")
         uiView.configuration.userContentController.removeScriptMessageHandler(forName: "ruffleEvent")
+        coordinator.handler?.onActionPackEvent = nil
     }
 
     final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         let act: String
         let replayId: String
         var handler: RuffleSchemeHandler?
+        weak var webView: WKWebView?
         private var didInject = false
         private var statusLine: Binding<String>
 
@@ -76,27 +85,35 @@ struct ReplayWebView: UIViewRepresentable {
             self.statusLine = statusLine
         }
 
+        func onPackEvent(_ kind: String) {
+            if kind == "delivered" {
+                statusLine.wrappedValue = "动作包加载中…"
+            } else if kind == "parsed" {
+                statusLine.wrappedValue = "动作包已解析"
+            }
+        }
+
         func userContentController(
             _ userContentController: WKUserContentController,
             didReceive message: WKScriptMessage
         ) {
             if message.name == "ruffleStatus", let s = message.body as? String {
                 statusLine.wrappedValue = s
-                if s.contains("ready_skip") || s.lowercased().contains("ready_skip") {
-                    kickIfNeeded(webView: nil)
-                }
                 return
             }
             if message.name == "ruffleEvent", let dict = message.body as? [String: Any] {
                 let type = dict["type"] as? String ?? ""
-                if type == "boot_fail" || type == "inject_fail" {
+                switch type {
+                case "boot_fail", "inject_fail":
                     statusLine.wrappedValue = "\(type): \(dict["payload"] ?? "")"
-                } else if type == "injected" {
-                    statusLine.wrappedValue = "动画数据已注入"
-                } else if type == "swf_ready" {
-                    statusLine.wrappedValue = "SWF 已就绪…"
-                } else if type == "ready_kick" {
-                    statusLine.wrappedValue = "已强制开打"
+                case "injected":
+                    statusLine.wrappedValue = "已注入，解析动作中…"
+                case "swf_ready":
+                    statusLine.wrappedValue = "SWF 就绪…"
+                case "boot_fallback":
+                    statusLine.wrappedValue = "改用兼容 wasm…"
+                default:
+                    break
                 }
             }
         }
@@ -114,28 +131,11 @@ struct ReplayWebView: UIViewRepresentable {
         }
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            self.webView = webView
             guard !didInject else { return }
             didInject = true
-            statusLine.wrappedValue = "页面就绪，注入 Act…"
+            statusLine.wrappedValue = "注入战报…"
             inject(into: webView, attempt: 0)
-            // 倒计时后若卡死，1.8s / 4s 各踢一次
-            DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) { [weak self, weak webView] in
-                guard let self, let webView else { return }
-                self.kick(webView)
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 7.0) { [weak self, weak webView] in
-                guard let self, let webView else { return }
-                self.kick(webView)
-            }
-        }
-
-        private func kickIfNeeded(webView: WKWebView?) {
-            guard let webView else { return }
-            kick(webView)
-        }
-
-        private func kick(_ webView: WKWebView) {
-            webView.evaluateJavaScript("window.__kickStartRound && window.__kickStartRound()", completionHandler: nil)
         }
 
         private func inject(into webView: WKWebView, attempt: Int) {
@@ -155,7 +155,7 @@ struct ReplayWebView: UIViewRepresentable {
                         self.inject(into: webView, attempt: attempt + 1)
                     }
                 } else if ok {
-                    self.statusLine.wrappedValue = "已注入，等待渲染…"
+                    self.statusLine.wrappedValue = "已注入，等待开打…"
                 }
             }
         }

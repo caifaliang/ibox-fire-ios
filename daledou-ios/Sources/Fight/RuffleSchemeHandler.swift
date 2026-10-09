@@ -14,6 +14,9 @@ final class RuffleSchemeHandler: NSObject, WKURLSchemeHandler {
     var rootExists: Bool { FileManager.default.fileExists(atPath: root.path) }
     var rootPath: String { root.path }
 
+    /// 主动作包（action_gg/mm）已交给 Flash；gg2/mm2 表示解析完成
+    var onActionPackEvent: ((String) -> Void)?
+
     override init() {
         let bundle = Bundle.main
         if let u = bundle.url(forResource: "index", withExtension: "html", subdirectory: "ruffle_fight") {
@@ -67,6 +70,9 @@ final class RuffleSchemeHandler: NSObject, WKURLSchemeHandler {
                 finish(urlSchemeTask, url: url, data: Self.emptySwf, mime: "application/x-shockwave-flash")
                 return
             }
+            if isPack2 {
+                notifyPack("parsed")
+            }
         }
 
         // 预下载缓存（Documents/ruffle_cdn）
@@ -75,6 +81,10 @@ final class RuffleSchemeHandler: NSObject, WKURLSchemeHandler {
            FileManager.default.fileExists(atPath: cached.path),
            let data = try? Data(contentsOf: cached), data.count > 1000 {
             finish(urlSchemeTask, url: url, data: data, mime: mime(for: rel))
+            if lowRel.contains("action_gg") || lowRel.contains("action_mm"),
+               !lowRel.contains("gg2"), !lowRel.contains("mm2") {
+                notifyPack("delivered")
+            }
             return
         }
         // 兼容 rel 已是 gres/xxx
@@ -82,6 +92,10 @@ final class RuffleSchemeHandler: NSObject, WKURLSchemeHandler {
         if FileManager.default.fileExists(atPath: cached2.path),
            let data = try? Data(contentsOf: cached2), data.count > 1000 {
             finish(urlSchemeTask, url: url, data: data, mime: mime(for: rel))
+            if lowRel.contains("action_gg") || lowRel.contains("action_mm"),
+               !lowRel.contains("gg2"), !lowRel.contains("mm2") {
+                notifyPack("delivered")
+            }
             return
         }
 
@@ -180,11 +194,20 @@ final class RuffleSchemeHandler: NSObject, WKURLSchemeHandler {
                 try? payload.write(to: dest, options: .atomic)
             }
             self.finish(task, url: task.request.url ?? remote, data: payload, mime: mime)
+            if let rel, (rel.contains("action_gg") || rel.contains("action_mm")),
+               !rel.contains("gg2"), !rel.contains("mm2"), payload.count > 1_000_000 {
+                self.notifyPack("delivered")
+            }
         }
         lock.lock()
         tasks[ObjectIdentifier(task)] = dataTask
         lock.unlock()
         dataTask.resume()
+    }
+
+    private func notifyPack(_ kind: String) {
+        let cb = onActionPackEvent
+        DispatchQueue.main.async { cb?(kind) }
     }
 
     private func finish(_ task: WKURLSchemeTask, url: URL, data: Data, mime: String) {
