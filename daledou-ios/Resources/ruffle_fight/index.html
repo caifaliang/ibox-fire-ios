@@ -22,6 +22,13 @@
       flex: none;
       background: #000;
     }
+    /* 解析 action_gg 期间：舞台压到极小，背板几乎不占 GPU；gg2 后再展开 */
+    #player.parse-safe {
+      width: 4px !important;
+      height: 4px !important;
+      max-height: 4px !important;
+      aspect-ratio: auto;
+    }
     #player ruffle-player, #player canvas { width: 100% !important; height: 100% !important; display: block; }
     #status {
       display: block; position: fixed; left: 8px; top: 48px; right: 8px; z-index: 20;
@@ -36,18 +43,30 @@
   <script>
     // 饭店助手·动画版 replay-host.js 省内存：
     // 1) 盖住 devicePixelRatio（640px 预算 / 530:318）
-    // 2) 播放中 FPS<18 连续 3 窗则 renderScale -= 0.25（压 GPU，非半屏 CSS）
+    // 2) 播放中 FPS<18 连续 3 窗则 renderScale -= 0.25
+    // 3) iOS 补强：action_gg 解析期 parse-safe（4px 舞台 + 320 预算），过 gg2 再恢复
     (function () {
       var nativeRatio = Object.getOwnPropertyDescriptor(window, 'devicePixelRatio');
       var initialRatio = window.devicePixelRatio || 1;
       var renderScale = 1.5; // standard
       var qualityName = 'standard';
       var qualityScales = { standard: 1.5, medium: 2, mediumHigh: 2.5, high: 3 };
+      var parseSafe = true; // 默认开：boot→PACK 解析峰值最危险
+      var pxBudget = 320;   // parse-safe 用 320；恢复后 640（饭店助手）
       function updatePixelRatio() {
         var ratio = nativeRatio && nativeRatio.get ? nativeRatio.get.call(window) : initialRatio;
         var box = document.getElementById('player');
         var width = (box && box.clientWidth) || window.innerWidth || 390;
-        window.__replayDpr = Math.min(ratio || 1, renderScale, (640 * renderScale / 1.5) / Math.max(1, width));
+        var budget = parseSafe ? pxBudget : 640;
+        window.__replayDpr = Math.min(ratio || 1, renderScale, (budget * renderScale / 1.5) / Math.max(1, width));
+      }
+      function applyParseSafeClass() {
+        var box = document.getElementById('player');
+        if (!box) return;
+        if (parseSafe) box.classList.add('parse-safe');
+        else box.classList.remove('parse-safe');
+        updatePixelRatio();
+        try { window.dispatchEvent(new Event('resize')); } catch (_) {}
       }
       updatePixelRatio();
       Object.defineProperty(window, 'devicePixelRatio', {
@@ -62,6 +81,26 @@
         updatePixelRatio();
         return true;
       };
+      window.__setParseSafe = function (on, reason) {
+        var next = !!on;
+        if (next === parseSafe) return parseSafe;
+        parseSafe = next;
+        applyParseSafeClass();
+        try {
+          if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.ruffleStatus) {
+            window.webkit.messageHandlers.ruffleStatus.postMessage(
+              (parseSafe ? 'parse-safe on' : 'parse-safe off') + ' dpr=' + (Math.round(window.__replayDpr * 100) / 100) + (reason ? ' ' + reason : '')
+            );
+          }
+        } catch (_) {}
+        return parseSafe;
+      };
+      // DOM ready 后立刻盖上 parse-safe
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', applyParseSafeClass);
+      } else {
+        applyParseSafeClass();
+      }
       // 饭店助手 sampleFrames：仅 standard 档位自动降档
       var sampleFrame = null, sampleStarted = null, frameCount = 0, slowWindows = 0;
       function sampleFrames(now) {
@@ -160,6 +199,11 @@
       const rewritten = rewriteFightUrl(url);
       if (rewritten !== url) input = rewritten;
       const short = String(rewritten).split('/').slice(-2).join('/');
+      const low = rewritten.toLowerCase();
+      // action 开始拉 → 确保仍在 parse-safe（压 GPU，把预算让给 37MB 解析）
+      if ((low.indexOf('action_gg') >= 0 || low.indexOf('action_mm') >= 0) && low.indexOf('gg2') < 0 && low.indexOf('mm2') < 0) {
+        if (window.__setParseSafe) window.__setParseSafe(true, 'action_pack');
+      }
       setStatus('net ' + short);
       try {
         const res = await _fetch(input, init);
@@ -169,6 +213,10 @@
         } else {
           setStatus('ok ' + res.status + ' ' + short);
           notifyAndroid('net_ok', { url: rewritten, status: res.status });
+          // gg2/mm2 = 动作包解析完成 → 恢复饭店助手 640px 舞台
+          if (low.indexOf('gg2') >= 0 || low.indexOf('mm2') >= 0) {
+            if (window.__setParseSafe) window.__setParseSafe(false, 'pack_parsed');
+          }
         }
         return res;
       } catch (e) {
@@ -222,6 +270,11 @@
       }
       if (t === 'ready_go' || t === 'ra_startRound' || t === 'atk_start') {
         if (_readyKickTimer) { clearTimeout(_readyKickTimer); _readyKickTimer = null; }
+        if (window.__setParseSafe) window.__setParseSafe(false, 'vel_' + t);
+      }
+      // tag 6 ≈ action pack ready（APK）
+      if (t === '6' || t === 'sal_base_ok') {
+        if (window.__setParseSafe) window.__setParseSafe(false, 'vel_' + t);
       }
       return null;
     };

@@ -227,6 +227,11 @@ struct ReplayWebView: UIViewRepresentable {
                 let msg = "PACK parsed (收到 gg2/mm2 请求)"
                 statusLine.wrappedValue = msg
                 log.append(msg)
+                // 双保险：原生侧再踢一次退出 parse-safe（JS fetch 钩子也可能已退出）
+                webView?.evaluateJavaScript(
+                    "window.__setParseSafe && window.__setParseSafe(false,'native_pack_parsed')",
+                    completionHandler: nil
+                )
                 if let (a, id) = RuffleWarmHolder.shared.takePendingAct(), let wv = webView {
                     log.append("WARM drain pending act=\(a.count)")
                     injectAct(a, id: id, into: wv)
@@ -255,6 +260,7 @@ struct ReplayWebView: UIViewRepresentable {
                 case "swf_ready":
                     statusLine.wrappedValue = "SWF 就绪…"
                     RuffleWarmHolder.shared.markPageReady()
+                    // 开战前仍保持 parse-safe；勿在此恢复舞台
                 case "boot_fallback":
                     RuffleMemPolicy.markWasmCrashed()
                     useVanilla = true
