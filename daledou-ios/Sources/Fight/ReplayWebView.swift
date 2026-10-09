@@ -105,10 +105,10 @@ struct ReplayWebView: UIViewRepresentable {
         }
         do {
             let base = try server.start(flashRoot: flashRoot)
-            // iOS 用 webgl（wgpu-webgl 会卡死 loadingSWC 嵌套 Loader）
-            let page = URL(string: base.absoluteString + "assets/flashreplay/index.html?renderer=webgl")!
+            // iOS 无 WebGPU → canvas（嵌套 loadingSWC 最稳）
+            let page = URL(string: base.absoluteString + "assets/flashreplay/index.html?renderer=canvas")!
             context.coordinator.pageURL = page
-            log.append("HTTP \(base.absoluteString) stack=fandian webgl PetFunFight-v10.19")
+            log.append("HTTP \(base.absoluteString) stack=fandian canvas PetFunFight-v10.19")
             statusLine = "加载饭店助手播放器…"
             log.append("load \(page.absoluteString)")
             DispatchQueue.main.async {
@@ -308,7 +308,7 @@ struct ReplayWebView: UIViewRepresentable {
             })()
             """
             statusLine.wrappedValue = "正在加载动画资源…"
-            log.append("DaledouReplay.start PetFunFight-v10.19 wgpu-webgl")
+            log.append("DaledouReplay.start PetFunFight-v10.19 canvas")
             webView.evaluateJavaScript(js) { [weak self] result, error in
                 guard let self, gen == self.injectGeneration else { return }
                 if let error {

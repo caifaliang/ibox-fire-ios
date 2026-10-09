@@ -81,36 +81,58 @@
     var args = Array.prototype.slice.call(arguments, 1);
     return main.ruffle().callExternalInterface.apply(main.ruffle(), [name].concat(args));
   }
-  function dispatch() {
-    if (!active || !main || !ready || !payload || sent || desiredPaused) return;
-    sent = true;
-    var expected = generation;
-    // ExternalInterface calls must unwind before invoking Flash again.
-    setTimeout(function () {
-      if (expected !== generation || !main) return;
-      if (desiredPaused) { sent = false; return; }
-      try {
-        state('preparing', '正在准备战斗动画');
+  var injectTimer = null;
+  function tryInjectOnce() {
+    if (!active || !main || !payload || desiredPaused || failed || sent) return !!sent;
+    try {
+      state('preparing', '正在准备战斗动画');
+      // 优先 player 上的 JS 桥；否则走 ExternalInterface（饭店助手路径）
+      if (typeof main.setFightReplayData === 'function') {
+        main.setFightReplayData(payload, replayId);
+      } else {
         call('setFightReplayData', payload, replayId);
-        if (!desiredPaused) {
-          main.ruffle().resume();
-          if (toolbar) toolbar.ruffle().resume();
-        }
-      } catch (_) {
-        fail('动画启动失败，请重试');
       }
-    }, 0);
-  }
-  window.FightReady = function () { ready = true; dispatch(); };
-  // iOS：loadingSWC 卡住时不会回调 FightReady；主 SWF loaded 后兜底推进
-  window.__daledouKickReady = function () {
-    if (!ready && active && payload && !failed) {
-      ready = true;
-      state('preparing', 'kick FightReady');
-      dispatch();
+      if (!desiredPaused) {
+        main.ruffle().resume();
+        if (toolbar) toolbar.ruffle().resume();
+      }
+      sent = true;
+      state('preparing', 'setFightReplayData ok');
       return true;
+    } catch (e) {
+      state('preparing', 'inject wait ' + String(e && e.message ? e.message : e));
+      return false;
     }
-    return false;
+  }
+  function startInjectPoll(reason) {
+    ready = true;
+    if (sent || failed || !active || !payload) return;
+    state('preparing', 'poll inject (' + (reason || '') + ')');
+    if (injectTimer) clearInterval(injectTimer);
+    var expected = generation;
+    var n = 0;
+    // 立即试一次，再 250ms 轮询——EI 往往在 loadingSWC 之后才挂上
+    if (tryInjectOnce()) return;
+    injectTimer = setInterval(function () {
+      if (expected !== generation || failed || !active) {
+        clearInterval(injectTimer);
+        injectTimer = null;
+        return;
+      }
+      n++;
+      if (tryInjectOnce() || n > 100) {
+        clearInterval(injectTimer);
+        injectTimer = null;
+        if (!sent) state('error', '无法注入战报（EI 未就绪）');
+      }
+    }, 250);
+  }
+  function dispatch() { startInjectPoll('dispatch'); }
+  window.FightReady = function () { startInjectPoll('FightReady'); };
+  // iOS：无 WebGPU；loading 层常不回调 FightReady → 轮询 EI
+  window.__daledouKickReady = function () {
+    startInjectPoll('kick');
+    return true;
   };
   window.FightComplete = function () { if (active) state('complete', '播放结束'); };
   window.getCookie = function (name) {
@@ -161,14 +183,13 @@
       publicPath: origin + '/assets/flashreplay/ruffle/',
       upgradeToHttps: false, splashScreen: false, contextMenu: 'off',
       showSwfDownload: false, openUrlMode: 'deny', logLevel: 'warn',
-      // Android 饭店助手用 wgpu-webgl；iOS WKWebView 下嵌套 Loader(loadingSWC) 会 2s 死循环。
-      // webgl 可过加载层；BitmapData.draw 在本 build 的 webgl 路径可用。强制 wgpu：?renderer=wgpu-webgl
+      // iOS 无 WebGPU：wgpu-webgl 不可用。嵌套 Loader 用 canvas 最稳（先前已验证能过 loadingSWC）。
       preferredRenderer: (function () {
         try {
           var q = new URLSearchParams(location.search).get('renderer');
           if (q === 'wgpu-webgl' || q === 'wgpu' || q === 'canvas' || q === 'webgl') return q === 'wgpu' ? 'wgpu-webgl' : q;
         } catch (_) {}
-        return 'webgl';
+        return 'canvas';
       })(),
       quality: 'low',
       frameRate: 30,
@@ -199,6 +220,7 @@
     generation++;
     ready = false; sent = false; payload = null; active = false; loaded = false;
     replayId = null; mainUrl = toolbarUrl = null;
+    if (injectTimer) { clearInterval(injectTimer); injectTimer = null; }
     if (main) main.remove();
     if (toolbar) toolbar.remove();
     main = toolbar = null;
@@ -262,14 +284,11 @@
         if (desiredPaused) movie.player.ruffle().suspend();
         else movie.player.ruffle().resume();
         if (expected === generation) dispatch();
-        // 6s 仍无 FightReady（loadingSWC 死循环）则强制 kick
+        // 2s 起开始轮询注入；不等 FightReady（iOS 常无此回调）
         setTimeout(function () {
-          if (expected !== generation) return;
-          if (!ready) {
-            state('preparing', 'FightReady timeout → kick');
-            window.__daledouKickReady && window.__daledouKickReady();
-          }
-        }, 6000);
+          if (expected !== generation || sent || failed) return;
+          window.__daledouKickReady && window.__daledouKickReady();
+        }, 2000);
       } catch (_) {
         if (expected === generation) fail('动画播放器加载失败，请重试');
       }
