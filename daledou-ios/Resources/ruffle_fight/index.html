@@ -394,7 +394,7 @@
           document.addEventListener('visibilitychange', function() {
             if (!document.hidden && player && typeof player.play === 'function') {
               try { player.play(); } catch (_) {}
-              fitPlayerToViewport();
+              if (window.__setReplayQuality) window.__setReplayQuality(qName);
             }
           });
         } catch (_) {}
