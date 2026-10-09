@@ -44,6 +44,14 @@
 				<string>daledouapp</string>
 			</array>
 		</dict>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>tencent.qq.connect</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>tencent102067279</string>
+			</array>
+		</dict>
 	</array>
 	<key>LSApplicationQueriesSchemes</key>
 	<array>

@@ -1,27 +1,40 @@
 import Foundation
 
-/// 对齐 Android `LoginHelper`（仅保留一键 / 扫码相关）。
+/// 登录常量：一键 = 壳内 QQ 互联 authorize；扫码 = graph show。
 enum LoginURLs {
+    static let qqAppId = "102067279"
+    /// QQ 互联 iOS 惯例：tencent + AppID
+    static let tencentScheme = "tencent102067279"
+
     static let ledouEntry =
         "https://dld.qzapp.z.qq.com/qpet/cgi-bin/phonepk?cmd=index&channel=0"
 
-    /// 扫码（大乐斗）· 需桌面 UA
+    /// 已在腾讯侧登记的回调（与安卓扫码/一键同源），用于落地写 Cookie
+    static let oauthRedirect = "https://dld.qzapp.z.qq.com/index.php"
+
+    /// 壳内一键：WebView 加载授权页，禁止唤起系统 QQ / Safari
+    static var oneClickAuthorize: String {
+        let redirect = oauthRedirect.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? oauthRedirect
+        return "https://graph.qq.com/oauth2.0/authorize"
+            + "?response_type=code"
+            + "&client_id=\(qqAppId)"
+            + "&redirect_uri=\(redirect)"
+            + "&state=daledou_ios"
+            + "&scope=all"
+            + "&display=mobile"
+    }
+
+    /// 扫码（大乐斗）· 桌面 UA
     static let scanLedou =
-        "https://graph.qq.com/oauth2.0/show?which=Login&display=pc&response_type=code" +
-        "&client_id=102067279" +
-        "&redirect_uri=https%3A%2F%2Fdld.qzapp.z.qq.com%2Findex.php" +
-        "&scope=all"
+        "https://graph.qq.com/oauth2.0/show?which=Login&display=pc&response_type=code"
+            + "&client_id=\(qqAppId)"
+            + "&redirect_uri=https%3A%2F%2Fdld.qzapp.z.qq.com%2Findex.php"
+            + "&scope=all"
 
-    /// 一键唤 QQ（schemacallback 回本 App）
-    static let oneClickWt =
-        "wtloginmqq://ptlogin/qlogin?p=https%3A%2F%2Fssl.ptlogin2.qq.com%2Fjump%3Fu1%3Dhttps%253A%252F%252Fconnect.qq.com%26pt_report%3D1%26pt_aid%3D716027609%26daid%3D383%26style%3D35%26pt_ua%3D0D2AA61C2D48B97B53FFF65BB61E76F4%26pt_browser%3DChrome%26pt_3rd_aid%3D102067279%26pt_openlogin_data%3Dappid%253D716027609%2526pt_3rd_aid%253D102067279%2526daid%253D383%2526pt_skey_valid%253D0%2526style%253D35%2526s_url%253Dhttps%25253A%25252F%25252Fconnect.qq.com%2526refer_cgi%253Dauthorize%2526which%253D%2526sdkp%253Dpcweb%2526sdkv%253Dv1.0%2526time%253D1789995681%2526loginty%253D3%2526h5sig%253DiQmvZ8eG78Q1LOs5DoTzZ2CIxslpZAZ8SJomWZgzgh4%2526response_type%253Dcode%2526client_id%253D102067279%2526redirect_uri%253Dhttps%25253A%25252F%25252Fdld.qzapp.z.qq.com%25252Findex.php%2526scope%253Dall%2526pt_flex%253D1%2526loginfrom%253D&schemacallback=daledouapp%3A%2F%2F"
-
-    /// 扫码用桌面 UA（对齐 Android LoginHelper.DESKTOP_UA）
     static let desktopUA =
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
-        "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+            + "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
-    /// 未登录占位（避免误进 xlogin/密码页）
     static let waitingHTML = """
     <!doctype html><html><head><meta charset="utf-8"/>
     <meta name="viewport" content="width=device-width,initial-scale=1"/>
@@ -34,18 +47,11 @@ enum LoginURLs {
       p{color:#666;font-size:14px;line-height:1.5}
     </style></head><body><div class="box">
     <h1>大乐斗</h1>
-    <p>请点右上角菜单<br/>使用「一键登陆」或「扫码登陆」</p>
+    <p>请点右上角菜单<br/>「一键登陆」或「扫码登陆」</p>
     </div></body></html>
     """
 
-    static func oneClickJumpUrl() -> String? {
-        guard let comps = URLComponents(string: oneClickWt),
-              let p = comps.queryItems?.first(where: { $0.name == "p" })?.value,
-              p.hasPrefix("http") else { return nil }
-        return p
-    }
-
-    /// 扫码确认后 xlogin(pt_skey_valid=1) → jump（对齐 Android continueAuthorizeUrl）
+    /// 扫码确认后 xlogin(pt_skey_valid=1) → jump
     static func continueAuthorizeUrl(xloginUrl: String) -> String? {
         guard xloginUrl.contains("xlogin"), xloginUrl.contains("pt_skey_valid=1") else { return nil }
         guard let comps = URLComponents(string: xloginUrl), let query = comps.query else { return nil }
@@ -57,15 +63,38 @@ enum LoginURLs {
             .init(name: "daid", value: "383"),
             .init(name: "style", value: "35"),
             .init(name: "pt_browser", value: "Chrome"),
-            .init(name: "pt_3rd_aid", value: "102067279"),
+            .init(name: "pt_3rd_aid", value: qqAppId),
             .init(name: "pt_openlogin_data", value: query),
         ]
         return jump.url?.absoluteString
     }
 
-    static func isQqWakeScheme(_ scheme: String?) -> Bool {
+    static func isCallbackScheme(_ scheme: String?) -> Bool {
         guard let s = scheme?.lowercased() else { return false }
-        return s.hasPrefix("wtlogin") || s.hasPrefix("mqq") || s == "tencent"
+        return s == "daledouapp" || s == tencentScheme.lowercased() || s.hasPrefix("tencent")
+    }
+
+    /// 从自定义 Scheme / https 回调里抠 code
+    static func oauthCode(from url: URL) -> String? {
+        if let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems,
+           let code = items.first(where: { $0.name == "code" })?.value, !code.isEmpty {
+            return code
+        }
+        // implicit: #access_token=... 对大乐斗游戏 Cookie 帮助有限，仍记录
+        if let frag = url.fragment, frag.contains("access_token=") {
+            return nil
+        }
+        return nil
+    }
+
+    /// 拿到 code 后继续走已登记的 redirect，让大乐斗域写 Cookie
+    static func finishWithCode(_ code: String) -> URL? {
+        var c = URLComponents(string: oauthRedirect)!
+        c.queryItems = [
+            .init(name: "code", value: code),
+            .init(name: "state", value: "daledou_ios"),
+        ]
+        return c.url
     }
 
     static func hasRealSkey(_ cookie: String?) -> Bool {
@@ -96,13 +125,18 @@ enum LoginURLs {
         return host.contains("dld.qzapp.z.qq.com") || host.contains("fight.pet.qq.com")
     }
 
+    static func isOauthLanding(_ url: URL?) -> Bool {
+        guard let u = url, let host = u.host?.lowercased() else { return false }
+        guard host.contains("dld.qzapp.z.qq.com") else { return false }
+        let q = u.query ?? ""
+        return u.path.contains("index.php") || q.contains("code=")
+    }
+
     static func isConnectMarketing(_ url: URL?) -> Bool {
         guard let u = url else { return false }
         let host = (u.host ?? "").lowercased()
-        let path = u.path
-        // 互联官网首页（无授权参数）——一键失败时常见落点
         return (host == "connect.qq.com" || host == "www.connect.qq.com")
-            && !path.contains("oauth")
+            && !u.path.contains("oauth")
             && !(u.query?.contains("code=") == true)
     }
 

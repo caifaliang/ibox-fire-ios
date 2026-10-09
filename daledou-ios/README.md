@@ -1,49 +1,28 @@
 # daledou-ios（MVP）
 
-大乐斗 Android APK 的 iOS 对照客户端（功能对等分期）。  
-**本期 MVP**：游戏壳 WKWebView + **壳内登录/扫码拿 Cookie**（不依赖「设为默认浏览器」）+ 可选一键唤 QQ。
+大乐斗 iOS 对照客户端。登录仅两种：**一键登陆**、**扫码登陆**。
 
-对齐工程：`F:\DaLedou_App_Dev\daledou`（Android）。
+## 一键登陆（壳内，不跳浏览器）
 
-## MVP 范围
+对齐 QQ 互联「WKWebView + 拦截回调」思路（**不再** `wtloginmqq` 唤系统 QQ）：
 
-| 有 | 暂无 |
-|---|---|
-| 手机端游戏壳 | 完整代玩 Worker |
-| 壳内登录 / 扫码 | Ruffle 战报 |
-| Cookie → Keychain | PC 端 |
-| `daledouapp://` 回调 | VIP / OTA |
-| 尝试一键唤 QQ | 后台保活 |
+1. 壳内加载 `graph.qq.com/oauth2.0/authorize`（`client_id=102067279`，`display=mobile`）
+2. `redirect_uri` 使用已登记地址 `https://dld.qzapp.z.qq.com/index.php`（写游戏 Cookie）
+3. 导航代理中：
+   - **拦截** `tencent102067279://` / `daledouapp://` 取 `code`，再壳内打开 redirect 写会话
+   - **禁止** `wtlogin*` / `mqq*` 交给系统（避免跳 QQ → Safari）
+4. 检测到 `skey` Cookie → 进入 `phonepk`
 
-## 登录说明（仅两种）
+## 扫码登陆
 
-| 方式 | 行为 |
-|------|------|
-| **一键登陆** | 真唤 `wtloginmqq` + `schemacallback=daledouapp://`；QQ 若回 App，壳内加载 jump 写 Cookie |
-| **扫码登陆** | 壳内 `graph.qq.com` + 桌面 UA；确认后 `continueAuthorize` → 游戏 |
+壳内 `graph.qq.com/oauth2.0/show` + 桌面 UA（与安卓一致）。
 
-- 不做密码登录（WKWebView 风控过不去）。  
-- 一键若 QQ 不回调、落到 Safari/互联页 → 请改用扫码。
+## 出包
 
-## 本机无 Mac
-
-1. 改本目录源码并 push  
-2. GitHub Actions：`.github/workflows/daledou-ios-ipa.yml`  
-3. 下载 artifact `daledou-unsigned-ipa`  
-4. 自签安装  
-
-本地有 Mac：
+GitHub Actions：`daledou-ios-ipa.yml` → artifact `daledou-unsigned-ipa`
 
 ```bash
-cd daledou-ios
-brew install xcodegen
-xcodegen generate
-xcodebuild -project DaLedou.xcodeproj -scheme DaLedou -configuration Release \
-  -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build
+cd daledou-ios && brew install xcodegen && xcodegen generate
 ```
 
-## 身份
-
-- Bundle ID：`com.daledou.app`
-- 显示名：大乐斗
-- 版本：`0.1.0` (1)
+Bundle：`com.daledou.app` · Scheme：`daledouapp` / `tencent102067279`

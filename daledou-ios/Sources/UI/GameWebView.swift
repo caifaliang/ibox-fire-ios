@@ -15,6 +15,8 @@ struct GameWebView: UIViewRepresentable {
         cfg.allowsInlineMediaPlayback = true
         cfg.defaultWebpagePreferences.allowsContentJavaScript = true
         cfg.preferences.javaScriptCanOpenWindowsAutomatically = false
+        // 持久 Cookie，利于授权后会话留在壳内
+        cfg.websiteDataStore = .default()
         let wv = WKWebView(frame: .zero, configuration: cfg)
         wv.navigationDelegate = context.coordinator
         wv.uiDelegate = context.coordinator
@@ -95,13 +97,18 @@ struct GameWebView: UIViewRepresentable {
         var defaultUA: String?
         private var captureTask: Task<Void, Never>?
         private var lastContinueURL = ""
+        private var lastHandledCode = ""
 
-        private let blankTargetJS = """
+        /// 把 _blank / window.open 留在壳内；不处理 mqq（交给原生拦截）
+        private let stayJS = """
         (function(){
-          if (window.__dldBlank) return; window.__dldBlank=1;
-          var _open=window.open;
+          if (window.__dldStay2) return; window.__dldStay2=1;
           window.open=function(u){
-            try{ if(u && /^https?:/i.test(String(u))){ location.href=String(u); return null; } }catch(e){}
+            try{
+              var s=String(u||'');
+              if(/^(wtlogin|mqq)/i.test(s)){ location.href=s; return null; }
+              if(/^https?:/i.test(s)){ location.href=s; return null; }
+            }catch(e){}
             return null;
           };
           document.addEventListener('click',function(ev){
@@ -114,24 +121,15 @@ struct GameWebView: UIViewRepresentable {
         })();
         """
 
-        init(vm: AppViewModel) {
-            self.vm = vm
-        }
+        init(vm: AppViewModel) { self.vm = vm }
 
         func applyUA(_ webView: WKWebView, desktop: Bool) {
-            if desktop {
-                webView.customUserAgent = LoginURLs.desktopUA
-            } else {
-                webView.customUserAgent = defaultUA
-            }
+            webView.customUserAgent = desktop ? LoginURLs.desktopUA : defaultUA
         }
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-            let url = webView.url
-            Task { @MainActor in
-                vm.onNavigated(to: url)
-            }
-            webView.evaluateJavaScript(blankTargetJS, completionHandler: nil)
+            Task { @MainActor in vm.onNavigated(to: webView.url) }
+            webView.evaluateJavaScript(stayJS, completionHandler: nil)
             scheduleCookieCapture(webView)
         }
 
@@ -146,36 +144,41 @@ struct GameWebView: UIViewRepresentable {
             }
             let scheme = (url.scheme ?? "").lowercased()
 
-            if scheme == "daledouapp" {
-                Task { @MainActor in vm.handleOpenURL(url) }
+            // ① 自定义 Scheme：拦截 code，绝不交给系统浏览器
+            if LoginURLs.isCallbackScheme(scheme) || scheme == "daledouapp" {
                 decisionHandler(.cancel)
+                if let code = LoginURLs.oauthCode(from: url), code != lastHandledCode,
+                   let finish = LoginURLs.finishWithCode(code) {
+                    lastHandledCode = code
+                    Task { @MainActor in
+                        vm.statusText = "已拦截 Scheme 回调 code，壳内写会话…"
+                        vm.pendingURL = finish
+                    }
+                } else {
+                    Task { @MainActor in vm.handleOpenURL(url) }
+                }
                 return
             }
 
-            if LoginURLs.isQqWakeScheme(scheme) {
-                // 一键流程：交给系统 QQ（schemacallback 指望回 App）
-                if vm.allowQqWake || vm.loginMode == .oneClick {
-                    UIApplication.shared.open(url, options: [:]) { ok in
-                        Task { @MainActor in
-                            if ok {
-                                self.vm.statusText = "已唤起 QQ，请授权后等待回到本 App"
-                            } else {
-                                self.vm.statusText = "唤起 QQ 失败，请改用扫码登陆"
-                            }
-                        }
-                    }
-                    decisionHandler(.cancel)
-                    return
-                }
-                // 扫码流程：禁止跳 QQ / 互联营销页，留在扫码页
-                Task { @MainActor in
-                    vm.statusText = "扫码模式已拦截唤起 QQ，请直接扫页面二维码"
-                }
+            // ② wtlogin / mqq：禁止唤起 QQ / 外跳（上一版失败根因）
+            if scheme.hasPrefix("wtlogin") || scheme.hasPrefix("mqq") || scheme == "tencent" {
                 decisionHandler(.cancel)
+                Task { @MainActor in
+                    vm.statusText = "已阻止跳转 QQ/浏览器，请在当前页完成授权或改用扫码"
+                }
                 return
             }
 
             if scheme == "http" || scheme == "https" {
+                // https 回调带 code：留在 WebView 加载（会写 Cookie）
+                if let code = LoginURLs.oauthCode(from: url), LoginURLs.isOauthLanding(url) || LoginURLs.isGameHost(url) {
+                    if code != lastHandledCode {
+                        lastHandledCode = code
+                        Task { @MainActor in
+                            vm.statusText = "授权回调中，等待游戏 Cookie…"
+                        }
+                    }
+                }
                 if navigationAction.navigationType == .linkActivated {
                     webView.load(URLRequest(url: url))
                     decisionHandler(.cancel)
@@ -185,7 +188,11 @@ struct GameWebView: UIViewRepresentable {
                 return
             }
 
+            // 其它 scheme 一律拦下，防止蹦浏览器
             decisionHandler(.cancel)
+            Task { @MainActor in
+                vm.statusText = "已拦截外部跳转：\(scheme)"
+            }
         }
 
         func webView(
@@ -196,9 +203,9 @@ struct GameWebView: UIViewRepresentable {
         ) -> WKWebView? {
             guard let url = navigationAction.request.url else { return nil }
             let scheme = (url.scheme ?? "").lowercased()
-            if LoginURLs.isQqWakeScheme(scheme) {
-                if vm.allowQqWake || vm.loginMode == .oneClick {
-                    UIApplication.shared.open(url, options: [:], completionHandler: nil)
+            if scheme.hasPrefix("wtlogin") || scheme.hasPrefix("mqq") {
+                Task { @MainActor in
+                    vm.statusText = "已阻止新窗口唤起 QQ"
                 }
                 return nil
             }
@@ -211,9 +218,8 @@ struct GameWebView: UIViewRepresentable {
         private func scheduleCookieCapture(_ webView: WKWebView) {
             captureTask?.cancel()
             captureTask = Task { @MainActor in
-                try? await Task.sleep(nanoseconds: 600_000_000)
+                try? await Task.sleep(nanoseconds: 700_000_000)
                 guard !Task.isCancelled else { return }
-                // 扫码 continueAuthorize 防抖
                 if vm.loginMode == .scan,
                    let s = webView.url?.absoluteString,
                    let cont = LoginURLs.continueAuthorizeUrl(xloginUrl: s),
@@ -227,6 +233,15 @@ struct GameWebView: UIViewRepresentable {
                 let header = await CookieBridge.readCookieHeader(from: webView)
                 if LoginURLs.hasRealSkey(header) {
                     vm.onCookiesCaptured(header)
+                } else if vm.loginMode == .oneClick,
+                          let u = webView.url,
+                          LoginURLs.isGameHost(u) || LoginURLs.isOauthLanding(u) {
+                    // 再等一轮跳转写 Cookie
+                    try? await Task.sleep(nanoseconds: 800_000_000)
+                    let h2 = await CookieBridge.readCookieHeader(from: webView)
+                    if LoginURLs.hasRealSkey(h2) {
+                        vm.onCookiesCaptured(h2)
+                    }
                 }
             }
         }
