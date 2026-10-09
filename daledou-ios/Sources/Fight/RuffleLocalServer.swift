@@ -27,16 +27,13 @@ final class RuffleLocalServer {
     ])
 
     /// 大乐斗 APK stubHeavy 只有 worldmap/fenxiang/huangzuan/choujiang。
-    /// iOS 无 :ruffle：大厅资源会与 action_gg 解析叠峰 → jetsam。
-    /// 日志证据：ui-v10.1500.swf ~7.6MB 在 PACK 前整包进堆，24s 后 95% OOM。
-    /// a=replay 对官方 PetFunFight.swf 无效（仍拉大厅），必须服务端 stub。
-    /// 保留 leisure（EI 依赖）；ui/Button/xianxia 开战画面不需要。
+    /// iOS 无 :ruffle：额外 stub Button/xianxia，减轻与 action_gg 叠峰。
+    /// 注意：不可 stub ui-v10——空壳会卡死流水线，不再请求 action_gg（黑屏日志已证实）。
+    /// 不可 stub leisure——EI 依赖。
     static func shouldStubReplayAsset(_ lowPath: String) -> Bool {
         let keys = [
             "worldmap", "fenxiang", "huangzuan", "choujiang",
             "xianxia", "button/",
-            // 大厅壳：7.6MB，叠 action_gg 必炸（官方动画不需要这层 UI）
-            "ui-v", "/ui-", "gres/ui",
             "yuanwuge", "worldtree", "dragonarea", "shikong", "huashan", "huanjin",
             "rongyao", "haidao", "huodong", "limitbless", "xieshen", "horseyear",
             "almanac", "weiduan", "todaymust",
