@@ -34,18 +34,19 @@
   <div id="status">booting…</div>
   <div id="player"></div>
   <script>
-    // 饭店助手·动画版 replay-host.js：盖住 devicePixelRatio，压低 Ruffle 背板像素。
-    // 不是 CSS transform 半屏（那会把画面挤出视口）；逻辑舞台仍 showAll 清晰可读。
+    // 饭店助手·动画版 replay-host.js 省内存：
+    // 1) 盖住 devicePixelRatio（640px 预算 / 530:318）
+    // 2) 播放中 FPS<18 连续 3 窗则 renderScale -= 0.25（压 GPU，非半屏 CSS）
     (function () {
       var nativeRatio = Object.getOwnPropertyDescriptor(window, 'devicePixelRatio');
       var initialRatio = window.devicePixelRatio || 1;
       var renderScale = 1.5; // standard
+      var qualityName = 'standard';
       var qualityScales = { standard: 1.5, medium: 2, mediumHigh: 2.5, high: 3 };
       function updatePixelRatio() {
         var ratio = nativeRatio && nativeRatio.get ? nativeRatio.get.call(window) : initialRatio;
         var box = document.getElementById('player');
         var width = (box && box.clientWidth) || window.innerWidth || 390;
-        // 640px 预算对应 530 舞台 / standard=1.5（与饭店助手一致）
         window.__replayDpr = Math.min(ratio || 1, renderScale, (640 * renderScale / 1.5) / Math.max(1, width));
       }
       updatePixelRatio();
@@ -56,9 +57,48 @@
       window.addEventListener('resize', updatePixelRatio);
       window.__setReplayQuality = function (q) {
         if (!qualityScales[q]) return false;
+        qualityName = q;
         renderScale = qualityScales[q];
         updatePixelRatio();
         return true;
+      };
+      // 饭店助手 sampleFrames：仅 standard 档位自动降档
+      var sampleFrame = null, sampleStarted = null, frameCount = 0, slowWindows = 0;
+      function sampleFrames(now) {
+        sampleFrame = null;
+        if (document.hidden) {
+          sampleFrame = window.requestAnimationFrame(sampleFrames);
+          return;
+        }
+        if (sampleStarted === null) sampleStarted = now;
+        else {
+          frameCount++;
+          var elapsed = now - sampleStarted;
+          if (elapsed >= 2000) {
+            var fps = frameCount * 1000 / elapsed;
+            slowWindows = fps < 18 ? slowWindows + 1 : 0;
+            if (qualityName === 'standard' && slowWindows >= 3 && renderScale > 1) {
+              renderScale -= 0.25;
+              updatePixelRatio();
+              slowWindows = 0;
+              try {
+                if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.ruffleStatus) {
+                  window.webkit.messageHandlers.ruffleStatus.postMessage(
+                    'dpr-adapt scale=' + renderScale + ' dpr=' + (Math.round(window.__replayDpr * 100) / 100) + ' fps=' + Math.round(fps)
+                  );
+                }
+              } catch (_) {}
+            }
+            sampleStarted = now;
+            frameCount = 0;
+          }
+        }
+        sampleFrame = window.requestAnimationFrame(sampleFrames);
+      }
+      window.__startReplayFpsSampler = function () {
+        if (sampleFrame !== null) return;
+        sampleStarted = null; frameCount = 0; slowWindows = 0;
+        sampleFrame = window.requestAnimationFrame(sampleFrames);
       };
     })();
 
@@ -345,8 +385,7 @@
           s.onerror = () => reject(new Error('ruffle.js'));
           document.head.appendChild(s);
         });
-        // 饭店助手：quality low + letterbox + showAll；maxExecutionDuration 60
-        // 默认仍 canvas（大乐斗 APK 稳）；DPR 盖罩已压纹理。勿再用 CSS transform 半屏。
+        // 饭店助手省内存播放器配置（非半分辨率降配）
         const baseCfg = {
           publicPath: rufflePublicPath,
           preferredRenderer: renderer,
@@ -360,6 +399,9 @@
           maxExecutionDuration: 60,
           frameRate: 30,
           deviceFontRenderer: 'canvas',
+          backgroundColor: '#181412',
+          contextMenu: 'off',
+          upgradeToHttps: false,
           fontSources: [new URL('fonts/hud_cjk.ttf', location.href).href],
           defaultFonts: {
             sans: ['Noto Sans SC'],
@@ -399,17 +441,18 @@
           });
         } catch (_) {}
 
-        setStatus('loading PetFunFight… origin=' + location.origin);
-        // 与 0.1.120 一致：URL 加载 + blank.xml base
+        setStatus('loading PetFunFight… origin=' + location.origin + ' dpr=' + (Math.round((window.__replayDpr || 0) * 100) / 100));
+        // 饭店助手：FlashVars a=replay → 跳过大厅资源路径，少占内存
         await player.load(Object.assign({
           url: 'PetFunFight.swf',
           allowScriptAccess: true,
           allowNetworking: 'all',
           base: location.origin + '/ruffle_fight/gres/main/blank.xml',
-          parameters: {}
+          parameters: { a: 'replay' }
         }, baseCfg));
-        notifyAndroid('swf_ready', { attempt: 'url-120', wasm: forceVanilla ? 'vanilla' : 'auto' });
-        setStatus('swf ready · wait EI…');
+        notifyAndroid('swf_ready', { attempt: 'url-120', wasm: forceVanilla ? 'vanilla' : 'auto', a: 'replay' });
+        setStatus('swf ready · wait EI… dpr=' + (Math.round((window.__replayDpr || 0) * 100) / 100));
+        if (window.__startReplayFpsSampler) window.__startReplayFpsSampler();
         let tries = 0;
         const maxTries = 120;
         const t = setInterval(() => {
