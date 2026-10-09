@@ -172,6 +172,14 @@ final class RuffleLocalServer {
             }
         }
 
+        // 对齐 Android stubHeavy：回放时砍掉大厅重资源，降低解析峰值内存
+        let stubHeavy = ["activehall", "worldmap", "fenxiang", "huangzuan", "choujiang", "stronger"]
+        if stubHeavy.contains(where: { low.contains($0) }) {
+            log("STUB heavy \(fileRel)")
+            respond(conn, status: 200, mime: mime(fileRel), body: Self.emptySwf, headOnly: headOnly)
+            return
+        }
+
         let cacheCandidates: [URL] = {
             if fileRel.hasPrefix("gres/") {
                 return [ActionPackPrefetch.localURL(for: fileRel)]
@@ -187,26 +195,28 @@ final class RuffleLocalServer {
                 if low.hasSuffix(".swf"), SwfPrefixStrip.stripFileIfNeeded(cached) {
                     log("STRIP \(fileRel)")
                 }
-                if let data = try? Data(contentsOf: cached), data.count > 1000 {
+                let size = (try? FileManager.default.attributesOfItem(atPath: cached.path)[.size] as? NSNumber)?.int64Value ?? 0
+                if size > 1000 {
                     if low.contains("action_gg") || low.contains("action_mm") {
-                        log("CACHE \(fileRel) \(data.count)B sigOK=\(SwfPrefixStrip.hasValidSig(data))")
+                        log("CACHE stream \(fileRel) \(size)B")
                         if !low.contains("gg2"), !low.contains("mm2") {
-                            log("PACK delivered via HTTP \(data.count)B")
+                            log("PACK delivered via HTTP \(size)B")
                         }
                     }
-                    respond(conn, status: 200, mime: mime(fileRel), body: data, headOnly: headOnly)
+                    // 大文件流式读盘，避免 App 进程再吞一份 37MB
+                    respondFile(conn, fileURL: cached, mime: mime(fileRel), headOnly: headOnly)
                     return
                 }
             }
         }
 
         let local = root.appendingPathComponent(fileRel)
-        if FileManager.default.fileExists(atPath: local.path),
-           let data = try? Data(contentsOf: local) {
+        if FileManager.default.fileExists(atPath: local.path) {
+            let size = (try? FileManager.default.attributesOfItem(atPath: local.path)[.size] as? NSNumber)?.int64Value ?? 0
             if low.contains("action_") || low.hasSuffix(".wasm") || low.hasSuffix("petfunfight.swf") {
-                log("BUNDLE \(fileRel) \(data.count)B")
+                log("BUNDLE stream \(fileRel) \(size)B")
             }
-            respond(conn, status: 200, mime: mime(fileRel), body: data, headOnly: headOnly)
+            respondFile(conn, fileURL: local, mime: mime(fileRel), headOnly: headOnly)
             return
         }
 
@@ -283,6 +293,47 @@ final class RuffleLocalServer {
         body: Data,
         headOnly: Bool = false
     ) {
+        let headerData = httpHeader(status: status, mime: mime, length: body.count)
+        if headOnly || body.isEmpty {
+            conn.send(content: headerData, completion: .contentProcessed { _ in
+                conn.cancel()
+            })
+            return
+        }
+        conn.send(content: headerData, completion: .contentProcessed { [weak self] error in
+            if error != nil {
+                conn.cancel()
+                return
+            }
+            self?.sendDataBody(body, on: conn, offset: 0)
+        })
+    }
+
+    /// 从磁盘流式发送（wasm / action_gg），App 侧不整包进堆
+    private func respondFile(_ conn: NWConnection, fileURL: URL, mime: String, headOnly: Bool) {
+        let size = (try? FileManager.default.attributesOfItem(atPath: fileURL.path)[.size] as? NSNumber)?.int64Value ?? 0
+        let headerData = httpHeader(status: 200, mime: mime, length: Int(size))
+        if headOnly || size <= 0 {
+            conn.send(content: headerData, completion: .contentProcessed { _ in
+                conn.cancel()
+            })
+            return
+        }
+        guard let fh = try? FileHandle(forReadingFrom: fileURL) else {
+            respond(conn, status: 500, mime: "text/plain", body: Data("open fail".utf8))
+            return
+        }
+        conn.send(content: headerData, completion: .contentProcessed { [weak self] error in
+            if error != nil {
+                try? fh.close()
+                conn.cancel()
+                return
+            }
+            self?.sendFileBody(fh, on: conn)
+        })
+    }
+
+    private func httpHeader(status: Int, mime: String, length: Int) -> Data {
         let reason: String
         switch status {
         case 200: reason = "OK"
@@ -293,28 +344,14 @@ final class RuffleLocalServer {
         }
         var head = "HTTP/1.1 \(status) \(reason)\r\n"
         head += "Content-Type: \(mime)\r\n"
-        head += "Content-Length: \(body.count)\r\n"
+        head += "Content-Length: \(length)\r\n"
         head += "Access-Control-Allow-Origin: *\r\n"
         head += "Connection: close\r\n"
         head += "\r\n"
-        let headerData = Data(head.utf8)
-        if headOnly || body.isEmpty {
-            conn.send(content: headerData, completion: .contentProcessed { _ in
-                conn.cancel()
-            })
-            return
-        }
-        // 大包分块发送，避免单次 send 37MB 后提前 cancel 截断
-        conn.send(content: headerData, completion: .contentProcessed { [weak self] error in
-            if error != nil {
-                conn.cancel()
-                return
-            }
-            self?.sendBody(body, on: conn, offset: 0)
-        })
+        return Data(head.utf8)
     }
 
-    private func sendBody(_ body: Data, on conn: NWConnection, offset: Int) {
+    private func sendDataBody(_ body: Data, on conn: NWConnection, offset: Int) {
         let chunk = 256 * 1024
         if offset >= body.count {
             conn.cancel()
@@ -327,7 +364,24 @@ final class RuffleLocalServer {
                 conn.cancel()
                 return
             }
-            self?.sendBody(body, on: conn, offset: end)
+            self?.sendDataBody(body, on: conn, offset: end)
+        })
+    }
+
+    private func sendFileBody(_ fh: FileHandle, on conn: NWConnection) {
+        let chunk = fh.readData(ofLength: 256 * 1024)
+        if chunk.isEmpty {
+            try? fh.close()
+            conn.cancel()
+            return
+        }
+        conn.send(content: chunk, completion: .contentProcessed { [weak self] error in
+            if error != nil {
+                try? fh.close()
+                conn.cancel()
+                return
+            }
+            self?.sendFileBody(fh, on: conn)
         })
     }
 

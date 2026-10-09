@@ -74,23 +74,38 @@ struct ReplayWebView: UIViewRepresentable {
         server.onLog = { [weak coordinator = context.coordinator] msg in
             coordinator?.logLine(msg)
         }
+        let forceVanilla = RuffleMemPolicy.shouldUseVanilla
+        context.coordinator.useVanilla = forceVanilla
         let pageURL: URL
         do {
             let base = try server.start(root: URL(fileURLWithPath: handler.rootPath))
-            pageURL = URL(
-                string: "\(base.absoluteString)ruffle_fight/index.html?renderer=canvas&preferMm=\(preferMm ? 1 : 0)"
-            )!
-            log.append("HTTP \(base.absoluteString)")
+            pageURL = Self.fightPageURL(
+                base: base.absoluteString,
+                preferMm: preferMm,
+                vanilla: forceVanilla
+            )
+            log.append("HTTP \(base.absoluteString) wasm=\(forceVanilla ? "vanilla(safe)" : "auto(simd)")")
         } catch {
             log.append("HTTP start FAIL \(error.localizedDescription) → scheme fallback")
-            pageURL = URL(
-                string: "\(RuffleSchemeHandler.scheme)://local/ruffle_fight/index.html?renderer=canvas&preferMm=\(preferMm ? 1 : 0)"
-            )!
+            pageURL = Self.fightPageURL(
+                base: "\(RuffleSchemeHandler.scheme)://local/",
+                preferMm: preferMm,
+                vanilla: forceVanilla
+            )
         }
-        statusLine = "加载播放器…"
+        statusLine = forceVanilla ? "兼容模式加载…" : "加载播放器…"
         log.append("load \(pageURL.absoluteString)")
+        context.coordinator.pageURL = pageURL
         wv.load(URLRequest(url: pageURL))
         return wv
+    }
+
+    private static func fightPageURL(base: String, preferMm: Bool, vanilla: Bool) -> URL {
+        var s = base
+        if !s.hasSuffix("/") { s += "/" }
+        var q = "renderer=canvas&preferMm=\(preferMm ? 1 : 0)&replay=1"
+        if vanilla { q += "&wasm=vanilla" }
+        return URL(string: "\(s)ruffle_fight/index.html?\(q)")!
     }
 
     func updateUIView(_ uiView: WKWebView, context: Context) {
@@ -111,7 +126,10 @@ struct ReplayWebView: UIViewRepresentable {
         let log: ReplayDebugLog
         var handler: RuffleSchemeHandler?
         weak var webView: WKWebView?
-        private var didInject = false
+        var pageURL: URL?
+        var useVanilla = false
+        private var injectGeneration = 0
+        private var recoveringFromOOM = false
         private var statusLine: Binding<String>
 
         init(act: String, replayId: String, log: ReplayDebugLog, statusLine: Binding<String>) {
@@ -161,15 +179,21 @@ struct ReplayWebView: UIViewRepresentable {
                     statusLine.wrappedValue = "\(type): \(stringify(payload))"
                 case "injected":
                     statusLine.wrappedValue = "已注入，等待动作包/开战…"
+                    // 成功注入后，若本轮已是 vanilla 且后续能开战，可清 sticky
                 case "swf_ready":
                     statusLine.wrappedValue = "SWF 就绪…"
                 case "boot_fallback":
+                    RuffleMemPolicy.markWasmCrashed()
+                    useVanilla = true
                     statusLine.wrappedValue = "改用兼容 wasm…"
                 case "velocimetry":
                     if let p = payload as? [String: Any] {
                         let tag = p["tag"] as? String ?? ""
                         let val = p["val"] as? String ?? ""
                         statusLine.wrappedValue = "vel \(tag) \(val)"
+                        if tag == "sal_base_ok" || tag == "ready_go" || tag == "ra_startRound" {
+                            RuffleMemPolicy.markFightHealthy()
+                        }
                     }
                 case "ready_kick":
                     statusLine.wrappedValue = "ready_skip → kick"
@@ -216,14 +240,39 @@ struct ReplayWebView: UIViewRepresentable {
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             self.webView = webView
-            guard !didInject else { return }
-            didInject = true
+            recoveringFromOOM = false
             statusLine.wrappedValue = "注入战报…"
-            log.append("didFinish → queue inject")
-            inject(into: webView, attempt: 0)
+            log.append("didFinish → queue inject gen=\(injectGeneration + 1)")
+            injectGeneration += 1
+            inject(into: webView, attempt: 0, generation: injectGeneration)
         }
 
-        private func inject(into webView: WKWebView, attempt: Int) {
+        /// WebContent 被 jetsam/OOM 杀掉：对齐 APK render_gone → sticky vanilla 降配重载
+        func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+            log.append("OOM/terminate WebContent → vanilla reload")
+            statusLine.wrappedValue = "内存不足，降配重试…"
+            RuffleMemPolicy.markWasmCrashed()
+            useVanilla = true
+            guard !recoveringFromOOM else { return }
+            recoveringFromOOM = true
+            let preferMm = ActionPackPrefetch.preferMm(from: act)
+            let base: String
+            if let pageURL, let host = pageURL.host, host == "127.0.0.1" || host == "localhost",
+               let port = pageURL.port {
+                base = "http://127.0.0.1:\(port)/"
+            } else if let serverBase = RuffleLocalServer.shared.baseURL?.absoluteString {
+                base = serverBase
+            } else {
+                base = "\(RuffleSchemeHandler.scheme)://local/"
+            }
+            let url = ReplayWebView.fightPageURL(base: base, preferMm: preferMm, vanilla: true)
+            pageURL = url
+            log.append("reload \(url.absoluteString)")
+            webView.load(URLRequest(url: url))
+        }
+
+        private func inject(into webView: WKWebView, attempt: Int, generation: Int) {
+            guard generation == injectGeneration else { return }
             let b64 = Data(act.utf8).base64EncodedString()
             let idEsc = replayId
                 .replacingOccurrences(of: "\\", with: "\\\\")
@@ -231,6 +280,7 @@ struct ReplayWebView: UIViewRepresentable {
             let js = "window.__injectFightActB64 && window.__injectFightActB64(\"\(b64)\",\"\(idEsc)\")"
             webView.evaluateJavaScript(js) { [weak self] result, error in
                 guard let self else { return }
+                guard generation == self.injectGeneration else { return }
                 if let error {
                     self.logLine("注入异常: \(error.localizedDescription)")
                 }
@@ -240,7 +290,7 @@ struct ReplayWebView: UIViewRepresentable {
                         self.log.append("inject wait attempt=\(attempt)")
                     }
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                        self.inject(into: webView, attempt: attempt + 1)
+                        self.inject(into: webView, attempt: attempt + 1, generation: generation)
                     }
                 } else if ok {
                     self.logLine("inject queued/ok attempt=\(attempt)")
@@ -249,6 +299,30 @@ struct ReplayWebView: UIViewRepresentable {
                 }
             }
         }
+    }
+}
+
+/// 对齐 Android `ruffle_warm` 降配。
+/// iOS 与主进程同 WebContent：解析 ~37MB action 包易 jetsam，默认 vanilla；OOM 后 sticky。
+enum RuffleMemPolicy {
+    private static let keyCrashed = "ruffle_wasm_crashed"
+    private static let keyPreferSimd = "ruffle_prefer_simd"
+    private static let defaults = UserDefaults.standard
+
+    static var shouldUseVanilla: Bool {
+        if defaults.bool(forKey: keyCrashed) { return true }
+        // 未显式打开 SIMD 时默认兼容包（对齐 APK 降配思路）
+        return !defaults.bool(forKey: keyPreferSimd)
+    }
+
+    static func markWasmCrashed() {
+        defaults.set(true, forKey: keyCrashed)
+        defaults.set(false, forKey: keyPreferSimd)
+    }
+
+    static func markFightHealthy() {
+        // 开战成功只清 crash 标记；不自动切回 SIMD，避免再次 OOM
+        defaults.set(false, forKey: keyCrashed)
     }
 }
 

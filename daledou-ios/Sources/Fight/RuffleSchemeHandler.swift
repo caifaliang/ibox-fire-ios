@@ -79,6 +79,12 @@ final class RuffleSchemeHandler: NSObject, WKURLSchemeHandler {
                 return
             }
         }
+        let stubHeavy = ["activehall", "worldmap", "fenxiang", "huangzuan", "choujiang", "stronger"]
+        if stubHeavy.contains(where: { lowRel.contains($0) }) {
+            logRes("STUB heavy \(rel)")
+            finish(urlSchemeTask, url: url, data: Self.emptySwf, mime: mime(for: rel))
+            return
+        }
 
         // 预下载缓存（Documents/ruffle_cdn）
         let cached = ActionPackPrefetch.localURL(for: rel.hasPrefix("gres/") ? rel : (path.contains("/gres/") ? "gres/" + (rel as NSString).lastPathComponent : rel))
