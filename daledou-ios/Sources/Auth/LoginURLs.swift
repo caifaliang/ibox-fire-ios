@@ -127,6 +127,21 @@ enum LoginURLs {
         return host.contains("dld.qzapp.z.qq.com") || host.contains("fight.pet.qq.com")
     }
 
+    /// 真正进了手机端壳（phonepk），不是 index.php 回调页
+    static func isInGameShell(_ url: URL?) -> Bool {
+        guard let u = url, isGameHost(u) else { return false }
+        let s = u.absoluteString.lowercased()
+        return s.contains("phonepk") || s.contains("cgi-bin/phonepk")
+    }
+
+    /// QQ「亿万用户已选择」一键登录页（扫码后常误停在这里）
+    static let qqLoginProbeJS =
+        "(function(){var t=(document.body&&document.body.innerText)||'';" +
+        "if(t.indexOf('亿万用户已选择')>=0)return 'qq';" +
+        "if(t.indexOf('【大乐斗】')>=0)return 'game';" +
+        "if(t.length>80)return 'game';" +
+        "return 'other';})()"
+
     static func isOauthLanding(_ url: URL?) -> Bool {
         guard let u = url, let host = u.host?.lowercased() else { return false }
         guard host.contains("dld.qzapp.z.qq.com") else { return false }

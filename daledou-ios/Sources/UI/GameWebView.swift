@@ -77,25 +77,31 @@ struct GameWebView: UIViewRepresentable {
             )
         }
 
-        if let u = vm.pendingURL {
-            context.coordinator.applyUA(webView, desktop: vm.preferDesktopUA)
-            webView.load(URLRequest(url: u))
-            DispatchQueue.main.async { vm.pendingURL = nil }
-        }
-
+        // Cookie 注入优先于单独 pendingURL，避免只 load 不带会话
         if context.coordinator.lastCookieInject != vm.cookieInjectToken {
             context.coordinator.lastCookieInject = vm.cookieInjectToken
             let header = SessionStore.shared.cookieHeader
             let next = vm.pendingURL ?? URL(string: LoginURLs.ledouEntry)
+            vm.pendingURL = nil
+            context.coordinator.applyUA(webView, desktop: false)
             Task { @MainActor in
                 if !header.isEmpty {
                     await CookieBridge.inject(cookieHeader: header, into: webView)
                 }
+                // 稍等 cookie 落盘再跳转
+                try? await Task.sleep(nanoseconds: 150_000_000)
                 if let u = next {
                     webView.load(URLRequest(url: u))
-                    vm.pendingURL = nil
                 }
             }
+            return
+        }
+
+        if let u = vm.pendingURL {
+            context.coordinator.applyUA(webView, desktop: vm.preferDesktopUA)
+            let dest = u
+            vm.pendingURL = nil
+            webView.load(URLRequest(url: dest))
         }
 
         if context.coordinator.lastReloadToken != vm.webReloadToken {
@@ -114,6 +120,7 @@ struct GameWebView: UIViewRepresentable {
         private var captureTask: Task<Void, Never>?
         private var lastContinueURL = ""
         private var lastHandledCode = ""
+        private var lastStuckRecoverAt: TimeInterval = 0
 
         /// 把 _blank / window.open 留在壳内；不处理 mqq（交给原生拦截）
         private let stayJS = """
@@ -147,6 +154,18 @@ struct GameWebView: UIViewRepresentable {
             Task { @MainActor in vm.onNavigated(to: webView.url) }
             webView.evaluateJavaScript(stayJS, completionHandler: nil)
             scheduleCookieCapture(webView)
+            // 已登录却仍停在 QQ「一键登录」页 → 强制进 phonepk
+            webView.evaluateJavaScript(LoginURLs.qqLoginProbeJS) { [weak self] result, _ in
+                guard let self else { return }
+                let flag = (result as? String) ?? ""
+                Task { @MainActor in
+                    guard self.vm.session.isLoggedIn, flag == "qq" else { return }
+                    let now = Date().timeIntervalSince1970
+                    guard now - self.lastStuckRecoverAt > 2.5 else { return }
+                    self.lastStuckRecoverAt = now
+                    self.vm.recoverIfStuckOnQqLoginPage()
+                }
+            }
         }
 
         func webView(

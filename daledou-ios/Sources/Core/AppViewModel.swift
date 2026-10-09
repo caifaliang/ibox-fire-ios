@@ -81,12 +81,7 @@ final class AppViewModel: ObservableObject {
     }
 
     func openGameHome() {
-        loginMode = .idle
-        preferDesktopUA = false
-        if session.isLoggedIn {
-            cookieInjectToken &+= 1
-        }
-        pendingURL = URL(string: LoginURLs.ledouEntry)
+        forceEnterGame()
     }
 
     func reload() {
@@ -133,16 +128,32 @@ final class AppViewModel: ObservableObject {
             qqLabel = extracted
         }
         let showQq = qqLabel.isEmpty ? "?" : qqLabel
-        statusText = "已登录 QQ \(showQq) · Cookie 已保存"
         titleHint = "大乐斗"
-        // 只进一次游戏首页，避免与 about:blank / 二次 capture 打架
-        if !didEnterGameFromCapture {
+        // 注意：index.php?code= 也在 dld.qzapp 上，不能当成已进游戏而跳过跳转
+        if !didEnterGameFromCapture || !LoginURLs.isInGameShell(URL(string: currentURLString)) {
             didEnterGameFromCapture = true
-            let cur = URL(string: currentURLString)
-            if cur == nil || !LoginURLs.isGameHost(cur) {
-                pendingURL = URL(string: LoginURLs.ledouEntry)
-            }
+            statusText = "已登录 QQ \(showQq) · 正在进入游戏…"
+            forceEnterGame()
+        } else {
+            statusText = "已登录 QQ \(showQq) · Cookie 已保存"
         }
+    }
+
+    /// 注入 Cookie 并强制打开手机端首页（扫码后卡在 QQ 一键页时用）
+    func forceEnterGame() {
+        preferDesktopUA = false
+        loginMode = .idle
+        statusText = "正在进入游戏…"
+        cookieInjectToken &+= 1
+        pendingURL = URL(string: LoginURLs.ledouEntry)
+    }
+
+    /// 页面探测仍是 QQ 登录页，但本地已有 Cookie → 再推一次进游戏
+    func recoverIfStuckOnQqLoginPage() {
+        guard session.isLoggedIn else { return }
+        if LoginURLs.isInGameShell(URL(string: currentURLString)) { return }
+        statusText = "检测到仍在 QQ 登录页，强制进入游戏…"
+        forceEnterGame()
     }
 
     func logout() {
