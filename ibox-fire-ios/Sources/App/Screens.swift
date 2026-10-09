@@ -383,6 +383,17 @@ struct NbLoginScreen: View {
     }
 }
 
+private struct KeepAliveStatusBlock: View {
+    @ObservedObject private var ka = BackgroundKeepAlive.shared
+    var body: some View {
+        Text(ka.isActive ? ka.statusText : "未运行任务时不保活")
+            .font(.caption)
+            .foregroundStyle(ka.isActive ? .green : .secondary)
+        Text("本地长任务启动后会循环极低音量静音音频，锁屏/切后台可继续跑。系统极端省电时仍可能杀进程。勿开低电量模式。")
+            .font(.caption2).foregroundStyle(.secondary)
+    }
+}
+
 struct ProfileScreen: View {
     @EnvironmentObject var vm: AppViewModel
     var body: some View {
@@ -422,9 +433,8 @@ struct ProfileScreen: View {
                     .font(.caption)
                 Button("保存代理链接") { vm.saveProxyExtractUrl() }
             }
-            Section("说明") {
-                Text("iOS 无前台服务：长任务请保持 App 在前台。杀后台即停。")
-                    .font(.caption).foregroundStyle(.secondary)
+            Section("后台保活（自签）") {
+                KeepAliveStatusBlock()
             }
         }
     }
@@ -477,7 +487,7 @@ struct AnnouncePane: View {
         VStack(alignment: .leading, spacing: 10) {
             Text(vm.isYearVip ? "年卡 · 公告锁不限次 · 本机直连" : (vm.isMonthVip ? "月卡 · 公告锁每日限次 · 本机直连" : "月卡/年卡可用 · 本机直连"))
                 .font(.caption)
-            Text("开放：北京时间 09:00–23:59").font(.caption2).foregroundStyle(.secondary)
+            Text("开放：北京时间 09:00–23:59 · 音频保活可锁屏").font(.caption2).foregroundStyle(.secondary)
             QuotaBanner(q: vm.announceQuota, label: "公告锁定")
             if !vm.announceQuota.openNow {
                 Text("当前时段已关闭（\(vm.announceQuota.openHours)）").font(.caption).foregroundStyle(.orange)
@@ -655,7 +665,9 @@ struct BuyPane: View {
             }
             Text(vm.buyCloudMode
                  ? "☁️ 云端捡漏（服务器跑，可切后台/锁屏）"
-                 : (vm.buyAutoPay ? "⚡ 本地开火 · 自动支付 · 需保持前台" : "⚡ 本地开火 · 需保持前台"))
+                 : (vm.buyAutoPay
+                    ? "⚡ 本地开火 · 自动支付 · 音频保活可锁屏"
+                    : "⚡ 本地开火 · 音频保活可锁屏"))
                 .font(.caption).foregroundStyle(.secondary)
             if !vm.iboxLoggedIn {
                 IboxLoginCard()

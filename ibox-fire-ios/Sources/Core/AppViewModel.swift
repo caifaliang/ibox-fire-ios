@@ -956,7 +956,7 @@ final class AppViewModel: ObservableObject {
         if buyAutoPay && buyPayPwd.trimmingCharacters(in: .whitespaces).isEmpty {
             appendLog("开启自动支付需填写支付密码", type: "error", mode: .buy); return
         }
-        appendLog("⚡本地模式（请保持前台，切后台约2分钟后会暂停）", mode: .buy)
+        appendLog("⚡本地模式 · 音频保活（可锁屏/切后台）", mode: .buy)
         let interval = (Double(buyBatchInterval) ?? 6).clamped(to: 1...60)
         let engine = BuyEngine(cfg: BuyConfig(token: iboxToken, groupId: buyGid, collectionName: buyCname, targetPrice: price, quantity: qty, buyMode: buyMode, batchIntervalS: interval, autoPay: buyAutoPay, payPassword: buyPayPwd), onLog: { [weak self] m in
             Task { @MainActor in self?.appendLog(m, type: m.contains("成功") ? "buy" : "info", mode: .buy) }
@@ -1057,7 +1057,7 @@ final class AppViewModel: ObservableObject {
         let engine = SellEngine(cfg: SellConfig(token: iboxToken, groupId: sellGid, collectionName: sellCname, targetPrice: price, quantity: qty, consignPassword: consignPwd), onLog: { [weak self] m in
             Task { @MainActor in self?.appendLog(m, mode: .sell) }
         })
-        runner.start(kind: .sell, stop: { engine.requestStop() }) { _ = try? await engine.run() }
+        runner.start(kind: .sell, stop: { engine.requestStop() }, keepAlive: true) { _ = try? await engine.run() }
     }
 
     func searchMarkerColl(_ q: String) {
@@ -1380,7 +1380,7 @@ final class AppViewModel: ObservableObject {
         let engine = BatchEngine(cfg: BatchConfig(token: iboxToken, groupId: batchGid, collectionName: batchCname, action: list ? "list" : "unlist", price: Double(batchPrice) ?? 0, consignPassword: consignPwd, quantity: Int(batchQty) ?? 0, safeMode: batchSafe), onLog: { [weak self] m in
             Task { @MainActor in self?.appendLog(m, mode: .batch) }
         })
-        runner.start(kind: .batch, stop: { engine.requestStop() }) { _ = try? await engine.run() }
+        runner.start(kind: .batch, stop: { engine.requestStop() }, keepAlive: true) { _ = try? await engine.run() }
     }
 
     func startAnnounce() {
@@ -1418,7 +1418,8 @@ final class AppViewModel: ObservableObject {
                 Task { @MainActor in self?.appendLog(m, mode: .announce) }
             })
             clearPrep()
-            runner.start(kind: .announce, stop: { engine.requestStop() }) { _ = await engine.run() }
+            appendLog("⚡公告锁 · 音频保活（可锁屏/切后台）", mode: .announce)
+            runner.start(kind: .announce, stop: { engine.requestStop() }, keepAlive: true) { _ = await engine.run() }
         }
     }
 
@@ -1463,7 +1464,7 @@ final class AppViewModel: ObservableObject {
                     Task { @MainActor in self?.appendLog(m, mode: .synth) }
                 })
                 clearPrep()
-                runner.start(kind: .synth, stop: { engine.requestStop() }) { _ = try? await engine.run() }
+                runner.start(kind: .synth, stop: { engine.requestStop() }, keepAlive: true) { _ = try? await engine.run() }
             } catch {
                 appendLog("代理失败 \(error.localizedDescription)", type: "error", mode: .synth)
             }
@@ -1538,7 +1539,7 @@ final class AppViewModel: ObservableObject {
                     Task { @MainActor in self?.appendLog(m, mode: .presale) }
                 })
                 clearPrep()
-                runner.start(kind: .presale, stop: { engine.requestStop() }) { await engine.run() }
+                runner.start(kind: .presale, stop: { engine.requestStop() }, keepAlive: true) { await engine.run() }
             } catch {
                 appendLog("代理失败 \(error.localizedDescription)", type: "error", mode: .presale)
             }
@@ -1585,7 +1586,7 @@ final class AppViewModel: ObservableObject {
                     Task { @MainActor in self?.appendLog(m, mode: .nb_presale) }
                 })
                 clearPrep()
-                runner.start(kind: .nbPresale, stop: { engine.requestStop() }) { await engine.run() }
+                runner.start(kind: .nbPresale, stop: { engine.requestStop() }, keepAlive: true) { await engine.run() }
             } catch {
                 appendLog(error.localizedDescription, type: "error", mode: .nb_presale)
             }
@@ -1616,7 +1617,7 @@ final class AppViewModel: ObservableObject {
         ), onLog: { [weak self] m in
             Task { @MainActor in self?.appendLog(m, mode: .nb_snipe) }
         })
-        runner.start(kind: .nbSnipe, stop: { engine.requestStop() }) { await engine.run() }
+        runner.start(kind: .nbSnipe, stop: { engine.requestStop() }, keepAlive: true) { await engine.run() }
     }
 }
 

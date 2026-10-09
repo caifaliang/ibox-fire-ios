@@ -28,6 +28,11 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     }
 
     func applicationDidEnterBackground(_ application: UIApplication) {
-        // iOS 无 FGS：杀后台即停；保持前台更可靠
+        // 保活由 BackgroundKeepAlive（audio）自行续播；此处仅作兜底提示
+        Task { @MainActor in
+            if BackgroundKeepAlive.shared.isActive {
+                BackgroundKeepAlive.shared.begin()
+            }
+        }
     }
 }
