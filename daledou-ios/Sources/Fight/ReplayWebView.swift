@@ -329,47 +329,23 @@ struct ReplayWebView: UIViewRepresentable {
         func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
             oomCount += 1
             log.append("OOM/terminate WebContent count=\(oomCount) (jetsam, keep simd)")
-            if oomCount >= 2 || recoveringFromOOM {
-                recoveringFromOOM = true
-                injectGeneration += 1
-                RuffleWarmHolder.shared.destroy()
-                let msg = "内存不足，官方动画无法完成。请关闭后用文字战报，或杀掉后台再试。"
-                statusLine.wrappedValue = msg
-                log.append("OOM GIVE UP → \(msg)")
-                webView.loadHTMLString(
-                    """
-                    <html><body style="background:#111;color:#ccc;font:15px -apple-system;padding:28px;line-height:1.5">
-                    <b style="color:#f66">内存不足</b><br/><br/>
-                    解析官方动作包时 WebContent 被系统回收。<br/>
-                    已按 APK 策略拆掉游戏页；若仍失败请杀后台后只开一次动画。
-                    </body></html>
-                    """,
-                    baseURL: nil
-                )
-                return
-            }
+            // 饭店助手：onRenderProcessGone → destroy + 提示，不无限冷启重 parse
             recoveringFromOOM = true
-            statusLine.wrappedValue = "内存不足，清缓存后重试…"
-            URLCache.shared.removeAllCachedResponses()
-            let preferMm = ActionPackPrefetch.preferMm(from: act)
-            let base: String
-            if let pageURL, let host = pageURL.host, host == "127.0.0.1" || host == "localhost",
-               let port = pageURL.port {
-                base = "http://127.0.0.1:\(port)/"
-            } else if let serverBase = RuffleLocalServer.shared.baseURL?.absoluteString {
-                base = serverBase
-            } else {
-                base = "\(RuffleSchemeHandler.scheme)://local/"
-            }
-            let url = ReplayWebView.fightPageURL(base: base, preferMm: preferMm, vanilla: false, lowmem: false)
-            pageURL = url
-            log.append("reload after 1.2s \(url.absoluteString)")
-            // WebContent 已死：重置 warm 状态并重绑 handler，load 会重建进程
-            RuffleWarmHolder.shared.adopt(webView, preferMm: preferMm)
-            bind(webView: webView, cold: true)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
-                webView.load(URLRequest(url: url))
-            }
+            injectGeneration += 1
+            RuffleWarmHolder.shared.destroy()
+            let msg = "内存不足，官方动画已停止。请关掉本页后重开一次，或用文字战报。"
+            statusLine.wrappedValue = msg
+            log.append("OOM STOP (no reload) → \(msg)")
+            webView.loadHTMLString(
+                """
+                <html><body style="background:#111;color:#ccc;font:15px -apple-system;padding:28px;line-height:1.5">
+                <b style="color:#f66">内存不足</b><br/><br/>
+                解析动作包时 WebContent 被回收（对齐饭店助手：不自动重载）。<br/>
+                请关闭后重开一次；日志应含 dpr≈1.x（盖住 3x 屏）。
+                </body></html>
+                """,
+                baseURL: nil
+            )
         }
 
         func injectNow(into webView: WKWebView) {

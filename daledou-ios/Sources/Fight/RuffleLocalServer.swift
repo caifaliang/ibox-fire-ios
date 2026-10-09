@@ -26,14 +26,17 @@ final class RuffleLocalServer {
         0x00, 0x0C, 0x01, 0x00, 0x40, 0x00, 0x00, 0x00,
     ])
 
-    /// 与 APK `FlashRuffleReplayWebView` stubHeavy **完全一致**（勿自行加砍）。
-    /// APK 不降分辨率；只 stub 这几个大厅装饰。错性别 action 另走 emptySwf。
+    /// 大乐斗 APK stubHeavy 只有 worldmap/fenxiang/huangzuan/choujiang。
+    /// iOS 无 :ruffle 进程：须额外 stub 大厅装饰（xianxia/Button），否则与 action_gg
+    /// 解析叠峰 → jetsam（见日志 CDN 拉 Button 后 16s OOM）。不影响开战画质。
+    /// 饭店助手靠盖 devicePixelRatio 省 GPU；大厅 stub 省 SWF 堆，两者互补。
     static func shouldStubReplayAsset(_ lowPath: String) -> Bool {
         let keys = [
-            "worldmap",
-            "fenxiang",
-            "huangzuan",
-            "choujiang",
+            "worldmap", "fenxiang", "huangzuan", "choujiang",
+            "xianxia", "button/",
+            "yuanwuge", "worldtree", "dragonarea", "shikong", "huashan", "huanjin",
+            "rongyao", "haidao", "huodong", "limitbless", "xieshen", "horseyear",
+            "almanac", "weiduan", "todaymust",
         ]
         return keys.contains(where: { lowPath.contains($0) })
     }

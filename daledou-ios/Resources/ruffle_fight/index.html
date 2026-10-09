@@ -6,19 +6,23 @@
   <title>Ruffle Fight Replay</title>
   <style>
     html, body { margin: 0; background: #000; color: #eee; overflow: hidden; height: 100%; width: 100%; }
+    body { display: flex; align-items: center; justify-content: center; }
     @font-face {
       font-family: 'Noto Sans SC';
       src: url('fonts/hud_cjk.ttf') format('truetype');
       font-weight: 400;
       font-style: normal;
     }
-    /* 横屏满屏：铺满可视区域，随手机宽高比自适应 */
+    /* 对齐饭店助手·动画版：530/318 舞台比例，避免全屏 3x DPR 撑爆纹理内存 */
     #player {
-      position: fixed; left: 0; top: 0; right: 0; bottom: 0;
-      width: 100%; height: 100%;
+      width: min(100%, calc(100vh * 530 / 318));
+      max-height: 100%;
+      position: relative;
+      aspect-ratio: 530 / 318;
+      flex: none;
       background: #000;
     }
-    #player ruffle-player, #player canvas { width: 100% !important; height: 100% !important; }
+    #player ruffle-player, #player canvas { width: 100% !important; height: 100% !important; display: block; }
     #status {
       display: block; position: fixed; left: 8px; top: 48px; right: 8px; z-index: 20;
       font: 12px/1.35 -apple-system, sans-serif; color: #9fef9f;
@@ -30,6 +34,34 @@
   <div id="status">booting…</div>
   <div id="player"></div>
   <script>
+    // 饭店助手·动画版 replay-host.js：盖住 devicePixelRatio，压低 Ruffle 背板像素。
+    // 不是 CSS transform 半屏（那会把画面挤出视口）；逻辑舞台仍 showAll 清晰可读。
+    (function () {
+      var nativeRatio = Object.getOwnPropertyDescriptor(window, 'devicePixelRatio');
+      var initialRatio = window.devicePixelRatio || 1;
+      var renderScale = 1.5; // standard
+      var qualityScales = { standard: 1.5, medium: 2, mediumHigh: 2.5, high: 3 };
+      function updatePixelRatio() {
+        var ratio = nativeRatio && nativeRatio.get ? nativeRatio.get.call(window) : initialRatio;
+        var box = document.getElementById('player');
+        var width = (box && box.clientWidth) || window.innerWidth || 390;
+        // 640px 预算对应 530 舞台 / standard=1.5（与饭店助手一致）
+        window.__replayDpr = Math.min(ratio || 1, renderScale, (640 * renderScale / 1.5) / Math.max(1, width));
+      }
+      updatePixelRatio();
+      Object.defineProperty(window, 'devicePixelRatio', {
+        configurable: true,
+        get: function () { return window.__replayDpr; }
+      });
+      window.addEventListener('resize', updatePixelRatio);
+      window.__setReplayQuality = function (q) {
+        if (!qualityScales[q]) return false;
+        renderScale = qualityScales[q];
+        updatePixelRatio();
+        return true;
+      };
+    })();
+
     const statusEl = document.getElementById('status');
     function setStatus(t) {
       try { if (statusEl) statusEl.textContent = String(t || ''); } catch (_) {}
@@ -283,9 +315,10 @@
         const params = new URLSearchParams(location.search);
         const renderer = (params.get('renderer') || 'canvas');
         preferMm = params.get('preferMm') === '1';
-        // 对齐 APK：quality low；勿做半分辨率 transform（会把画面挤出视口，且与 CSS !important 冲突）
         // 仅显式 ?wasm=vanilla 时强制；失败后也会自动跳一次。
         const forceVanilla = params.get('wasm') === 'vanilla';
+        const qName = params.get('quality') || 'standard';
+        if (window.__setReplayQuality) window.__setReplayQuality(qName);
         if (forceVanilla) {
           window.__RUFFLE_FORCE_VANILLA__ = true;
           try {
@@ -312,7 +345,8 @@
           s.onerror = () => reject(new Error('ruffle.js'));
           document.head.appendChild(s);
         });
-        // 对齐 APK：quality low + letterbox on + scale showAll + canvas
+        // 饭店助手：quality low + letterbox + showAll；maxExecutionDuration 60
+        // 默认仍 canvas（大乐斗 APK 稳）；DPR 盖罩已压纹理。勿再用 CSS transform 半屏。
         const baseCfg = {
           publicPath: rufflePublicPath,
           preferredRenderer: renderer,
@@ -321,7 +355,10 @@
           scale: 'showAll',
           autoplay: 'on',
           unmuteOverlay: 'hidden',
+          splashScreen: false,
           warnOnUnsupportedContent: false,
+          maxExecutionDuration: 60,
+          frameRate: 30,
           deviceFontRenderer: 'canvas',
           fontSources: [new URL('fonts/hud_cjk.ttf', location.href).href],
           defaultFonts: {
@@ -334,38 +371,24 @@
           renderer: renderer,
           wasm: forceVanilla ? 'vanilla' : 'auto',
           publicPath: rufflePublicPath,
+          dpr: window.__replayDpr,
+          quality: qName,
           sdkHint: navigator.userAgent
         });
         window.RufflePlayer.config = Object.assign({}, window.RufflePlayer.config || {}, baseCfg);
-        setStatus('renderer ' + renderer + (forceVanilla ? ' · vanilla' : ''));
+        setStatus('renderer ' + renderer + ' · dpr=' + (Math.round((window.__replayDpr || 0) * 100) / 100) + (forceVanilla ? ' · vanilla' : ''));
         const r = window.RufflePlayer.newest();
         player = r.createPlayer();
-        function fitPlayerToViewport() {
-          const w = (window.visualViewport && window.visualViewport.width) || window.innerWidth || document.documentElement.clientWidth;
-          const h = (window.visualViewport && window.visualViewport.height) || window.innerHeight || document.documentElement.clientHeight;
-          const box = document.getElementById('player');
-          if (box) {
-            box.style.width = w + 'px';
-            box.style.height = h + 'px';
-            box.style.transform = '';
-          }
-          if (player) {
-            player.style.width = w + 'px';
-            player.style.height = h + 'px';
-            player.style.transform = '';
-          }
-        }
-        fitPlayerToViewport();
+        player.style.width = '100%';
+        player.style.height = '100%';
         document.getElementById('player').appendChild(player);
         window.__player = player;
-        window.addEventListener('resize', fitPlayerToViewport);
-        window.addEventListener('orientationchange', function() {
-          setTimeout(fitPlayerToViewport, 50);
-          setTimeout(fitPlayerToViewport, 300);
+        window.addEventListener('resize', function () {
+          if (window.__setReplayQuality) window.__setReplayQuality(qName);
         });
-        if (window.visualViewport) {
-          window.visualViewport.addEventListener('resize', fitPlayerToViewport);
-        }
+        window.addEventListener('orientationchange', function () {
+          setTimeout(function () { if (window.__setReplayQuality) window.__setReplayQuality(qName); }, 50);
+        });
 
         try {
           document.addEventListener('visibilitychange', function() {
