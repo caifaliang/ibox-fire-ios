@@ -111,11 +111,25 @@ final class RuffleLocalServer {
             return
         }
         let parts = first.split(separator: " ")
-        guard parts.count >= 2, parts[0] == "GET" || parts[0] == "HEAD" else {
+        guard parts.count >= 2 else {
+            respond(conn, status: 400, mime: "text/plain", body: Data("bad request".utf8))
+            return
+        }
+        let method = String(parts[0])
+        if method == "OPTIONS" {
+            var head = "HTTP/1.1 204 No Content\r\n"
+            head += "Access-Control-Allow-Origin: *\r\n"
+            head += "Access-Control-Allow-Methods: GET, HEAD, OPTIONS\r\n"
+            head += "Access-Control-Allow-Headers: *\r\n"
+            head += "Content-Length: 0\r\nConnection: close\r\n\r\n"
+            conn.send(content: Data(head.utf8), completion: .contentProcessed { _ in conn.cancel() })
+            return
+        }
+        guard method == "GET" || method == "HEAD" else {
             respond(conn, status: 405, mime: "text/plain", body: Data("method".utf8))
             return
         }
-        let isHead = parts[0] == "HEAD"
+        let isHead = method == "HEAD"
         let rawTarget = String(parts[1])
         let pathPart = rawTarget.split(separator: "?", maxSplits: 1)
         let path = String(pathPart[0])
@@ -125,6 +139,7 @@ final class RuffleLocalServer {
         if path.contains("/cgi-bin/petpk") || path.contains("/__cgi/petpk")
             || (path.contains("/remote/") && path.contains("/cgi-bin/petpk")) {
             let body = Self.stubCGI(query: query)
+            log("CGI stub \(query.prefix(48))")
             respond(conn, status: 200, mime: "application/json", body: Data(body.utf8), headOnly: isHead)
             return
         }
@@ -207,9 +222,9 @@ final class RuffleLocalServer {
             }
         }
 
+        let name = remoteURL.lastPathComponent
         // 复用 ActionPackPrefetch 已落盘的 action_gg/mm
         if low.contains("/swf/gres/action_") || low.contains("gres/action_") {
-            let name = remoteURL.lastPathComponent
             let pref = ActionPackPrefetch.localURL(for: "gres/\(name)")
             if FileManager.default.fileExists(atPath: pref.path) {
                 let size = (try? FileManager.default.attributesOfItem(atPath: pref.path)[.size] as? NSNumber)?.int64Value ?? 0
@@ -220,6 +235,14 @@ final class RuffleLocalServer {
                     return
                 }
             }
+        }
+        // 包内已知良品 gres（loadingSWC 等），避免 CDN 剥离/兼容问题导致 2s 死循环重试
+        if let bundled = Self.bundledGresURL(name: name),
+           FileManager.default.fileExists(atPath: bundled.path) {
+            let size = (try? FileManager.default.attributesOfItem(atPath: bundled.path)[.size] as? NSNumber)?.int64Value ?? 0
+            log("BUNDLE gres \(name) \(size)B")
+            respondFile(conn, fileURL: bundled, mime: mime(remoteURL.path), headOnly: headOnly)
+            return
         }
 
         let cacheKey = rest.replacingOccurrences(of: "/", with: "_")
@@ -415,5 +438,28 @@ final class RuffleLocalServer {
             return #"{"result":"0","msg":""}"#
         }
         return #"{"result":"-1","msg":""}"#
+    }
+
+    /// 包内 ruffle_fight/gres 已知良品（优先于 CDN，防 loadingSWC 死循环）
+    private static func bundledGresURL(name: String) -> URL? {
+        let low = name.lowercased()
+        // 只替换启动关键件，动作包仍走 CDN/prefetch
+        let allow = ["loadingswc", "spchack", "leisure", "xmls", "ui-"]
+        guard allow.contains(where: { low.contains($0) }) else { return nil }
+        let bundle = Bundle.main
+        if let u = bundle.resourceURL?
+            .appendingPathComponent("ruffle_fight/gres/\(name)"),
+           FileManager.default.fileExists(atPath: u.path) {
+            return u
+        }
+        // 模糊：gres 下按前缀找
+        if let gres = bundle.resourceURL?.appendingPathComponent("ruffle_fight/gres"),
+           let files = try? FileManager.default.contentsOfDirectory(atPath: gres.path) {
+            let prefix = String(low.prefix(while: { $0.isLetter || $0 == "-" || $0 == "_" }))
+            if let hit = files.first(where: { $0.lowercased().hasPrefix(prefix) && $0.lowercased().hasSuffix(".swf") }) {
+                return gres.appendingPathComponent(hit)
+            }
+        }
+        return nil
     }
 }

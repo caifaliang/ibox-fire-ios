@@ -146,25 +146,36 @@
       url: url,
       parameters: { a: 'replay' },
       autoplay: desiredPaused ? 'off' : 'on', unmuteOverlay: 'hidden', allowScriptAccess: true,
+      // iOS 本机 http://127.0.0.1：绝不能 upgradeToHttps，否则子 SWF 全失败并 2s 重试
+      allowNetworking: 'all',
       publicPath: origin + '/assets/flashreplay/ruffle/',
-      upgradeToHttps: true, splashScreen: false, contextMenu: 'off',
-      showSwfDownload: false, openUrlMode: 'deny', logLevel: 'error',
+      upgradeToHttps: false, splashScreen: false, contextMenu: 'off',
+      showSwfDownload: false, openUrlMode: 'deny', logLevel: 'warn',
       // The original movie requires BitmapData.draw; only the wgpu renderer supports it.
-      // Disable multisampling to reduce the mobile GPU's offscreen texture memory.
       preferredRenderer: 'wgpu-webgl', quality: 'low',
-      // Keep the original 30fps timeline stable; our engine rate controls speed.
       frameRate: 30,
-      // Use browser device fonts for Chinese names; Ruffle's bundled fallback has no CJK glyphs.
       deviceFontRenderer: 'canvas',
-      // Body/weapon setup can exceed the default 15s in WASM; retain a bounded timeout.
       maxExecutionDuration: 60,
       backgroundColor: '#181412', letterbox: 'on', scale: 'showAll',
       urlRewriteRules: [
         [/^https?:\/\/(fightimg\.pet\.qq\.com|fight\.pet\.qq\.com|imgcache\.qq\.com|qzonestyle\.gtimg\.cn)(\/.*)$/, origin + '/remote/$1$2'],
+        [/^\/\/(fightimg\.pet\.qq\.com|fight\.pet\.qq\.com|imgcache\.qq\.com|qzonestyle\.gtimg\.cn)(\/.*)$/, origin + '/remote/$1$2'],
       ],
     };
     player.ruffle().playbackRate = playbackSpeed;
-    return { player: player, load: function () { return player.ruffle().load(options); } };
+    player.addEventListener('loadeddata', function () {
+      if (window.FlashReplay) window.FlashReplay.onState('loadeddata', id, sessionToken);
+    });
+    player.addEventListener('error', function (ev) {
+      var msg = (ev && ev.detail && (ev.detail.message || ev.detail)) || 'player error';
+      if (window.FlashReplay) window.FlashReplay.onState('player_error', String(msg), sessionToken);
+    });
+    return { player: player, load: function () {
+      return player.ruffle().load(options).catch(function (err) {
+        if (window.FlashReplay) window.FlashReplay.onState('load_fail', String(err), sessionToken);
+        throw err;
+      });
+    } };
   }
   function dispose() {
     generation++;
