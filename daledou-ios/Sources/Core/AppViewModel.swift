@@ -173,13 +173,23 @@ final class AppViewModel: ObservableObject {
                 }
             }
             let result = await FightActFetcher.fetch(pageUrl: page, cookieHeader: cookie)
-            viewFightLoading = false
             if result.act.isEmpty {
+                viewFightLoading = false
                 statusText = "打开动画失败: \(result.errMsg)"
                 return
             }
+            // 对齐 APK：先落盘动作包再开播放页，避免 3-2-1 后卡死
+            let preferMm = ActionPackPrefetch.preferMm(from: result.act)
+            do {
+                try await ActionPackPrefetch.ensure(preferMm: preferMm) { msg in
+                    self.statusText = msg
+                }
+            } catch {
+                statusText = "动作包下载失败，仍尝试播放: \(error.localizedDescription)"
+            }
             replayAct = result.act
             replayId = FightActFetcher.replayId(from: page)
+            viewFightLoading = false
             statusText = "已取到战斗数据，打开官方动画"
             showReplay = true
         }

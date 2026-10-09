@@ -18,6 +18,8 @@ struct ReplayWebView: UIViewRepresentable {
         config.preferences.setValue(true, forKey: "allowFileAccessFromFileURLs")
         config.setValue(true, forKey: "allowUniversalAccessFromFileURLs")
 
+        ActionPackPrefetch.sessionPreferMm = ActionPackPrefetch.preferMm(from: act)
+
         let handler = RuffleSchemeHandler()
         config.setURLSchemeHandler(handler, forURLScheme: RuffleSchemeHandler.scheme)
         context.coordinator.handler = handler
@@ -46,7 +48,6 @@ struct ReplayWebView: UIViewRepresentable {
             return wv
         }
 
-        // iOS：强制 vanilla wasm，避免 SIMD 扩展导致黑屏
         let url = URL(
             string: "\(RuffleSchemeHandler.scheme)://local/ruffle_fight/index.html?renderer=canvas&wasm=vanilla"
         )!
@@ -81,6 +82,9 @@ struct ReplayWebView: UIViewRepresentable {
         ) {
             if message.name == "ruffleStatus", let s = message.body as? String {
                 statusLine.wrappedValue = s
+                if s.contains("ready_skip") || s.lowercased().contains("ready_skip") {
+                    kickIfNeeded(webView: nil)
+                }
                 return
             }
             if message.name == "ruffleEvent", let dict = message.body as? [String: Any] {
@@ -91,6 +95,8 @@ struct ReplayWebView: UIViewRepresentable {
                     statusLine.wrappedValue = "动画数据已注入"
                 } else if type == "swf_ready" {
                     statusLine.wrappedValue = "SWF 已就绪…"
+                } else if type == "ready_kick" {
+                    statusLine.wrappedValue = "已强制开打"
                 }
             }
         }
@@ -112,6 +118,24 @@ struct ReplayWebView: UIViewRepresentable {
             didInject = true
             statusLine.wrappedValue = "页面就绪，注入 Act…"
             inject(into: webView, attempt: 0)
+            // 倒计时后若卡死，1.8s / 4s 各踢一次
+            DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) { [weak self, weak webView] in
+                guard let self, let webView else { return }
+                self.kick(webView)
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 7.0) { [weak self, weak webView] in
+                guard let self, let webView else { return }
+                self.kick(webView)
+            }
+        }
+
+        private func kickIfNeeded(webView: WKWebView?) {
+            guard let webView else { return }
+            kick(webView)
+        }
+
+        private func kick(_ webView: WKWebView) {
+            webView.evaluateJavaScript("window.__kickStartRound && window.__kickStartRound()", completionHandler: nil)
         }
 
         private func inject(into webView: WKWebView, attempt: Int) {

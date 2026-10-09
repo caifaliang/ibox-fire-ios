@@ -54,6 +54,37 @@ final class RuffleSchemeHandler: NSObject, WKURLSchemeHandler {
         }
         if rel.isEmpty { rel = "index.html" }
 
+        // 主动作包：错误性别直接 stub，避免再拉另一份 ~40MB
+        let lowRel = rel.lowercased()
+        if lowRel.contains("action_gg") || lowRel.contains("action_mm") {
+            let wantMm = ActionPackPrefetch.sessionPreferMm
+            let isMm = lowRel.contains("action_mm")
+            let isGg = lowRel.contains("action_gg")
+            let wrong = (wantMm && isGg) || (!wantMm && isMm)
+            // gg2/mm2 是二包，放行；只 stub 根包错性别
+            let isPack2 = lowRel.contains("gg2") || lowRel.contains("mm2")
+            if wrong && !isPack2 {
+                finish(urlSchemeTask, url: url, data: Self.emptySwf, mime: "application/x-shockwave-flash")
+                return
+            }
+        }
+
+        // 预下载缓存（Documents/ruffle_cdn）
+        let cached = ActionPackPrefetch.localURL(for: rel.hasPrefix("gres/") ? rel : (path.contains("/gres/") ? "gres/" + (rel as NSString).lastPathComponent : rel))
+        if (lowRel.contains("action_gg") || lowRel.contains("action_mm") || lowRel.hasPrefix("gres/")),
+           FileManager.default.fileExists(atPath: cached.path),
+           let data = try? Data(contentsOf: cached), data.count > 1000 {
+            finish(urlSchemeTask, url: url, data: data, mime: mime(for: rel))
+            return
+        }
+        // 兼容 rel 已是 gres/xxx
+        let cached2 = ActionPackPrefetch.localURL(for: rel)
+        if FileManager.default.fileExists(atPath: cached2.path),
+           let data = try? Data(contentsOf: cached2), data.count > 1000 {
+            finish(urlSchemeTask, url: url, data: data, mime: mime(for: rel))
+            return
+        }
+
         let local = root.appendingPathComponent(rel)
         if FileManager.default.fileExists(atPath: local.path),
            let data = try? Data(contentsOf: local) {
@@ -62,12 +93,20 @@ final class RuffleSchemeHandler: NSObject, WKURLSchemeHandler {
         }
 
         if let cdn = cdnURL(for: rel, originalPath: path) {
-            proxy(cdn, task: urlSchemeTask)
+            proxyAndCache(cdn, rel: rel, task: urlSchemeTask)
             return
         }
 
         fail(urlSchemeTask, URLError(.fileDoesNotExist))
     }
+
+    /// 最小合法 FWS，满足 Loader.complete（对齐 Android emptySwfResponse）
+    private static let emptySwf = Data([
+        0x46, 0x57, 0x53, 0x0A,
+        0x18, 0x00, 0x00, 0x00,
+        0x70, 0x00, 0x13, 0x88, 0x00, 0x00, 0xEA, 0x60,
+        0x00, 0x0C, 0x01, 0x00, 0x40, 0x00, 0x00, 0x00,
+    ])
 
     func webView(_ webView: WKWebView, stop urlSchemeTask: WKURLSchemeTask) {
         lock.lock()
@@ -113,8 +152,12 @@ final class RuffleSchemeHandler: NSObject, WKURLSchemeHandler {
     }
 
     private func proxy(_ remote: URL, task: WKURLSchemeTask) {
+        proxyAndCache(remote, rel: nil, task: task)
+    }
+
+    private func proxyAndCache(_ remote: URL, rel: String?, task: WKURLSchemeTask) {
         var req = URLRequest(url: remote)
-        req.timeoutInterval = 120
+        req.timeoutInterval = 180
         let dataTask = session.dataTask(with: req) { [weak self] data, resp, err in
             guard let self else { return }
             self.lock.lock()
@@ -124,9 +167,19 @@ final class RuffleSchemeHandler: NSObject, WKURLSchemeHandler {
                 self.fail(task, err)
                 return
             }
+            let payload = data ?? Data()
             let mime = (resp as? HTTPURLResponse)?.mimeType
                 ?? self.mime(for: remote.lastPathComponent)
-            self.finish(task, url: task.request.url ?? remote, data: data ?? Data(), mime: mime)
+            // 大动作包落盘，下次直接读缓存
+            if let rel, payload.count > 1_000_000,
+               rel.contains("action_gg") || rel.contains("action_mm") {
+                let dest = ActionPackPrefetch.localURL(for: rel.hasPrefix("gres/") ? rel : "gres/\((rel as NSString).lastPathComponent)")
+                try? FileManager.default.createDirectory(
+                    at: dest.deletingLastPathComponent(), withIntermediateDirectories: true
+                )
+                try? payload.write(to: dest, options: .atomic)
+            }
+            self.finish(task, url: task.request.url ?? remote, data: payload, mime: mime)
         }
         lock.lock()
         tasks[ObjectIdentifier(task)] = dataTask
