@@ -182,18 +182,27 @@
       if ((low.indexOf('action_gg') >= 0 || low.indexOf('action_mm') >= 0) && low.indexOf('gg2') < 0 && low.indexOf('mm2') < 0) {
         if (window.__setParseSafe) window.__setParseSafe(true, 'action_pack');
       }
+      const isAction = (low.indexOf('action_gg') >= 0 || low.indexOf('action_mm') >= 0)
+        && low.indexOf('gg2') < 0 && low.indexOf('mm2') < 0;
+      if (isAction) setStatus('phase action_fetch_start');
       setStatus('net ' + short);
       try {
+        const t0 = performance.now();
         const res = await _fetch(input, init);
         if (!res.ok) {
           setStatus('FAIL ' + res.status + ' ' + short);
           notifyAndroid('net_fail', { url: rewritten, status: res.status });
         } else {
-          setStatus('ok ' + res.status + ' ' + short);
-          notifyAndroid('net_ok', { url: rewritten, status: res.status });
-          // gg2/mm2 = 动作包解析完成 → 恢复饭店助手 640px 舞台
+          const cl = res.headers.get('content-length') || '?';
+          setStatus('ok ' + res.status + ' ' + short + (isAction ? (' cl=' + cl) : ''));
+          notifyAndroid('net_ok', { url: rewritten, status: res.status, contentLength: cl });
+          if (isAction) {
+            setStatus('phase action_http_done cl=' + cl + ' ms=' + Math.round(performance.now() - t0));
+            notifyAndroid('phase', { step: 'action_http_done', contentLength: cl, ms: Math.round(performance.now() - t0) });
+          }
           if (low.indexOf('gg2') >= 0 || low.indexOf('mm2') >= 0) {
             if (window.__setParseSafe) window.__setParseSafe(false, 'pack_parsed');
+            setStatus('phase pack_parsed_gg2');
           }
         }
         return res;

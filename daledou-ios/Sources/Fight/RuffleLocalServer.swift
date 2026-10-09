@@ -212,9 +212,16 @@ final class RuffleLocalServer {
                 let size = (try? FileManager.default.attributesOfItem(atPath: cached.path)[.size] as? NSNumber)?.int64Value ?? 0
                 if size > 1000 {
                     if low.contains("action_gg") || low.contains("action_mm") {
-                        log("CACHE stream \(fileRel) \(size)B")
+                        // 记录签名，确认路线 A 是否已 FWS（无 LZMA）
+                        var sig = "?"
+                        if let fh = try? FileHandle(forReadingFrom: cached) {
+                            let h = fh.readData(ofLength: 3)
+                            try? fh.close()
+                            if h.count == 3, let s = String(bytes: h, encoding: .ascii) { sig = s }
+                        }
+                        log("CACHE stream \(fileRel) \(size)B sig=\(sig)")
                         if !low.contains("gg2"), !low.contains("mm2") {
-                            log("PACK delivered via HTTP \(size)B")
+                            log("PACK delivered via HTTP \(size)B sig=\(sig)")
                         }
                     }
                     // 大文件流式读盘，避免 App 进程再吞一份 37MB

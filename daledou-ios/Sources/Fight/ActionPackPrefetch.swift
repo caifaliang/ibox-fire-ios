@@ -38,7 +38,18 @@ enum ActionPackPrefetch {
         guard size.int64Value > 1_000_000 else { return false }
         // 已缓存但仍带 CDN 前缀时当场剥掉，避免开战 sal_base_err io
         _ = SwfPrefixStrip.stripFileIfNeeded(f)
-        return !SwfPrefixStrip.needsStrip(fileURL: f)
+        guard !SwfPrefixStrip.needsStrip(fileURL: f) else { return false }
+        // ZWS 未预解压 → 视为未就绪，ensure 里会 inflate（省 WebContent LZMA 峰）
+        if isZws(f) { return false }
+        return true
+    }
+
+    private static func isZws(_ fileURL: URL) -> Bool {
+        guard let fh = try? FileHandle(forReadingFrom: fileURL) else { return false }
+        defer { try? fh.close() }
+        let head = fh.readData(ofLength: 3)
+        guard head.count == 3 else { return false }
+        return head[0] == 0x5A && head[1] == 0x57 && head[2] == 0x53
     }
 
     static func ensure(
@@ -49,13 +60,34 @@ enum ActionPackPrefetch {
         let rel = preferMm ? mmRel : ggRel
         let dest = localURL(for: rel)
         if isDiskReady(preferMm: preferMm) {
-            await onProgress("动作包已缓存")
+            await onProgress("动作包已缓存(FWS/CWS)")
             return
         }
         try? FileManager.default.createDirectory(
             at: dest.deletingLastPathComponent(),
             withIntermediateDirectories: true
         )
+
+        // 磁盘已有 ZWS：只做 App 侧预解压，不再重下
+        let existingSize = (try? FileManager.default.attributesOfItem(atPath: dest.path)[.size] as? NSNumber)?.int64Value ?? 0
+        if existingSize > 1_000_000 {
+            _ = SwfPrefixStrip.stripFileIfNeeded(dest)
+            if isZws(dest) {
+                await onProgress("预解压已缓存动作包…")
+                let ok = SwfZwsInflate.inflateFileIfNeeded(dest) { msg in
+                    Task { @MainActor in onProgress(msg) }
+                }
+                if ok || !isZws(dest) {
+                    let sz = (try? FileManager.default.attributesOfItem(atPath: dest.path)[.size] as? NSNumber)?.int64Value ?? 0
+                    await onProgress("动作包就绪 \(max(1, sz / 1024 / 1024))MB FWS")
+                    return
+                }
+            } else if !SwfPrefixStrip.needsStrip(fileURL: dest) {
+                await onProgress("动作包已缓存")
+                return
+            }
+        }
+
         let url = URL(string: "https://fightimg.pet.qq.com/swf/\(rel)")!
         await onProgress("下载动作包…约 40MB，请稍候")
 
@@ -75,7 +107,15 @@ enum ActionPackPrefetch {
         if SwfPrefixStrip.stripFileIfNeeded(dest) {
             await onProgress("已剥离 CDN 前缀")
         }
+        // 路线 A：App 进程 ZWS→FWS，WebContent 不再做 LZMA（~38MB+69MB 叠峰）
+        await onProgress("预解压动作包（省播放器内存）…")
+        let inflated = SwfZwsInflate.inflateFileIfNeeded(dest) { msg in
+            Task { @MainActor in onProgress(msg) }
+        }
+        if !inflated, isZws(dest) {
+            await onProgress("预解压失败，仍用 ZWS（可能 OOM）")
+        }
         let finalSize = (try? FileManager.default.attributesOfItem(atPath: dest.path)[.size] as? NSNumber)?.int64Value ?? size
-        await onProgress("动作包就绪 \(max(1, finalSize / 1024 / 1024))MB")
+        await onProgress("动作包就绪 \(max(1, finalSize / 1024 / 1024))MB\(inflated ? " FWS" : "")")
     }
 }

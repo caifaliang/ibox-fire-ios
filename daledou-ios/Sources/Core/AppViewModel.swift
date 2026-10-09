@@ -181,20 +181,10 @@ final class AppViewModel: ObservableObject {
                 statusText = "打开动画失败: \(result.errMsg)"
                 return
             }
-            // 对齐 APK：先落盘动作包再开播放页，避免 3-2-1 后卡死
-            let preferMm = ActionPackPrefetch.preferMm(from: result.act)
-            do {
-                try await ActionPackPrefetch.ensure(preferMm: preferMm) { msg in
-                    self.statusText = msg
-                }
-            } catch {
-                statusText = "动作包下载失败，仍尝试播放: \(error.localizedDescription)"
-            }
             replayAct = result.act
             replayId = FightActFetcher.replayId(from: page)
-            viewFightLoading = false
+            // 先拆游戏页，再下载/ZWS→FWS：预解压峰值(~70MB)不要和游戏 WebContent 叠峰
             statusText = "释放游戏页内存…"
-            // APK：主壳与 :ruffle 分进程。iOS 只能先拆掉游戏 WKWebView，等进程退出再开 Ruffle。
             resumeGameURL = gameWebView?.url
             if let wv = gameWebView {
                 wv.stopLoading()
@@ -203,9 +193,18 @@ final class AppViewModel: ObservableObject {
             }
             gameWebView = nil
             suspendGameWebForReplay = true
-            // 等 SwiftUI dismantle + WebContent jetsam 回收，再 present 动画页
             try? await Task.sleep(nanoseconds: 1_400_000_000)
             URLCache.shared.removeAllCachedResponses()
+
+            let preferMm = ActionPackPrefetch.preferMm(from: result.act)
+            do {
+                try await ActionPackPrefetch.ensure(preferMm: preferMm) { msg in
+                    self.statusText = msg
+                }
+            } catch {
+                statusText = "动作包下载失败，仍尝试播放: \(error.localizedDescription)"
+            }
+            viewFightLoading = false
             statusText = "已取到战斗数据，打开官方动画"
             showReplay = true
         }
