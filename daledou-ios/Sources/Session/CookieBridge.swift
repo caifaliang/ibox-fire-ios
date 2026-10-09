@@ -4,24 +4,45 @@ import WebKit
 /// WKWebView Cookie ↔ SessionStore
 enum CookieBridge {
     static func readCookieHeader(from webView: WKWebView) async -> String {
-        let store = webView.configuration.websiteDataStore.httpCookieStore
-        let cookies: [HTTPCookie] = await withCheckedContinuation { cont in
-            store.getAllCookies { cont.resume(returning: $0) }
-        }
-        // 优先大乐斗相关域
-        let relevant = cookies.filter { c in
-            let d = c.domain.lowercased()
-            return d.contains("qq.com") || d.contains("gtimg.cn")
-        }
+        // 与 WebView 同一 dataStore；再兜底 default（防止配置不一致）
+        let stores = [
+            webView.configuration.websiteDataStore.httpCookieStore,
+            WKWebsiteDataStore.default().httpCookieStore,
+        ]
         var map: [String: String] = [:]
-        for c in relevant {
-            // 同名以后写的为准（常见 skey 刷新）
-            map[c.name] = c.value
+        for store in stores {
+            let cookies: [HTTPCookie] = await withCheckedContinuation { cont in
+                store.getAllCookies { cont.resume(returning: $0) }
+            }
+            for c in cookies {
+                let d = c.domain.lowercased()
+                guard d.contains("qq.com") || d.contains("gtimg.cn") else { continue }
+                let name = c.name
+                let val = c.value
+                if val.isEmpty { continue }
+                // skey / p_skey：非空覆盖空值
+                if let old = map[name], !old.isEmpty, name.lowercased().contains("skey") {
+                    continue
+                }
+                map[name] = val
+            }
         }
         return map
             .map { "\($0.key)=\($0.value)" }
             .sorted()
             .joined(separator: "; ")
+    }
+
+    /// 轮询直到有 skey 或超时（扫码落地后 Set-Cookie 有时略晚）
+    static func waitForSkey(from webView: WKWebView, attempts: Int = 8, gapMs: UInt64 = 400) async -> String {
+        for i in 0..<attempts {
+            let header = await readCookieHeader(from: webView)
+            if LoginURLs.hasRealSkey(header) { return header }
+            if i + 1 < attempts {
+                try? await Task.sleep(nanoseconds: gapMs * 1_000_000)
+            }
+        }
+        return await readCookieHeader(from: webView)
     }
 
     static func inject(cookieHeader: String, into webView: WKWebView) async {
@@ -43,7 +64,6 @@ enum CookieBridge {
                     .path: "/",
                     .secure: "TRUE",
                 ]
-                // 根域 qq.com
                 if host.hasSuffix("qq.com") {
                     props[.domain] = ".qq.com"
                 }

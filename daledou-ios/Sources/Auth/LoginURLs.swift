@@ -99,7 +99,9 @@ enum LoginURLs {
 
     static func hasRealSkey(_ cookie: String?) -> Bool {
         guard let c = cookie, !c.isEmpty else { return false }
-        return c.range(of: #"(?:^|[;\s])skey="#, options: .regularExpression) != nil
+        // 手机端常见 skey；部分链路只有 p_skey
+        if c.range(of: #"(?:^|[;\s])skey="#, options: .regularExpression) != nil { return true }
+        return c.range(of: #"(?:^|[;\s])p_skey="#, options: .regularExpression) != nil
     }
 
     static func extractQq(_ cookie: String) -> String? {

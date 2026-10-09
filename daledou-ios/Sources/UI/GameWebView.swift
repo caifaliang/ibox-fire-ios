@@ -186,12 +186,14 @@ struct GameWebView: UIViewRepresentable {
             }
 
             if scheme == "http" || scheme == "https" {
-                // https 回调带 code：留在 WebView 加载（会写 Cookie）
-                if let code = LoginURLs.oauthCode(from: url), LoginURLs.isOauthLanding(url) || LoginURLs.isGameHost(url) {
-                    if code != lastHandledCode {
-                        lastHandledCode = code
-                        Task { @MainActor in
-                            vm.statusText = "授权回调中，等待游戏 Cookie…"
+                // 扫码落地 index.php?code=…：只提示一次，进游戏后由 Cookie 捕获改成「已登录」
+                if vm.loginMode == .scan,
+                   LoginURLs.isOauthLanding(url),
+                   LoginURLs.oauthCode(from: url) != nil,
+                   !vm.session.isLoggedIn {
+                    Task { @MainActor in
+                        if !vm.session.isLoggedIn {
+                            vm.statusText = "扫码成功，正在写入会话…"
                         }
                     }
                 }
@@ -234,7 +236,7 @@ struct GameWebView: UIViewRepresentable {
         private func scheduleCookieCapture(_ webView: WKWebView) {
             captureTask?.cancel()
             captureTask = Task { @MainActor in
-                try? await Task.sleep(nanoseconds: 700_000_000)
+                try? await Task.sleep(nanoseconds: 500_000_000)
                 guard !Task.isCancelled else { return }
                 if vm.loginMode == .scan,
                    let s = webView.url?.absoluteString,
@@ -246,17 +248,21 @@ struct GameWebView: UIViewRepresentable {
                     webView.load(URLRequest(url: u))
                     return
                 }
-                let header = await CookieBridge.readCookieHeader(from: webView)
+                let url = webView.url
+                let shouldWait = vm.loginMode == .scan
+                    || LoginURLs.isGameHost(url)
+                    || LoginURLs.isOauthLanding(url)
+                let header: String
+                if shouldWait {
+                    header = await CookieBridge.waitForSkey(from: webView)
+                } else {
+                    header = await CookieBridge.readCookieHeader(from: webView)
+                }
                 if LoginURLs.hasRealSkey(header) {
                     vm.onCookiesCaptured(header)
-                } else if vm.loginMode == .scan,
-                          let u = webView.url,
-                          LoginURLs.isGameHost(u) || LoginURLs.isOauthLanding(u) {
-                    try? await Task.sleep(nanoseconds: 800_000_000)
-                    let h2 = await CookieBridge.readCookieHeader(from: webView)
-                    if LoginURLs.hasRealSkey(h2) {
-                        vm.onCookiesCaptured(h2)
-                    }
+                } else if LoginURLs.isGameHost(url), !vm.session.isLoggedIn {
+                    // 能打开游戏页但读不到 skey：明确提示，勿卡在「授权回调」假状态
+                    vm.statusText = "已进游戏页，但未读到 skey（会话可能仅在本页）。可试 Cookie 登陆备份"
                 }
             }
         }

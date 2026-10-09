@@ -127,7 +127,9 @@ final class AppViewModel: ObservableObject {
         loginMode = .idle
         preferDesktopUA = false
         refreshStatus()
-        statusText = "登录成功 · Cookie 已保存"
+        // refreshStatus 已写成「已登录 QQ …」；再补一句确认 Cookie 已落盘
+        let q = qqLabel.isEmpty ? "?" : qqLabel
+        statusText = "已登录 QQ \(q) · Cookie 已保存"
         if let cur = URL(string: currentURLString), !LoginURLs.isGameHost(cur) {
             openGameHome()
         }
