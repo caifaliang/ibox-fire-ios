@@ -21,7 +21,8 @@ struct ReplayWebView: UIViewRepresentable {
         let preferMm = ActionPackPrefetch.preferMm(from: act)
         ActionPackPrefetch.sessionPreferMm = preferMm
         // 饭店助手 flashreplay 在 iOS 上假注入/卡 loadingSWC；切回已验证能进 action_gg 的 ruffle_fight
-        log.append("boot RUFFLE_FIGHT replayId=\(replayId) actLen=\(act.count) preferMm=\(preferMm)")
+        // 版本戳：若日志不是这一行，说明装的不是本提交 IPA
+        log.append("boot RUFFLE_FIGHT build=762e051-fws replayId=\(replayId) actLen=\(act.count) preferMm=\(preferMm)")
         let packRel = preferMm ? ActionPackPrefetch.mmRel : ActionPackPrefetch.ggRel
         let packFile = ActionPackPrefetch.localURL(for: packRel)
         if FileManager.default.fileExists(atPath: packFile.path) {
