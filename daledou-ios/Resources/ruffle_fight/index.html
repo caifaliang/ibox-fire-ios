@@ -58,6 +58,15 @@
     function rewriteFightUrl(url) {
       try {
         const u = new URL(url, location.href);
+        const path = u.pathname || '';
+        // 主动作包 ~37MB：经 app-ruffle scheme 喂给 Flash Loader 会 IO_ERROR（日志 sal_base_err io → sr_no_qgg）
+        // 必须走官方 HTTPS CDN，让 WKWebView 原生下载。
+        if (/action_(gg|mm)/i.test(path)) {
+          const name = path.split('/').pop();
+          const cdn = 'https://fightimg.pet.qq.com/swf/gres/' + name + (u.search || '');
+          try { setStatus('action→CDN ' + name); } catch (_) {}
+          return cdn;
+        }
         if (u.hostname === 'fight.pet.qq.com' && u.pathname.indexOf('/cgi-bin/petpk') >= 0) {
           return location.origin + '/__cgi/petpk' + u.search;
         }
@@ -66,6 +75,8 @@
         }
         if (u.hostname === 'fightimg.pet.qq.com') {
           const m = u.pathname.match(/\/swf\/gres\/(.*)$/);
+          // 大动作包保持 CDN，不要改写回本地 scheme
+          if (m && /action_(gg|mm)/i.test(m[1])) return u.href;
           if (m) return location.origin + '/gres/' + m[1] + u.search;
           if (u.pathname.indexOf('/img/') === 0) return location.origin + u.pathname + u.search;
           if (u.pathname.indexOf('/images/') === 0) return location.origin + u.pathname + u.search;

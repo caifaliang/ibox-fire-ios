@@ -132,19 +132,59 @@ final class RuffleSchemeHandler: NSObject, WKURLSchemeHandler {
     }
 
     private func respondStubCGI(_ task: WKURLSchemeTask, url: URL) {
-        let query = (url.query ?? "").lowercased()
-        let stubURL = root.appendingPathComponent("petpk_query.json")
-        var body = "{\"result\":\"0\",\"msg\":\"\"}"
-        if query.contains("cmd=query"),
-           let data = try? Data(contentsOf: stubURL),
-           let s = String(data: data, encoding: .utf8) {
-            body = s
+        let rawQuery = url.query ?? ""
+        let query = rawQuery.lowercased()
+        var body = "{\"result\":\"0\",\"msg\":\"\",\"sn\":\"1\",\"list\":[]}"
+        if query.contains("cmd=query") {
+            body = Self.petpkQueryStub(root: root)
         } else if query.contains("weapon_specialize") {
-            body = "{\"result\":\"0\",\"msg\":\"\",\"list\":[]}"
-        } else if query.contains("cmd=popup") || query.contains("skillenhance") || query.contains("cmd=hotspot") {
-            body = "{\"result\":\"0\",\"msg\":\"\"}"
+            // 对齐 Android buildWeaponSpecializeStub：空 list 会导致专精/开战异常
+            body = Self.weaponSpecializeStub(query: rawQuery)
+            logRes("CGI weapon_specialize stub \(body.count)B")
+        } else if query.contains("cmd=popup") {
+            body = "{\"result\":\"0\",\"msg\":\"\",\"sn\":\"1\",\"list\":[],\"popupList\":[]}"
+        } else if query.contains("skillenhance") {
+            body = "{\"result\":\"0\",\"msg\":\"\",\"cmd\":\"skillEnhance\",\"op\":\"11\",\"sn\":\"1\",\"list\":[]}"
+        } else if query.contains("cmd=hotspot") {
+            body = "{\"result\":\"-1\",\"msg\":\"app_skip\",\"sn\":\"1\",\"list\":[],\"data\":[]}"
         }
-        finish(task, url: url, data: Data(body.utf8), mime: "application/json")
+        finish(task, url: url, data: Data(body.utf8), mime: "text/plain")
+    }
+
+    /// nowTimer 必须是有效 unix 秒，否则随机背景空列表会炸
+    private static func petpkQueryStub(root: URL) -> String {
+        let nowSec = String(Int(Date().timeIntervalSince1970))
+        let stubURL = root.appendingPathComponent("petpk_query.json")
+        if let data = try? Data(contentsOf: stubURL),
+           var s = String(data: data, encoding: .utf8) {
+            if let re = try? NSRegularExpression(pattern: #"("name"\s*:\s*"[^"]*\$)(\d+)(\$[^"]*")"#) {
+                let range = NSRange(s.startIndex..., in: s)
+                s = re.stringByReplacingMatches(in: s, range: range, withTemplate: "$1\(nowSec)$3")
+            }
+            return s
+        }
+        let name = "2$16$123$10001$\(nowSec)$app"
+        return "{\"result\":\"0\",\"msg\":\"\",\"name\":\"\(name)\",\"sn\":\"1\"}"
+    }
+
+    private static func weaponSpecializeStub(query: String) -> String {
+        func qp(_ name: String) -> String {
+            guard let re = try? NSRegularExpression(pattern: "(?:^|&)\(NSRegularExpression.escapedPattern(for: name))=([^&]*)"),
+                  let m = re.firstMatch(in: query, range: NSRange(query.startIndex..., in: query)),
+                  m.numberOfRanges > 1,
+                  let r = Range(m.range(at: 1), in: query) else { return "" }
+            return query[r].removingPercentEncoding ?? String(query[r])
+        }
+        func esc(_ s: String) -> String {
+            s.replacingOccurrences(of: "\\", with: "\\\\")
+                .replacingOccurrences(of: "\"", with: "\\\"")
+                .replacingOccurrences(of: "\n", with: "\\n")
+        }
+        let w1 = qp("weaponspe1")
+        let w2 = qp("weaponspe2")
+        return """
+        {"result":"0","msg":"","weapons_num":"1","src_weapons0":[],"dst_weapons0":[],"weaponspe1":"\(esc(w1))","weaponspe2":"\(esc(w2))","weaponspe":"\(esc(w1))"}
+        """
     }
 
     private func cdnURL(for rel: String, originalPath: String) -> URL? {
