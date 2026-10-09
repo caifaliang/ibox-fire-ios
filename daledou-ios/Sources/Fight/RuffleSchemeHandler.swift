@@ -136,13 +136,22 @@ final class RuffleSchemeHandler: NSObject, WKURLSchemeHandler {
 
     private func finish(_ task: WKURLSchemeTask, url: URL, data: Data, mime: String) {
         let work = {
-            // 自定义 scheme 必须用 URLResponse，不能用 HTTPURLResponse（否则 WebKit 可能整页空白）
-            let response = URLResponse(
+            // iOS 18 + Ruffle fetch/WASM：必须用带 status=200 的 HTTPURLResponse。
+            // 纯 URLResponse 的 status=0 → RangeError: Status must be between 200 and 599
+            let headers: [String: String] = [
+                "Content-Type": mime,
+                "Content-Length": "\(data.count)",
+                "Access-Control-Allow-Origin": "*",
+            ]
+            guard let response = HTTPURLResponse(
                 url: url,
-                mimeType: mime,
-                expectedContentLength: data.count,
-                textEncodingName: mime.contains("charset") ? "utf-8" : nil
-            )
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: headers
+            ) else {
+                task.didFailWithError(URLError(.cannotParseResponse))
+                return
+            }
             task.didReceive(response)
             task.didReceive(data)
             task.didFinish()
