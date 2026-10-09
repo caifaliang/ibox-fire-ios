@@ -28,6 +28,11 @@ targets:
     platform: iOS
     sources:
       - path: Sources
+      # 饭店助手·动画版完整栈（wgpu-webgl / PetFunFight-v10.19）
+      - path: Resources/flashreplay
+        type: folder
+        buildPhase: resources
+      # 旧 ruffle_fight 暂留（字体/兜底）；主路径已切 flashreplay
       - path: Resources/ruffle_fight
         type: folder
         buildPhase: resources
