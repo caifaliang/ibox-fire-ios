@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>action load probe</title>
+<style>body{margin:0;background:#111;color:#0f0;font:12px monospace}#log{padding:8px;white-space:pre-wrap}</style>
+</head><body>
+<div id="log">booting</div>
+<script src="ruffle/ruffle.js"></script>
+<script>
+const log=(m)=>{document.getElementById('log').textContent+= '\n'+m; console.log(m);
+  try{RuffleBridge&&RuffleBridge.onEvent('probe', JSON.stringify({m}))}catch(e){}}
+;(async()=>{
+  window.RufflePlayer=window.RufflePlayer||{};
+  window.RufflePlayer.config={preferredRenderer:'webgl',quality:'low'};
+  const p=window.RufflePlayer.newest().createPlayer();
+  p.style.width='1px';p.style.height='1px';document.body.appendChild(p);
+  const url='../gres/action_gg-v10.1300.slim.swf';
+  const t0=Date.now();
+  log('load '+url);
+  try{
+    await p.load({url, preferredRenderer:'webgl', quality:'low'});
+    log('COMPLETE dt='+(Date.now()-t0)+'ms meta='+JSON.stringify(p.metadata||{}));
+  }catch(e){log('FAIL '+e+' dt='+(Date.now()-t0));}
+})();
+</script>
+</body></html>

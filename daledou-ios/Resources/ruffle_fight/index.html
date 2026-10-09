@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <title>Ruffle Fight Replay</title>
+  <style>
+    html, body { margin: 0; background: #000; color: #eee; overflow: hidden; height: 100%; width: 100%; }
+    @font-face {
+      font-family: 'Noto Sans SC';
+      src: url('fonts/hud_cjk.ttf') format('truetype');
+      font-weight: 400;
+      font-style: normal;
+    }
+    /* 横屏满屏：铺满可视区域，随手机宽高比自适应 */
+    #player {
+      position: fixed; left: 0; top: 0; right: 0; bottom: 0;
+      width: 100%; height: 100%;
+      background: #000;
+    }
+    #player ruffle-player, #player canvas { width: 100% !important; height: 100% !important; }
+    #status { display: none; }
+  </style>
+</head>
+<body>
+  <div id="status">booting…</div>
+  <div id="player"></div>
+  <script>
+    const statusEl = document.getElementById('status');
+    function setStatus(_) {}
+    function notifyAndroid(type, payload) {
+      try {
+        if (window.RuffleBridge && window.RuffleBridge.onEvent) {
+          window.RuffleBridge.onEvent(type, JSON.stringify(payload || {}));
+        }
+      } catch (_) {}
+    }
+    window.addEventListener('error', function(ev) {
+      setStatus('js ' + (ev && ev.message ? ev.message : 'error'));
+    });
+
+    function rewriteFightUrl(url) {
+      try {
+        const u = new URL(url, location.href);
+        if (u.hostname === 'fight.pet.qq.com' && u.pathname.indexOf('/cgi-bin/petpk') >= 0) {
+          return location.origin + '/__cgi/petpk' + u.search;
+        }
+        if (u.hostname === 'fight.pet.qq.com' && /\/config\.xml$/i.test(u.pathname)) {
+          return location.origin + '/ruffle_fight/gres/config/config.xml';
+        }
+        if (u.hostname === 'fightimg.pet.qq.com') {
+          const m = u.pathname.match(/\/swf\/gres\/(.*)$/);
+          if (m) return location.origin + '/gres/' + m[1] + u.search;
+          if (u.pathname.indexOf('/img/') === 0) return location.origin + u.pathname + u.search;
+          if (u.pathname.indexOf('/images/') === 0) return location.origin + u.pathname + u.search;
+        }
+        // QQ 头像走同源代理；侠士头仍走 fightimg/img，不改
+        if (u.hostname === 'q.qlogo.cn' || /\.qlogo\.cn$/i.test(u.hostname)) {
+          return location.origin + '/__proxy/remote?u=' + encodeURIComponent(u.href);
+        }
+      } catch (_) {}
+      return url;
+    }
+
+    const _fetch = window.fetch.bind(window);
+    window.fetch = async function(input, init) {
+      let url = String(input && input.url ? input.url : input);
+      const rewritten = rewriteFightUrl(url);
+      if (rewritten !== url) input = rewritten;
+      const short = String(rewritten).split('/').slice(-2).join('/');
+      setStatus('net ' + short);
+      try {
+        const res = await _fetch(input, init);
+        if (!res.ok) {
+          setStatus('FAIL ' + res.status + ' ' + short);
+          notifyAndroid('net_fail', { url: rewritten, status: res.status });
+        } else {
+          setStatus('ok ' + res.status + ' ' + short);
+          notifyAndroid('net_ok', { url: rewritten, status: res.status });
+        }
+        return res;
+      } catch (e) {
+        setStatus('ERR ' + short + ' ' + e);
+        notifyAndroid('net_err', { url: rewritten, err: String(e) });
+        throw e;
+      }
+    };
+    const XO = XMLHttpRequest.prototype.open;
+    XMLHttpRequest.prototype.open = function(method, url) {
+      arguments[1] = rewriteFightUrl(String(url));
+      return XO.apply(this, arguments);
+    };
+
+    window.swfhand_Obj = new Proxy({}, {
+      get(_t, prop) {
+        const name = String(prop);
+        if (name === 'then' || name === 'toJSON' || name.startsWith('__')) return undefined;
+        return function() { return null; };
+      }
+    });
+
+    let player = null;
+    let pendingAct = null;
+    let injected = false;
+
+    window.__injectFightAct = function(act, replayId) {
+      pendingAct = { act: String(act || ''), id: String(replayId || 'app_replay') };
+      // Warm reuse: PetFunFight + action_gg already in memory — only push new act.
+      if (injected && player && typeof player.setFightReplayData === 'function') {
+        try {
+          player.setFightReplayData(makeCgi(pendingAct.act), pendingAct.id);
+          setStatus('replay reinjected act=' + pendingAct.act.length + ' (warm)');
+          notifyAndroid('reinjected', { ok: true, actLen: pendingAct.act.length });
+          applyPendingSpeed();
+          return true;
+        } catch (e) {
+          injected = false;
+          notifyAndroid('reinject_fail', { err: String(e) });
+        }
+      }
+      if (injected) return true;
+      tryInject();
+      return true;
+    };
+
+    /** UTF-8 safe inject — Android passes Base64 to avoid CJK → '?' in evaluateJavascript. */
+    window.__injectFightActB64 = function(b64, replayId) {
+      try {
+        const bin = atob(String(b64 || ''));
+        const bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        const act = new TextDecoder('utf-8').decode(bytes);
+        return window.__injectFightAct(act, replayId);
+      } catch (e) {
+        notifyAndroid('inject_b64_fail', { err: String(e) });
+        return false;
+      }
+    };
+
+    /** Playback speed: 1 / 2 / 3 → Flash setFightSpeed → stage.frameRate 30 / 60 / 90. */
+    let pendingSpeed = 1;
+    window.__setFightSpeed = function(mult) {
+      const m = Math.max(1, Math.min(4, Math.round(Number(mult) || 1)));
+      pendingSpeed = m;
+      window.__pendingSpeed = m;
+      const fps = 30 * m;
+      let applied = false;
+      let via = 'pending';
+      try {
+        if (player && typeof player.setFightSpeed === 'function') {
+          player.setFightSpeed(m);
+          applied = true;
+          via = 'ei';
+        }
+      } catch (e) {
+        via = 'ei_err:' + e;
+      }
+      setStatus('speed ' + m + 'x · ' + fps + 'fps' + (applied ? '' : ' (wait EI)'));
+      notifyAndroid('speed', { mult: m, fps: fps, applied: applied, via: via });
+      return applied;
+    };
+
+    function applyPendingSpeed() {
+      if (window.__pendingSpeed != null) {
+        window.__setFightSpeed(window.__pendingSpeed);
+      }
+    }
+
+    function makeCgi(act) {
+      return {
+        result: '0',
+        msg: '',
+        string: act,
+        sn: '1',
+        replayType: '0',
+        replayId: (pendingAct && pendingAct.id) || 'app_replay'
+      };
+    }
+
+    function tryInject() {
+      if (injected || !pendingAct || !player) return false;
+      if (typeof player.setFightReplayData !== 'function') {
+        setStatus('swf ready · wait EI…');
+        return false;
+      }
+      try {
+        player.setFightReplayData(makeCgi(pendingAct.act), pendingAct.id);
+        injected = true;
+        setStatus('replay injected act=' + pendingAct.act.length);
+        notifyAndroid('injected', { ok: true, actLen: pendingAct.act.length });
+        applyPendingSpeed();
+        return true;
+      } catch (e) {
+        notifyAndroid('inject_fail', { err: String(e) });
+        setStatus('inject fail: ' + e);
+        return false;
+      }
+    }
+
+    (async function main() {
+      try {
+        const params = new URLSearchParams(location.search);
+        const renderer = (params.get('renderer') || 'canvas');
+        // 仅显式 ?wasm=vanilla 时强制；失败后也会自动跳一次。
+        const forceVanilla = params.get('wasm') === 'vanilla';
+        if (forceVanilla) {
+          window.__RUFFLE_FORCE_VANILLA__ = true;
+          try {
+            var __wv = WebAssembly.validate.bind(WebAssembly);
+            WebAssembly.validate = function (buf) {
+              var len = (buf && buf.byteLength != null) ? buf.byteLength : ((buf && buf.length) || 0);
+              if (len > 0 && len < 64) return false;
+              return __wv(buf);
+            };
+          } catch (_) {}
+        }
+
+        setStatus('loading ruffle…');
+        await new Promise((resolve, reject) => {
+          const s = document.createElement('script');
+          s.src = 'ruffle/ruffle.js';
+          s.onload = resolve;
+          s.onerror = () => reject(new Error('ruffle.js'));
+          document.head.appendChild(s);
+        });
+        window.RufflePlayer = window.RufflePlayer || {};
+        // 对齐 0.1.120 可用配置；勿加 maxExecutionDuration（部分构建会异常）
+        // showAll：整场舞台完整可见（血条/名称在边缘，不可裁切）
+        // letterbox on：按手机横屏比例等比缩放，多余区域留黑边
+        const baseCfg = {
+          preferredRenderer: renderer,
+          quality: 'low',
+          letterbox: 'on',
+          scale: 'showAll',
+          autoplay: 'on',
+          unmuteOverlay: 'hidden',
+          warnOnUnsupportedContent: false,
+          deviceFontRenderer: 'canvas',
+          fontSources: ['fonts/hud_cjk.ttf'],
+          defaultFonts: {
+            sans: ['Noto Sans SC'],
+            serif: ['Noto Sans SC'],
+            typewriter: ['Noto Sans SC']
+          }
+        };
+        notifyAndroid('boot', {
+          renderer: renderer,
+          wasm: forceVanilla ? 'vanilla' : 'auto',
+          sdkHint: navigator.userAgent
+        });
+        window.RufflePlayer.config = Object.assign({}, window.RufflePlayer.config || {}, baseCfg);
+        setStatus('renderer ' + renderer + (forceVanilla ? ' · vanilla' : ''));
+        const r = window.RufflePlayer.newest();
+        player = r.createPlayer();
+        function fitPlayerToViewport() {
+          const w = (window.visualViewport && window.visualViewport.width) || window.innerWidth || document.documentElement.clientWidth;
+          const h = (window.visualViewport && window.visualViewport.height) || window.innerHeight || document.documentElement.clientHeight;
+          const box = document.getElementById('player');
+          if (box) {
+            box.style.width = w + 'px';
+            box.style.height = h + 'px';
+          }
+          if (player) {
+            player.style.width = w + 'px';
+            player.style.height = h + 'px';
+          }
+        }
+        fitPlayerToViewport();
+        document.getElementById('player').appendChild(player);
+        window.__player = player;
+        window.addEventListener('resize', fitPlayerToViewport);
+        window.addEventListener('orientationchange', function() {
+          setTimeout(fitPlayerToViewport, 50);
+          setTimeout(fitPlayerToViewport, 300);
+        });
+        if (window.visualViewport) {
+          window.visualViewport.addEventListener('resize', fitPlayerToViewport);
+        }
+
+        try {
+          document.addEventListener('visibilitychange', function() {
+            if (!document.hidden && player && typeof player.play === 'function') {
+              try { player.play(); } catch (_) {}
+              fitPlayerToViewport();
+            }
+          });
+        } catch (_) {}
+
+        setStatus('loading PetFunFight…');
+        // 与 0.1.120 一致：URL 加载 + blank.xml base
+        await player.load(Object.assign({
+          url: 'PetFunFight.swf',
+          allowScriptAccess: true,
+          allowNetworking: 'all',
+          base: location.origin + '/ruffle_fight/gres/main/blank.xml',
+          parameters: {}
+        }, baseCfg));
+        notifyAndroid('swf_ready', { attempt: 'url-120', wasm: forceVanilla ? 'vanilla' : 'auto' });
+        setStatus('swf ready · wait EI…');
+        let tries = 0;
+        const maxTries = 120;
+        const t = setInterval(() => {
+          tries++;
+          if (tryInject() || tries > maxTries) clearInterval(t);
+        }, 500);
+        setTimeout(() => clearInterval(t), 60000);
+      } catch (e) {
+        setStatus('fail: ' + e);
+        notifyAndroid('boot_fail', { err: String(e) });
+        // 扩展版 WASM 炸了：同页改走 vanilla 再试一次（避免本机/新 WebView 全挂）
+        try {
+          const p = new URLSearchParams(location.search);
+          if (p.get('wasm') !== 'vanilla' && String(e).indexOf('unreachable') >= 0) {
+            p.set('wasm', 'vanilla');
+            notifyAndroid('boot_fallback', { to: 'vanilla' });
+            location.replace(location.pathname + '?' + p.toString());
+            return;
+          }
+        } catch (_) {}
+      }
+    })();
+  </script>
+</body>
+</html>

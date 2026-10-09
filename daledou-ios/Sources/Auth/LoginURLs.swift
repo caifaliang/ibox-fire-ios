@@ -134,6 +134,12 @@ enum LoginURLs {
         return s.contains("phonepk") || s.contains("cgi-bin/phonepk")
     }
 
+    /// 本体「查看乐斗过程」phonepk viewfight（非群侠 knightfight）
+    static func isViewFightUrl(_ urlString: String?) -> Bool {
+        guard let raw = urlString?.lowercased(), !raw.isEmpty else { return false }
+        return raw.contains("cmd=viewfight") && !raw.contains("knightfight")
+    }
+
     /// QQ「亿万用户已选择」一键登录页（扫码后常误停在这里）
     static let qqLoginProbeJS =
         "(function(){var t=(document.body&&document.body.innerText)||'';" +

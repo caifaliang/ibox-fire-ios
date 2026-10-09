@@ -22,6 +22,14 @@ final class AppViewModel: ObservableObject {
     @Published var loginMode: LoginMode = .idle
     @Published var preferDesktopUA = false
 
+    // 官方动画（viewfight）
+    @Published var showViewFightFab = false
+    @Published var viewFightLoading = false
+    @Published var showReplay = false
+    @Published var replayAct = ""
+    @Published var replayId = ""
+    private var lastViewFightUrl: String?
+
     func bootstrap() {
         if session.isLoggedIn {
             preferDesktopUA = false
@@ -124,6 +132,47 @@ final class AppViewModel: ObservableObject {
             preferDesktopUA = false
             loginMode = .idle
         }
+
+        updateViewFightFab(for: currentURLString)
+    }
+
+    private func updateViewFightFab(for urlString: String) {
+        if LoginURLs.isViewFightUrl(urlString) {
+            lastViewFightUrl = urlString
+            showViewFightFab = true
+        } else {
+            // 离开战报页则隐藏（拼接页暂不做）
+            showViewFightFab = false
+        }
+    }
+
+    /// 乐斗过程页 → 取 Act → 打开官方动画
+    func openOfficialAnimation() {
+        let page = lastViewFightUrl ?? currentURLString
+        guard LoginURLs.isViewFightUrl(page) else {
+            statusText = "请先打开「查看乐斗过程」"
+            return
+        }
+        guard session.isLoggedIn else {
+            statusText = "请先登录再看官方动画"
+            return
+        }
+        guard !viewFightLoading else { return }
+        viewFightLoading = true
+        statusText = "正在获取战斗数据…"
+        let cookie = session.cookieHeader
+        Task {
+            let result = await FightActFetcher.fetch(pageUrl: page, cookieHeader: cookie)
+            viewFightLoading = false
+            if result.act.isEmpty {
+                statusText = "打开动画失败: \(result.errMsg)"
+                return
+            }
+            replayAct = result.act
+            replayId = FightActFetcher.replayId(from: page)
+            statusText = "已取到战斗数据，打开官方动画"
+            showReplay = true
+        }
     }
 
     /// 本次启动是否已因捕获 Cookie 跳进过游戏（防反复 pendingURL）
@@ -172,6 +221,10 @@ final class AppViewModel: ObservableObject {
         preferDesktopUA = false
         cookieDraft = ""
         didEnterGameFromCapture = false
+        showViewFightFab = false
+        showReplay = false
+        viewFightLoading = false
+        lastViewFightUrl = nil
         clearWebEpoch &+= 1
         loadWaitingPage = true
         pendingURL = nil

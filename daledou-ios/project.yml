@@ -28,6 +28,10 @@ targets:
     platform: iOS
     sources:
       - path: Sources
+      - path: Resources
+        excludes:
+          - Info.plist
+          - "flashreplay/**"
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.daledou.app

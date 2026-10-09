@@ -1,0 +1,1279 @@
+<config>
+  <version>10.17</version>
+  <loadingSWF url="/gres/loadingSWC-v8.0600.swf" code="1"/>
+  <leisure url="/gres/leisure-v7.1700.swf" code="1"/>
+  <!-- probe-42: restore real ui after stripping CDN null-prefix corruption on gres/*.swf -->
+  <ui url="/gres/ui-v10.1500.swf" code="1"/>
+  <action_gg url="/gres/action_gg-v10.1300.swf" code="1"/>
+  <action_mm url="/gres/action_mm-v10.1300.swf" code="1"/>
+  <sound url="/gres/sound-v5.0800.swf" code="1"/>
+  <guanzhongs url="/gres/guanzhongs-v5.0800.swf" code="1"/>
+  <xianxiagg url="/gres/xianxiagg-v9.9000.swf" code="1"/>
+  <xianxiamm url="/gres/xianxiamm-v9.9000.swf" code="1"/>
+  <xianxiatudis url="/gres/xianxiatudis-v5.0800.swf" code="1"/>
+  <worldmap url="/gres/worldmap-v5.0800.swf" code="1"/>
+  <fenxiang url="/gres/fenXiang-v9.3000.swf" code="1"/>
+  <huangzuan url="/gres/huangZuan-v5.0800.swf" code="1"/>
+  <choujiang url="/gres/chouJiang-v5.0800.swf" code="1"/>
+  <bgs>
+    <bg sn="1" type="must" url="/gres/bg/bg01-v3.3800.swf"/>
+    <bg sn="3" type="random" url="/gres/bg/bg03-v3.1300.swf"/>
+    <bg sn="4" type="random" url="/gres/bg/bg04-v3.1300.swf"/>
+    <bg sn="6" type="random" url="/gres/bg/bg06-v2.9100.swf"/>
+    <bg sn="8" type="random" url="/gres/bg/bg08-v3.1300.swf"/>
+    <bg sn="10" type="random" url="/gres/bg/bg10-v3.1300.swf"/>
+    <bg sn="11" type="random" url="/gres/bg/bg11-v2.9100.swf"/>
+    <bg sn="13" type="random" url="/gres/bg/bg13-v2.9100.swf"/>
+    <bg sn="14" type="random" url="/gres/bg/bg14-v3.1300.swf"/>
+    <bg sn="19" type="random" url="/gres/bg/bg19-v2.8500.swf"/>
+    <bg sn="35" type="random" url="/gres/bg/bg35-v3.1300.swf"/>
+    <bg sn="36" type="random" url="/gres/bg/bg36-v3.0100.swf"/>
+    <bg sn="38" type="random" url="/gres/bg/bg38-v3.0400.swf"/>
+    <bg sn="41" type="random" url="/gres/bg/bg41-v3.1100.swf"/>
+    <bg sn="42" type="random" url="/gres/bg/bg42-v3.4400.swf"/>
+    <bg sn="44" type="random" url="/gres/bg/bg44-v3.2000.swf"/>
+    <bg sn="48" type="random" url="/gres/bg/bg48-v3.2800.swf"/>
+    <bg sn="50" type="random" url="/gres/bg/bg50-v3.3300.swf"/>
+    <bg sn="51" type="random" url="/gres/bg/bg51-v3.3500.swf"/>
+    <bg sn="33" type="random" url="/gres/bg/bg33-v3.4200.swf"/>
+    <bg sn="62" type="random" url="/gres/bg/bg62-v3.5200.swf"/>
+    <bg sn="63" type="random" url="/gres/bg/bg63-v3.5600.swf"/>
+    <bg sn="65" type="random" url="/gres/bg/bg65-v3.6800.swf"/>
+    <bg sn="67" type="random" url="/gres/bg/bg67-v3.7300.swf"/>
+    <bg sn="47" type="random" url="/gres/bg/bg47-v3.7400.swf"/>
+    <bg sn="69" type="random" url="/gres/bg/bg69-v3.7600.swf"/>
+    <bg sn="70" type="random" url="/gres/bg/bg70-v3.8000.swf"/>
+    <bg sn="74" type="random" url="/gres/bg/bg74-v4.0200.swf"/>
+    <bg sn="75" type="random" url="/gres/bg/bg75-v3.9400.swf"/>
+    <bg sn="76" type="random" url="/gres/bg/bg76-v4.0200.swf"/>
+    <bg sn="77" type="random" url="/gres/bg/bg77-v4.0600.swf"/>
+    <bg sn="78" type="random" url="/gres/bg/bg78-v4.2000.swf"/>
+    <bg sn="80" type="random" url="/gres/bg/bg80-v4.4800.swf"/>
+    <bg sn="82" type="random" url="/gres/bg/bg82-v4.5900.swf"/>
+    <bg sn="90" type="random" url="/gres/bg/bg90-v4.5900.swf"/>
+    <bg sn="91" type="random" url="/gres/bg/bg91-v4.7400.swf"/>
+    <bg sn="92" type="random" url="/gres/bg/bg92-v4.7800.swf"/>
+    <bg sn="93" type="random" url="/gres/bg/bg93-v4.7800.swf"/>
+    <bg sn="97" type="random" url="/gres/bg/bg97-v4.9400.swf"/>
+    <bg sn="98" type="random" url="/gres/bg/bg98-v4.9400.swf"/>
+    <bg sn="106" type="random" url="/gres/bg/bg106-v5.2100.swf"/>
+    <bg sn="99" type="random" url="/gres/bg/bg99-v5.4800.swf"/>
+    <bg sn="102" type="random" url="/gres/bg/bg102-v5.6000.swf"/>
+    <bg sn="103" type="random" url="/gres/bg/bg103-v5.7500.swf"/>
+    <bg sn="104" type="random" url="/gres/bg/bg104-v5.8400.swf"/>
+    <bg sn="12" type="random" url="/gres/bg/bg12-v5.9600.swf"/>
+    <bg sn="37" type="random" url="/gres/bg/bg37-v5.9600.swf"/>
+    <bg sn="105" type="random" url="/gres/bg/bg105-v6.2400.swf"/>
+    <bg sn="108" type="random" url="/gres/bg/bg108-v6.4200.swf"/>
+    <bg sn="109" type="random" url="/gres/bg/bg109-v6.7600.swf"/>
+    <bg sn="110" type="random" url="/gres/bg/bg110-v6.9400.swf"/>
+    <bg sn="111" type="random" url="/gres/bg/bg111-v7.2900.swf"/>
+    <bg sn="112" type="random" url="/gres/bg/bg112-v7.4600.swf"/>
+    <bg sn="113" type="random" url="/gres/bg/bg113-v7.8200.swf"/>
+    <bg sn="114" type="random" url="/gres/bg/bg114-v8.0000.swf"/>
+    <bg sn="115" type="random" url="/gres/bg/bg115-v8.3200.swf"/>
+    <bg sn="116" type="random" url="/gres/bg/bg116-v8.5200.swf"/>
+    <bg sn="117" type="random" url="/gres/bg/bg117-v8.6900.swf"/>
+    <bg sn="118" type="random" url="/gres/bg/bg118-v8.8700.swf"/>
+    <bg sn="119" type="random" url="/gres/bg/bg119-v9.0400.swf"/>
+    <bg sn="120" type="random" url="/gres/bg/bg120-v9.3600.swf"/>
+    <bg sn="121" type="random" url="/gres/bg/bg121-v9.5300.swf"/>
+    <bg sn="122" type="random" url="/gres/bg/bg122-v9.8500.swf"/>
+    <bg sn="123" type="random" url="/gres/bg/bg123-v10.0400.swf"/>
+  </bgs>
+  <vipbgs>
+    <bg sn="5" url="/gres/bg/bg05-v3.1300.swf"/>
+    <bg sn="15" url="/gres/bg/bg15-v3.1300.swf"/>
+    <bg sn="16" url="/gres/bg/bg16-v2.9100.swf"/>
+    <bg sn="17" url="/gres/bg/bg17-v3.1300.swf"/>
+    <bg sn="18" url="/gres/bg/bg18-v3.1300.swf"/>
+    <bg sn="20" url="/gres/bg/bg20-v3.1300.swf"/>
+    <bg sn="22" url="/gres/bg/bg22-v3.1300.swf"/>
+    <bg sn="23" url="/gres/bg/bg23-v3.1300.swf"/>
+    <bg sn="24" url="/gres/bg/bg24-v2.9400.swf"/>
+    <bg sn="25" url="/gres/bg/bg25-v2.9400.swf"/>
+    <bg sn="26" url="/gres/bg/bg26-v3.3100.swf"/>
+    <bg sn="27" url="/gres/bg/bg27-v2.9400.swf"/>
+    <bg sn="28" url="/gres/bg/bg28-v3.1300.swf"/>
+    <bg sn="29" url="/gres/bg/bg29-v2.9400.swf"/>
+    <bg sn="30" url="/gres/bg/bg30-v2.9400.swf"/>
+    <bg sn="31" url="/gres/bg/bg31-v3.1300.swf"/>
+    <bg sn="32" url="/gres/bg/bg32-v3.1300.swf"/>
+    <bg sn="34" url="/gres/bg/bg34-v3.1100.swf"/>
+    <bg sn="39" url="/gres/bg/bg39-v3.1300.swf"/>
+    <bg sn="43" url="/gres/bg/bg43-v3.2000.swf"/>
+    <bg sn="45" url="/gres/bg/bg45-v3.2300.swf"/>
+    <bg sn="46" url="/gres/bg/bg46-v3.2600.swf"/>
+    <bg sn="49" url="/gres/bg/bg49-v3.3000.swf"/>
+    <bg sn="50" url="/gres/bg/bg50-v3.3600.swf"/>
+    <bg sn="52" url="/gres/bg/bg52-v3.4100.swf"/>
+    <bg sn="58" url="/gres/bg/bg58-v3.4300.swf"/>
+    <bg sn="59" url="/gres/bg/bg59-v3.4600.swf"/>
+    <bg sn="60" url="/gres/bg/bg60-v3.4700.swf"/>
+    <bg sn="61" url="/gres/bg/bg61-v3.5000.swf"/>
+    <bg sn="64" url="/gres/bg/bg64-v3.5700.swf"/>
+    <bg sn="66" url="/gres/bg/bg66-v3.7200.swf"/>
+    <bg sn="68" url="/gres/bg/bg68-v3.7600.swf"/>
+    <bg sn="71" url="/gres/bg/bg71-v3.8400.swf"/>
+    <bg sn="72" url="/gres/bg/bg72-v3.8500.swf"/>
+    <bg sn="73" url="/gres/bg/bg73-v4.2000.swf"/>
+    <bg sn="74" url="/gres/bg/bg74-v4.0200.swf"/>
+    <bg sn="79" url="/gres/bg/bg79-v4.2300.swf"/>
+    <bg sn="83" url="/gres/bg/bg83-v4.6600.swf"/>
+    <bg sn="84" url="/gres/bg/bg84-v4.6600.swf"/>
+    <bg sn="85" url="/gres/bg/bg85-v4.6600.swf"/>
+    <bg sn="86" url="/gres/bg/bg86-v4.6600.swf"/>
+    <bg sn="87" url="/gres/bg/bg87-v4.6600.swf"/>
+    <bg sn="88" url="/gres/bg/bg88-v4.7100.swf"/>
+    <bg sn="89" url="/gres/bg/bg89-v4.7100.swf"/>
+    <bg sn="94" url="/gres/bg/bg94-v4.7800.swf"/>
+    <bg sn="95" url="/gres/bg/bg95-v4.8500.swf"/>
+    <bg sn="96" url="/gres/bg/bg96-v4.8500.swf"/>
+    <bg sn="100" url="/gres/bg/bg100-v5.4800.swf"/>
+    <bg sn="101" url="/gres/bg/bg101-v5.4800.swf"/>
+    <bg sn="37" url="/gres/bg/bg37-v5.9600.swf"/>
+    <bg sn="107" url="/gres/bg/bg107-v6.0400.swf"/>
+  </vipbgs>
+  <npcpreviewbg>
+    <bg sn="10000" url="/gres/bg/bg10000-v3.4000.swf"/>
+  </npcpreviewbg>
+  <npcs>
+    <npc sn="2" url="/gres/npc/npc2-v2.8600.swf" name="教主"/>
+    <npc sn="3" url="/gres/npc/npc3-v2.8600.swf" name="帅帅"/>
+    <npc sn="4" url="/gres/npc/npc4-v2.8600.swf" name="姜公"/>
+    <npc sn="5" url="/gres/npc/npc5-v3.0900.swf" name="月璇"/>
+    <npc sn="6" url="/gres/npc/npc6-v2.8600.swf" name="源大侠"/>
+    <npc sn="7" url="/gres/npc/npc7-v3.0500.swf" name="菜菜"/>
+    <npc sn="9" url="/gres/npc/npc9-v3.0500.swf" name="剑君"/>
+    <npc sn="10" url="/gres/npc/npc10-v2.8600.swf" name="羊魔王"/>
+    <npc sn="11" url="/gres/npc/npc11-v3.0500.swf" name="月敏"/>
+    <npc sn="12" spc="1" url="/gres/npc/npc12-v2.8600.swf" name="俊猴王"/>
+    <npc sn="13" spc="1" url="/gres/npc/npc13-v2.8600.swf" name="大色魔"/>
+    <npc sn="15" spc="1" url="/gres/npc/npc15-v2.8600.swf" name="四姑娘"/>
+    <npc sn="31" spc="1" url="/gres/npc/npc31-v2.8600.swf" name="城管"/>
+    <npc sn="32" spc="1" url="/gres/npc/npc32-v3.1000.swf" name="校霸"/>
+    <npc sn="14" spc="1" url="/gres/npc/npc14-v2.8600.swf" name="马大师"/>
+    <npc sn="17" url="/gres/npc/npc17-v2.8600.swf" name="山贼"/>
+    <npc sn="18" url="/gres/npc/npc18-v2.8600.swf" name="强盗"/>
+    <npc sn="5006" url="/gres/npc/npc5006-v2.8700.swf" name="赌徒"/>
+    <npc sn="5008" url="/gres/npc/npc5008-v2.8600.swf" name="海盗"/>
+    <npc sn="5010" url="/gres/npc/npc5010-v2.8600.swf" name="镖头"/>
+    <npc sn="5012" spc="1" url="/gres/npc/npc5012-v2.8600.swf" name="青蛙"/>
+    <npc sn="5014" spc="1" url="/gres/npc/npc5014-v2.8600.swf" name="狐狸精"/>
+    <npc sn="5016" spc="1" url="/gres/npc/npc5016-v2.8600.swf" name="树妖"/>
+    <npc sn="5018" spc="1" url="/gres/npc/npc5018-v2.8600.swf" name="花妖"/>
+    <npc sn="5020" spc="1" url="/gres/npc/npc5020-v2.8600.swf" name="黑熊"/>
+    <npc sn="5022" spc="1" url="/gres/npc/npc5022-v2.8600.swf" name="虾兵"/>
+    <npc sn="5024" spc="1" url="/gres/npc/npc5024-v2.8600.swf" name="蟹兵"/>
+    <npc sn="5026" spc="1" url="/gres/npc/npc5026-v2.8600.swf" name="章鱼"/>
+    <npc sn="5028" spc="1" url="/gres/npc/npc5028-v2.8600.swf" name="龟丞相"/>
+    <npc sn="5030" spc="1" url="/gres/npc/npc5030-v2.8600.swf" name="夜叉"/>
+    <npc sn="5032" spc="1" url="/gres/npc/npc5032-v3.0500.swf" name="骷髅"/>
+    <npc sn="5034" spc="1" url="/gres/npc/npc5034-v3.0500.swf" name="野鬼"/>
+    <npc sn="5036" spc="1" url="/gres/npc/npc5036-v3.0500.swf" name="僵尸"/>
+    <npc sn="5038" spc="1" url="/gres/npc/npc5038-v4.2500.swf" name="牛头"/>
+    <npc sn="5040" spc="1" url="/gres/npc/npc5040-v3.0500.swf" name="马面"/>
+    <npc sn="5042" spc="1" url="/gres/npc/npc5042-v3.0500.swf" name="狼"/>
+    <npc sn="5044" spc="1" url="/gres/npc/npc5044-v3.0500.swf" name="金雕"/>
+    <npc sn="5046" spc="1" url="/gres/npc/npc5046-v3.0500.swf" name="老虎"/>
+    <npc sn="5048" spc="1" url="/gres/npc/npc5048-v3.0500.swf" name="凤凰"/>
+    <npc sn="5050" spc="1" url="/gres/npc/npc5050-v3.0500.swf" name="蛟龙"/>
+    <npc sn="5052" spc="1" url="/gres/npc/npc5052-v2.8600.swf" name="蝴蝶"/>
+    <npc sn="5054" spc="1" url="/gres/npc/npc5054-v2.8600.swf" name="天兵"/>
+    <npc sn="5056" spc="1" url="/gres/npc/npc5056-v2.8700.swf" name="天将"/>
+    <npc sn="5058" spc="1" url="/gres/npc/npc5058-v3.0600.swf" name="雷公"/>
+    <npc sn="5060" spc="1" url="/gres/npc/npc5060-v2.8600.swf" name="电母"/>
+    <npc sn="5062" spc="1" url="/gres/npc/npc5062-v2.8600.swf" name="蛇"/>
+    <npc sn="5064" spc="1" url="/gres/npc/npc5064-v2.8600.swf" name="嗜血魔王"/>
+    <npc sn="5066" spc="1" url="/gres/npc/npc5066-v2.8600.swf" name="白象"/>
+    <npc sn="5068" spc="1" url="/gres/npc/npc5068-v3.0700.swf" name="炎魔"/>
+    <npc sn="5070" url="/gres/npc/npc5070-v2.8600.swf" name="圣斗士"/>
+    <npc sn="19" url="/gres/npc/npc19-v3.0500.swf" name="邪神"/>
+    <npc sn="16" spc="1" url="/gres/npc/npc16-v3.1000.swf" name="城管"/>
+    <npc sn="20" url="/gres/npc/npc20-v3.9800.swf" name="守护者血"/>
+    <npc sn="21" url="/gres/npc/npc21-v3.1300.swf" name="守护者月"/>
+    <npc sn="22" url="/gres/npc/npc22-v3.1300.swf" name="守护者炎"/>
+    <npc sn="23" show="1" url="/gres/npc/npc23-v3.1600.swf" name="小王子"/>
+    <npc sn="24" show="1" url="/gres/npc/npc24-v3.1600.swf" name="江南大叔"/>
+    <npc sn="25" url="/gres/npc/npc25-v3.1600.swf" name="杨过"/>
+    <npc sn="26" url="/gres/npc/npc26-v3.1600.swf" name="小龙女"/>
+    <npc sn="5072" spc="1" url="/gres/npc/npc5072-v3.2000.swf" name="蝎"/>
+    <npc sn="5074" spc="1" url="/gres/npc/npc5074-v3.2000.swf" name="步兵"/>
+    <npc sn="5076" spc="1" url="/gres/npc/npc5076-v3.2000.swf" name="蛇"/>
+    <npc sn="5078" spc="1" url="/gres/npc/npc5078-v3.2000.swf" name="骑兵"/>
+    <npc sn="5080" spc="1" url="/gres/npc/npc5080-v3.2000.swf" name="石化企鹅"/>
+    <npc sn="5082" spc="1" url="/gres/npc/npc5082-v3.2500.swf" name="木乃伊杂兵"/>
+    <npc sn="5084" spc="1" url="/gres/npc/npc5084-v3.2500.swf" name="企鹅术士"/>
+    <npc sn="5086" spc="1" url="/gres/npc/npc5086-v3.2500.swf" name="蜘蛛"/>
+    <npc sn="5088" spc="1" url="/gres/npc/npc5088-v3.2500.swf" name="回声巨像"/>
+    <npc sn="5090" url="/gres/npc/npc5090-v3.2700.swf" name="回声巨像"/>
+    <npc sn="152" spc="1" url="/gres/npc/npc152-v3.2600.swf" name="孔雀曾小三"/>
+    <npc sn="800" spc="1" url="/gres/npc/npc800-v3.2600.swf" name="年兽"/>
+    <npc sn="5092" spc="1" url="/gres/npc/npc5092-v3.4000.swf" name="黄沙怪"/>
+    <npc sn="5096" spc="1" url="/gres/npc/npc5096-v3.4000.swf" name="狂风怪"/>
+    <npc sn="5098" spc="1" url="/gres/npc/npc5098-v3.3000.swf" name="骷髅企鹅"/>
+    <npc sn="5094" spc="1" url="/gres/npc/npc5094-v3.4000.swf" name="甲虫群"/>
+    <npc sn="5200" spc="1" url="/gres/npc/npc5100-v4.4300.swf" name="白银圣斗士"/>
+    <npc sn="33" url="/gres/npc/npc33-v3.3700.swf" name="金毛企鹅"/>
+    <npc sn="153" spc="1" url="/gres/npc/npc153-v3.3900.swf" name="青铜斗士"/>
+    <npc sn="5102" spc="1" url="/gres/npc/npc5102-v3.4000.swf" name="鼹鼠"/>
+    <npc sn="5104" spc="1" url="/gres/npc/npc5104-v3.4000.swf" name="铜巨人"/>
+    <npc sn="5106" spc="1" url="/gres/npc/npc5106-v3.4000.swf" name="蚯蚓"/>
+    <npc sn="5108" spc="1" url="/gres/npc/npc5108-v3.4000.swf" name="大地巨人"/>
+    <npc sn="5110" spc="1" url="/gres/npc/npc5110-v3.4000.swf" name="土龙"/>
+    <npc sn="5112" spc="1" url="/gres/npc/npc5112-v3.4300.swf" name="火灵"/>
+    <npc sn="5120" spc="1" url="/gres/npc/npc5120-v3.4300.swf" name="火之剑灵"/>
+    <npc sn="5114" spc="1" url="/gres/npc/npc5114-v3.4300.swf" name="剑灵碎片"/>
+    <npc sn="5116" spc="1" url="/gres/npc/npc5116-v3.4300.swf" name="吐火蛇"/>
+    <npc sn="5118" spc="1" url="/gres/npc/npc5118-v3.4300.swf" name="熔岩龟"/>
+    <npc sn="802" spc="1" url="/gres/npc/npc802-v3.4600.swf" name="田伯光"/>
+    <npc sn="900" spc="1" url="/gres/npc/npc900-v3.4600.swf" name="大猩猩"/>
+    <npc sn="902" spc="1" url="/gres/npc/npc902-v3.4600.swf" name="徐娇娇"/>
+    <npc sn="5122" spc="1" url="/gres/npc/npc5122-v3.4700.swf" name="城管队员"/>
+    <npc sn="5124" spc="1" url="/gres/npc/npc5124-v3.4700.swf" name="拉车小贩"/>
+    <npc sn="5126" spc="1" url="/gres/npc/npc5126-v3.4700.swf" name="城管小队长"/>
+    <npc sn="5128" spc="1" url="/gres/npc/npc5128-v3.4700.swf" name="摆摊小贩"/>
+    <npc sn="5130" spc="1" url="/gres/npc/npc5130-v3.4700.swf" name="城管总队长"/>
+    <npc sn="804" url="/gres/npc/npc804-v3.4700.swf" name="岳不群"/>
+    <npc sn="806" spc="1" url="/gres/npc/npc806-v3.4700.swf" name="金轮法王"/>
+    <npc sn="808" spc="1" url="/gres/npc/npc808-v3.4900.swf" name="欧阳锋"/>
+    <npc sn="810" url="/gres/npc/npc810-v3.4900.swf" name="东方不败"/>
+    <npc sn="5132" spc="1" url="/gres/npc/npc5132-v3.5000.swf" name="小猴子"/>
+    <npc sn="5134" spc="1" url="/gres/npc/npc5134-v3.5000.swf" name="通臂猿猴"/>
+    <npc sn="5136" spc="1" url="/gres/npc/npc5136-v3.5000.swf" name="灵明石猴"/>
+    <npc sn="5138" spc="1" url="/gres/npc/npc5138-v3.5000.swf" name="六耳弥猴"/>
+    <npc sn="5140" spc="1" url="/gres/npc/npc5140-v3.5000.swf" name="整容成功的美猴王"/>
+    <npc sn="4072" spc="1" url="/gres/npc/npc4072-v3.5300.swf" name="白龙"/>
+    <npc sn="4074" spc="1" url="/gres/npc/npc4074-v3.5300.swf" name="巨鲸"/>
+    <npc sn="4076" spc="1" url="/gres/npc/npc4076-v3.5300.swf" name="麒麟"/>
+    <npc sn="4078" spc="1" url="/gres/npc/npc4078-v3.5300.swf" name="酒仙"/>
+    <npc sn="4080" url="/gres/npc/npc4080-v3.5300.swf" name="斗战神"/>
+    <npc sn="5142" spc="1" url="/gres/npc/npc5142-v3.5700.swf" name="藏剑门人"/>
+    <npc sn="5144" spc="1" url="/gres/npc/npc5144-v3.5700.swf" name="失控的古剑"/>
+    <npc sn="5146" spc="1" url="/gres/npc/npc5146-v3.5700.swf" name="进修的源大侠"/>
+    <npc sn="5148" spc="1" url="/gres/npc/npc5148-v3.5700.swf" name="藏剑护法"/>
+    <npc sn="5150" spc="1" url="/gres/npc/npc5150-v3.5700.swf" name="藏剑庄主"/>
+    <npc sn="9100" show="1" url="/gres/npc/npc9100-v3.6600.swf" name="何足道"/>
+    <npc sn="9111" show="1" url="/gres/npc/npc9111-v3.6600.swf" name="洪七公"/>
+    <npc sn="9122" show="1" url="/gres/npc/npc9122-v3.6600.swf" name="天山童姥"/>
+    <npc sn="9144" show="1" url="/gres/npc/npc9144-v3.6600.swf" name="玄慈方丈"/>
+    <npc sn="9155" show="1" url="/gres/npc/npc9155-v3.6600.swf" name="仪琳"/>
+    <npc sn="9177" show="1" url="/gres/npc/npc9177-v3.6600.swf" name="张三丰"/>
+    <npc sn="9188" show="1" url="/gres/npc/npc9188-v3.6600.swf" name="左冷禅"/>
+    <npc sn="9199" show="1" url="/gres/npc/npc9199-v3.6600.swf" name="慕容复"/>
+    <npc sn="9210" show="1" url="/gres/npc/npc9210-v3.6600.swf" name="张无忌"/>
+    <npc sn="9221" show="1" url="/gres/npc/npc9221-v3.6600.swf" name="林总镖头"/>
+    <npc sn="9232" show="1" url="/gres/npc/npc9232-v3.6600.swf" name="灭绝师太"/>
+    <npc sn="9243" show="1" url="/gres/npc/npc9243-v3.6600.swf" name="莫大"/>
+    <npc sn="9254" show="1" url="/gres/npc/npc9254-v3.6600.swf" name="段誉"/>
+    <npc sn="9265" show="1" url="/gres/npc/npc9265-v3.6600.swf" name="余沧海"/>
+    <npc sn="9276" show="1" url="/gres/npc/npc9276-v3.6600.swf" name="黄蓉"/>
+    <npc sn="9287" show="1" url="/gres/npc/npc9287-v3.6600.swf" name="唐文亮"/>
+    <npc sn="9133" show="1" url="/gres/npc/npc9133-v3.6600.swf" name="小龙女"/>
+    <npc sn="5152" spc="1" url="/gres/npc/npc5152-v3.6900.swf" name="九尾狐"/>
+    <npc sn="5154" spc="1" url="/gres/npc/npc5154-v3.6900.swf" name="麒麟"/>
+    <npc sn="5156" spc="1" url="/gres/npc/npc5156-v3.6900.swf" name="夸父"/>
+    <npc sn="5158" spc="1" url="/gres/npc/npc5158-v3.6900.swf" name="熊猫"/>
+    <npc sn="5160" spc="1" url="/gres/npc/npc5160-v3.6900.swf" name="白龙"/>
+    <npc sn="5162" spc="1" url="/gres/npc/npc5162-v3.7400.swf" name="木头人"/>
+    <npc sn="5164" spc="1" url="/gres/npc/npc5164-v3.7400.swf" name="酒葫芦"/>
+    <npc sn="5166" spc="0" url="/gres/npc/npc5166-v3.7400.swf" name="大力弟子"/>
+    <npc sn="5168" spc="0" url="/gres/npc/npc5168-v3.7400.swf" name="大嗓门"/>
+    <npc sn="5170" spc="0" url="/gres/npc/npc5170-v3.7400.swf" name="鹅王"/>
+    <npc sn="154" show="1" url="/gres/npc/npc154-v3.7500.swf" name="羊教授"/>
+    <npc sn="7000" spc="0" url="/gres/npc/npc5170-v3.8000.swf" name="鹅王2"/>
+    <npc sn="7009" spc="0" url="/gres/npc/npc5171-v3.8000.swf" name="白羊座"/>
+    <npc sn="7019" spc="0" url="/gres/npc/npc5172-v3.8000.swf" name="金牛座"/>
+    <npc sn="7029" spc="0" url="/gres/npc/npc5173-v3.8300.swf" name="双子座"/>
+    <npc sn="7039" spc="0" url="/gres/npc/npc5174-v3.8600.swf" name="巨蟹座"/>
+    <npc sn="7049" spc="0" url="/gres/npc/npc5175-v3.8700.swf" name="狮子座"/>
+    <npc sn="7059" spc="0" url="/gres/npc/npc5176-v3.8900.swf" name="处女座"/>
+    <npc sn="7069" spc="0" url="/gres/npc/npc5177-v3.9100.swf" name="处女座"/>
+    <npc sn="27" show="1" url="/gres/npc/npc27-v3.9200.swf" name="乐斗一哥"/>
+    <npc sn="28" show="1" url="/gres/npc/npc28-v3.9200.swf" name="乐斗一姐"/>
+    <npc sn="7079" spc="0" url="/gres/npc/npc5178-v3.9500.swf" name="天蝎座"/>
+    <npc sn="155" show="1" url="/gres/npc/npc155-v3.9700.swf" name="一灯大师"/>
+    <npc sn="7089" spc="0" url="/gres/npc/npc5179-v4.0200.swf" name="射手座"/>
+    <npc sn="2001" show="1" url="/gres/npc/npc2001-v4.1300.swf" name="李小龙"/>
+    <npc sn="2011" show="1" url="/gres/npc/npc2011-v4.1300.swf" name="叶问"/>
+    <npc sn="2021" show="1" url="/gres/npc/npc2021-v4.1300.swf" name="严咏春"/>
+    <npc sn="7099" show="0" url="/gres/npc/npc7099-v4.2200.swf" name="摩羯座"/>
+    <npc sn="5089" show="1" url="/gres/npc/npc5089-v4.3000.swf" name="斗战天尊"/>
+    <npc sn="5099" show="1" url="/gres/npc/npc5099-v4.3000.swf" name="斗战佛"/>
+    <npc sn="7109" show="0" url="/gres/npc/npc7109-v4.4300.swf" name="水瓶座"/>
+    <npc sn="156" show="1" spc="1" url="/gres/npc/npc156-v4.6800.swf" name="黄药师"/>
+    <npc sn="3419" show="0" spc="1" url="/gres/npc/npc3419-v4.7800.swf" name="画卷女妖"/>
+    <npc sn="3420" show="0" spc="1" url="/gres/npc/npc3420-v4.7800.swf" name="黄画卷炎魔"/>
+    <npc sn="7119" spc="0" url="/gres/npc/npc7119-v4.7900.swf" name="双鱼座"/>
+    <npc sn="1100" spc="0" show="1" url="/gres/npc/npc1100-v4.9200.swf" name="少林掌门"/>
+    <npc sn="1101" spc="0" show="1" url="/gres/npc/npc1101-v4.9200.swf" name="少林首座"/>
+    <npc sn="1102" spc="0" show="1" url="/gres/npc/npc1102-v4.9200.swf" name="少林堂主"/>
+    <npc sn="1108" spc="0" show="1" url="/gres/npc/npc1108-v4.9200.swf" name="峨眉堂主"/>
+    <npc sn="1107" spc="0" show="1" url="/gres/npc/npc1107-v4.8500.swf" name="峨眉首座"/>
+    <npc sn="1106" spc="0" show="1" url="/gres/npc/npc1106-v4.9200.swf" name="峨眉掌门"/>
+    <npc sn="1105" spc="0" show="1" url="/gres/npc/npc1105-v4.9200.swf" name="华山堂主"/>
+    <npc sn="1104" spc="0" show="1" url="/gres/npc/npc1104-v4.8500.swf" name="华山首座"/>
+    <npc sn="1103" spc="0" show="1" url="/gres/npc/npc1103-v4.9200.swf" name="华山掌门"/>
+    <npc sn="1200" spc="1" show="0" url="/gres/npc/npc1200-v4.8500.swf" name="木头人"/>
+    <npc sn="29" show="1" url="/gres/npc/npc29-v4.8800.swf" name="猴塞雷"/>
+    <npc sn="1109" spc="0" show="1" url="/gres/npc/npc1109-v4.9200.swf" name="丐帮帮主"/>
+    <npc sn="1110" spc="0" show="1" url="/gres/npc/npc1110-v4.8900.swf" name="丐帮首座"/>
+    <npc sn="1111" spc="0" show="1" url="/gres/npc/npc1111-v4.9200.swf" name="丐帮堂主"/>
+    <npc sn="30" spc="0" show="1" url="/gres/npc/npc1100-v4.9200.swf" name="少林掌门"/>
+    <npc sn="42" spc="0" show="1" url="/gres/npc/npc1101-v4.9200.swf" name="少林首座"/>
+    <npc sn="43" spc="0" show="1" url="/gres/npc/npc1102-v4.9200.swf" name="少林堂主"/>
+    <npc sn="44" spc="0" show="1" url="/gres/npc/npc1106-v4.9200.swf" name="峨眉掌门"/>
+    <npc sn="34" spc="0" show="1" url="/gres/npc/npc1107-v4.9200.swf" name="峨眉首座"/>
+    <npc sn="35" spc="0" show="1" url="/gres/npc/npc1108-v4.9200.swf" name="峨眉堂主"/>
+    <npc sn="36" spc="0" show="1" url="/gres/npc/npc1103-v4.9200.swf" name="华山掌门"/>
+    <npc sn="37" spc="0" show="1" url="/gres/npc/npc1104-v4.9200.swf" name="华山首座"/>
+    <npc sn="38" spc="0" show="1" url="/gres/npc/npc1105-v4.9200.swf" name="华山堂主"/>
+    <npc sn="39" spc="0" show="1" url="/gres/npc/npc1109-v4.9200.swf" name="丐帮帮主"/>
+    <npc sn="40" spc="0" show="1" url="/gres/npc/npc1110-v4.9200.swf" name="丐帮首座"/>
+    <npc sn="41" spc="0" show="1" url="/gres/npc/npc1111-v4.9200.swf" name="丐帮堂主"/>
+    <npc sn="1201" spc="0" show="1" url="/gres/npc/npc1102-v4.9400.swf" name="少林堂主"/>
+    <npc sn="1202" spc="0" show="1" url="/gres/npc/npc1108-v4.9400.swf" name="峨眉堂主"/>
+    <npc sn="1203" spc="0" show="1" url="/gres/npc/npc1105-v4.9400.swf" name="华山堂主"/>
+    <npc sn="1204" spc="0" show="1" url="/gres/npc/npc1111-v4.9400.swf" name="丐帮堂主"/>
+    <npc sn="1207" spc="0" show="1" url="/gres/npc/npc1102-v4.9400.swf" name="少林堂主"/>
+    <npc sn="1208" spc="0" show="1" url="/gres/npc/npc1108-v4.9400.swf" name="峨眉堂主"/>
+    <npc sn="1209" spc="0" show="1" url="/gres/npc/npc1105-v4.9400.swf" name="华山堂主"/>
+    <npc sn="1210" spc="0" show="1" url="/gres/npc/npc1111-v4.9400.swf" name="丐帮堂主"/>
+    <npc sn="1213" spc="0" show="1" url="/gres/npc/npc1101-v4.9400.swf" name="少林首座"/>
+    <npc sn="1214" spc="0" show="1" url="/gres/npc/npc1107-v4.9400.swf" name="峨眉首座"/>
+    <npc sn="1215" spc="0" show="1" url="/gres/npc/npc1104-v4.9400.swf" name="华山首座"/>
+    <npc sn="1216" spc="0" show="1" url="/gres/npc/npc1110-v4.9400.swf" name="丐帮首座"/>
+    <npc sn="1219" spc="0" show="1" url="/gres/npc/npc1101-v4.9400.swf" name="少林首座"/>
+    <npc sn="1220" spc="0" show="1" url="/gres/npc/npc1107-v4.9400.swf" name="峨眉首座"/>
+    <npc sn="1221" spc="0" show="1" url="/gres/npc/npc1104-v4.9400.swf" name="华山首座"/>
+    <npc sn="1222" spc="0" show="1" url="/gres/npc/npc1110-v4.9400.swf" name="丐帮首座"/>
+    <npc sn="1225" spc="0" show="1" url="/gres/npc/npc1100-v4.9400.swf" name="少林掌门"/>
+    <npc sn="1226" spc="0" show="1" url="/gres/npc/npc1106-v4.9400.swf" name="峨眉掌门"/>
+    <npc sn="1227" spc="0" show="1" url="/gres/npc/npc1103-v4.9400.swf" name="华山掌门"/>
+    <npc sn="1228" spc="0" show="1" url="/gres/npc/npc1109-v4.9400.swf" name="丐帮帮主"/>
+    <npc sn="1112" spc="0" show="1" url="/gres/npc/npc1112-v4.9800.swf" name="武当堂主"/>
+    <npc sn="1113" spc="0" show="1" url="/gres/npc/npc1113-v4.9800.swf" name="武当首座"/>
+    <npc sn="1114" spc="0" show="1" url="/gres/npc/npc1114-v4.9800.swf" name="武当掌门"/>
+    <npc sn="1205" spc="0" show="1" url="/gres/npc/npc1112-v4.9800.swf" name="武当堂主"/>
+    <npc sn="1211" spc="0" show="1" url="/gres/npc/npc1112-v4.9800.swf" name="武当堂主"/>
+    <npc sn="1217" spc="0" show="1" url="/gres/npc/npc1113-v4.9800.swf" name="武当首座"/>
+    <npc sn="1223" spc="0" show="1" url="/gres/npc/npc1113-v4.9800.swf" name="武当首座"/>
+    <npc sn="1229" spc="0" show="1" url="/gres/npc/npc1114-v4.9800.swf" name="武当掌门"/>
+    <npc sn="47" spc="0" show="1" url="/gres/npc/npc1112-v4.9800.swf" name="武当堂主"/>
+    <npc sn="46" spc="0" show="1" url="/gres/npc/npc1113-v4.9800.swf" name="武当首座"/>
+    <npc sn="45" spc="0" show="1" url="/gres/npc/npc1114-v4.9800.swf" name="武当掌门"/>
+    <npc sn="1206" spc="0" show="1" url="/gres/npc/npc1115-v5.0900.swf" name="明教堂主"/>
+    <npc sn="1212" spc="0" show="1" url="/gres/npc/npc1115-v5.0900.swf" name="明教堂主"/>
+    <npc sn="1218" spc="0" show="1" url="/gres/npc/npc1116-v5.0900.swf" name="明教首座"/>
+    <npc sn="1224" spc="0" show="1" url="/gres/npc/npc1116-v5.0900.swf" name="明教首座"/>
+    <npc sn="1230" spc="0" show="1" url="/gres/npc/npc1117-v5.0900.swf" name="明教教主"/>
+    <npc sn="48" spc="0" show="1" url="/gres/npc/npc1117-v5.0900.swf" name="明教教主"/>
+    <npc sn="49" spc="0" show="1" url="/gres/npc/npc1116-v5.0900.swf" name="明教首座"/>
+    <npc sn="50" spc="0" show="1" url="/gres/npc/npc1115-v5.0900.swf" name="明教堂主"/>
+    <npc sn="1117" spc="0" show="1" url="/gres/npc/npc1117-v5.0900.swf" name="明教教主"/>
+    <npc sn="1116" spc="0" show="1" url="/gres/npc/npc1116-v5.0900.swf" name="明教首座"/>
+    <npc sn="1115" spc="0" show="1" url="/gres/npc/npc1115-v5.0900.swf" name="明教堂主"/>
+    <npc sn="51" spc="0" show="1" url="/gres/npc/npc51-v5.2500.swf" name="鸡年形象卡"/>
+    <npc sn="1231" spc="1" show="1" url="/gres/npc/npc1231-v5.4000.swf" name="夔牛精英"/>
+    <npc sn="1232" spc="1" show="1" url="/gres/npc/npc1232-v5.4000.swf" name="夔牛队长"/>
+    <npc sn="1233" spc="1" show="1" url="/gres/npc/npc1233-v5.4000.swf" name="夔牛领主"/>
+    <npc sn="1234" spc="1" show="1" url="/gres/npc/npc1234-v5.4000.swf" name="饕餮精英"/>
+    <npc sn="1235" spc="1" show="1" url="/gres/npc/npc1235-v5.4000.swf" name="饕餮队长"/>
+    <npc sn="1236" spc="1" show="1" url="/gres/npc/npc1236-v5.4000.swf" name="饕餮领主"/>
+    <npc sn="1237" spc="1" show="1" url="/gres/npc/npc1237-v5.4000.swf" name="黄鸟精英"/>
+    <npc sn="1238" spc="1" show="1" url="/gres/npc/npc1238-v5.4000.swf" name="黄鸟队长"/>
+    <npc sn="1239" spc="1" show="1" url="/gres/npc/npc1239-v5.4000.swf" name="黄鸟领主"/>
+    <npc sn="1240" spc="1" show="1" url="/gres/npc/npc1240-v5.4000.swf" name="烛龙精英"/>
+    <npc sn="1241" spc="1" show="1" url="/gres/npc/npc1241-v5.4000.swf" name="烛龙队长"/>
+    <npc sn="1242" spc="1" show="1" url="/gres/npc/npc1242-v5.4000.swf" name="烛龙领主"/>
+    <npc sn="1243" spc="1" url="/gres/npc/npc1243-v5.7300.swf" name="远征试练官"/>
+    <npc sn="52" spc="0" show="1" url="/gres/npc/npc52-v5.7500.swf" name="柴犬形象卡"/>
+    <npc sn="53" spc="0" show="1" url="/gres/npc/npc53-v5.7500.swf" name="二哈形象卡"/>
+    <npc sn="54" spc="0" show="1" url="/gres/npc/npc54-v6.0600.swf" name="吕布"/>
+    <npc sn="55" spc="0" show="1" url="/gres/npc/npc55-v5.9800.swf" name="熊猫"/>
+    <npc sn="56" spc="0" show="1" url="/gres/npc/npc56-v6.0600.swf" name="帅帅"/>
+    <npc sn="57" spc="0" show="1" url="/gres/npc/npc57-v6.0600.swf" name="菜菜"/>
+    <npc sn="58" spc="0" show="1" url="/gres/npc/npc58-v6.0600.swf" name="剑君"/>
+    <npc sn="59" spc="0" show="1" url="/gres/npc/npc59-v6.0600.swf" name="关羽"/>
+    <npc sn="60" spc="0" show="1" url="/gres/npc/npc60-v6.0600.swf" name="狮王"/>
+    <npc sn="61" spc="0" show="1" url="/gres/npc/npc61-v6.1400.swf" name="雷神"/>
+    <npc sn="62" spc="0" show="1" url="/gres/npc/npc62-v6.3600.swf" name="海王"/>
+    <npc sn="63" spc="0" show="1" url="/gres/npc/npc63-v6.7300.swf" name="灭世"/>
+    <npc sn="64" spc="0" show="1" url="/gres/npc/npc64-v6.7300.swf" name="女帝"/>
+    <npc sn="65" spc="0" show="1" url="/gres/npc/npc65-v6.7300.swf" name="盘古"/>
+    <npc sn="67" spc="0" show="1" url="/gres/npc/npc67-v6.7300.swf" name="死神"/>
+    <npc sn="9901" url="/gres/npc/npc9901-v6.7300.swf" name="柒承"/>
+    <npc sn="9902" url="/gres/npc/npc9902-v6.7300.swf" name="断亦"/>
+    <npc sn="9903" url="/gres/npc/npc9903-v6.7300.swf" name="燕青"/>
+    <npc sn="9904" url="/gres/npc/npc9904-v6.7300.swf" name="李师师"/>
+    <npc sn="66" spc="0" show="1" url="/gres/npc/npc66-v6.7300.swf" name="机甲"/>
+    <npc sn="9905" url="/gres/npc/npc9905-v6.7300.swf" name="洪七公"/>
+    <npc sn="68" spc="0" show="1" url="/gres/npc/npc68-v6.7300.swf" name="死骑"/>
+    <npc sn="69" spc="0" show="1" url="/gres/npc/npc69-v6.6600.swf" name="艾莎形象卡"/>
+    <npc sn="9906" url="/gres/npc/npc9906-v6.7300.swf" name="九品芝麻官"/>
+    <npc sn="9907" url="/gres/npc/npc9907-v6.7300.swf" name="圣诞老鹅"/>
+    <npc sn="70" spc="0" show="1" url="/gres/npc/npc70-v6.7600.swf" name="哪吒"/>
+    <npc sn="71" spc="0" show="1" url="/gres/npc/npc71-v6.7300.swf" name="姜子牙"/>
+    <npc sn="9908" url="/gres/npc/npc9908-v6.7300.swf" name="段智兴"/>
+    <npc sn="9909" url="/gres/npc/npc9909-v6.7300.swf" name="王重阳"/>
+    <npc sn="9910" url="/gres/npc/npc9910-v6.7300.swf" name="黄药师"/>
+    <npc sn="9911" url="/gres/npc/npc9911-v6.7300.swf" name="欧阳锋"/>
+    <npc sn="157" spc="0" show="1" url="/gres/npc/npc157-v6.7700.swf" name="杰瑞形象卡"/>
+    <npc sn="158" spc="0" show="1" url="/gres/npc/npc158-v6.7700.swf" name="泰菲形象卡"/>
+    <npc sn="72" spc="0" show="1" url="/gres/npc/npc72-v6.8000.swf" name="项羽"/>
+    <npc sn="73" spc="0" show="1" url="/gres/npc/npc73-v6.8500.swf" name="刘邦"/>
+    <npc sn="9500" url="/gres/npc/npc17-v6.9300.swf" name="市井混混1"/>
+    <npc sn="9501" url="/gres/npc/npc17-v6.9300.swf" name="市井混混1"/>
+    <npc sn="9502" url="/gres/npc/npc17-v6.9300.swf" name="市井混混2"/>
+    <npc sn="9503" url="/gres/npc/npc17-v6.9300.swf" name="市井混混2"/>
+    <npc sn="9504" url="/gres/npc/npc9902-v6.9300.swf" name="断亦"/>
+    <npc sn="9505" url="/gres/npc/npc18-v6.9300.swf" name="土匪1"/>
+    <npc sn="9506" url="/gres/npc/npc18-v6.9300.swf" name="土匪1"/>
+    <npc sn="9507" url="/gres/npc/npc18-v6.9300.swf" name="土匪2"/>
+    <npc sn="9508" url="/gres/npc/npc18-v6.9300.swf" name="土匪2"/>
+    <npc sn="9509" url="/gres/npc/npc18-v6.9300.swf" name="土匪3"/>
+    <npc sn="9510" url="/gres/npc/npc18-v6.9300.swf" name="土匪3"/>
+    <npc sn="9511" url="/gres/npc/npc18-v6.9300.swf" name="土匪头子"/>
+    <npc sn="9516" url="/gres/npc/npc9908-v6.9300.swf" name="段智兴"/>
+    <npc sn="9513" url="/gres/npc/npc9905-v6.9300.swf" name="洪七公"/>
+    <npc sn="9512" url="/gres/npc/npc9911-v6.9300.swf" name="欧阳锋"/>
+    <npc sn="9514" url="/gres/npc/npc9910-v6.9300.swf" name="黄药师"/>
+    <npc sn="9515" url="/gres/npc/npc9909-v6.9300.swf" name="王重阳"/>
+    <npc sn="9912" url="/gres/npc/npc9912-v6.9400.swf" name="杜十三"/>
+    <npc sn="9913" url="/gres/npc/npc9913-v6.9400.swf" name="李光弼"/>
+    <npc sn="74" spc="0" show="1" url="/gres/npc/npc74-v6.9400.swf" name="杨玉环"/>
+    <npc sn="9517" url="/gres/npc/npc18-v7.0000.swf" name="时空盗贼1"/>
+    <npc sn="9518" url="/gres/npc/npc18-v7.0000.swf" name="时空盗贼1"/>
+    <npc sn="9519" url="/gres/npc/npc18-v7.0000.swf" name="时空盗贼2"/>
+    <npc sn="9520" url="/gres/npc/npc18-v7.0000.swf" name="时空盗贼2"/>
+    <npc sn="9521" url="/gres/npc/npc18-v7.0000.swf" name="时空盗贼3"/>
+    <npc sn="9522" url="/gres/npc/npc18-v7.0000.swf" name="时空盗贼3"/>
+    <npc sn="9523" url="/gres/npc/npc2-v7.0000.swf" name="祸乱之源"/>
+    <npc sn="75" spc="0" show="1" url="/gres/npc/npc75-v7.0100.swf" name="李白"/>
+    <npc sn="9524" url="/gres/npc/npc17-v7.0900.swf" name="皇城守卫1"/>
+    <npc sn="9525" url="/gres/npc/npc17-v7.0900.swf" name="皇城守卫1"/>
+    <npc sn="9526" url="/gres/npc/npc17-v7.0900.swf" name="皇城守卫2"/>
+    <npc sn="9527" url="/gres/npc/npc17-v7.0900.swf" name="皇城守卫2"/>
+    <npc sn="9528" url="/gres/npc/npc5010-v7.0900.swf" name="禁军教头"/>
+    <npc sn="76" spc="0" show="1" url="/gres/npc/npc76-v7.1100.swf" name="小丑"/>
+    <npc sn="9529" url="/gres/npc/npc17-v7.2300.swf" name="幻想敌人1"/>
+    <npc sn="9530" url="/gres/npc/npc17-v7.2300.swf" name="幻想敌人1"/>
+    <npc sn="9531" url="/gres/npc/npc17-v7.2300.swf" name="幻想敌人2"/>
+    <npc sn="9532" url="/gres/npc/npc17-v7.2300.swf" name="幻想敌人2"/>
+    <npc sn="9533" url="/gres/npc/npc17-v7.2300.swf" name="幻想敌人3"/>
+    <npc sn="9534" url="/gres/npc/npc17-v7.2300.swf" name="幻想敌人3"/>
+    <npc sn="9535" url="/gres/npc/npc20-v7.2300.swf" name="迷失心魔"/>
+    <npc sn="77" spc="0" show="1" url="/gres/npc/npc77-v7.2400.swf" name="炫炫"/>
+    <npc sn="9700" spc="1" show="0" url="/gres/npc/npc9700-v7.2700.swf" name="鼠年年兽"/>
+    <npc sn="9701" spc="1" show="0" url="/gres/npc/npc9701-v7.2700.swf" name="牛年年兽"/>
+    <npc sn="159" spc="0" show="1" url="/gres/npc/npc159-v7.3200.swf" name="大角牛形象卡"/>
+    <npc sn="78" spc="0" show="1" url="/gres/npc/npc78-v7.3600.swf" name="樱木"/>
+    <npc sn="9536" url="/gres/npc/npc5074-v7.3700.swf" name="入侵金兵1"/>
+    <npc sn="9537" url="/gres/npc/npc5074-v7.3700.swf" name="入侵金兵1"/>
+    <npc sn="9538" url="/gres/npc/npc5074-v7.3700.swf" name="入侵金兵2"/>
+    <npc sn="9539" url="/gres/npc/npc5074-v7.3700.swf" name="入侵金兵2"/>
+    <npc sn="9540" url="/gres/npc/npc153-v7.3700.swf" name="金兵首领"/>
+    <npc sn="9914" url="/gres/npc/npc9914-v7.3900.swf" name="李莫愁"/>
+    <npc sn="79" spc="0" show="1" url="/gres/npc/npc79-v7.4600.swf" name="纣王"/>
+    <npc sn="9915" url="/gres/npc/npc9915-v7.4800.swf" name="林朝英"/>
+    <npc sn="9916" url="/gres/npc/npc9916-v7.5400.swf" name="小龙女"/>
+    <npc sn="9541" url="/gres/npc/npc9911-v7.5300.swf" name="邪.欧阳锋"/>
+    <npc sn="9542" url="/gres/npc/npc9905-v7.5300.swf" name="邪.洪七公"/>
+    <npc sn="9543" url="/gres/npc/npc9909-v7.5300.swf" name="邪.王重阳"/>
+    <npc sn="9544" url="/gres/npc/npc9910-v7.5300.swf" name="邪.黄药师"/>
+    <npc sn="9545" url="/gres/npc/npc9915-v7.5300.swf" name="邪.林朝英"/>
+    <npc sn="9917" url="/gres/npc/npc9917-v9.7300.swf" name="杨过"/>
+    <npc sn="80" spc="0" show="1" url="/gres/npc/npc80-v7.6300.swf" name="嬴政"/>
+    <npc sn="9918" url="/gres/npc/npc9918-v7.7300.swf" name="金轮法王"/>
+    <npc sn="81" spc="0" show="1" url="/gres/npc/npc81-v7.8200.swf" name="鹅卡西"/>
+    <npc sn="9702" spc="1" show="0" url="/gres/npc/npc9702-v7.8300.swf" name="虎年年兽"/>
+    <npc sn="160" spc="0" show="1" url="/gres/npc/npc160-v7.8400.swf" name="跳跳虎形象卡"/>
+    <npc sn="9546" url="/gres/npc/npc17-v7.8500.swf" name="蒙帐勇士1"/>
+    <npc sn="9547" url="/gres/npc/npc17-v7.8500.swf" name="蒙帐勇士2"/>
+    <npc sn="9548" url="/gres/npc/npc20-v7.8500.swf" name="密教奸细"/>
+    <npc sn="9549" url="/gres/npc/npc9918-v7.8500.swf" name="金轮法王"/>
+    <npc sn="9919" url="/gres/npc/npc9919-v7.9100.swf" name="郭靖"/>
+    <npc sn="82" spc="0" show="1" url="/gres/npc/npc82-v7.9500.swf" name="红莲"/>
+    <npc sn="83" spc="0" show="1" url="/gres/npc/npc83-v8.0000.swf" name="猎魔人"/>
+    <npc sn="9750" url="/gres/npc/npc9750-v8.0000.swf" name="斗界驻门"/>
+    <npc sn="9751" url="/gres/npc/npc9757-v8.0000.swf" name="摄魂梦魇（影）"/>
+    <npc sn="9752" url="/gres/npc/npc9769-v8.0000.swf" name="灾厄执政官（影）"/>
+    <npc sn="9753" url="/gres/npc/npc9776-v8.0000.swf" name="吞昼祸斗（影）"/>
+    <npc sn="9754" url="/gres/npc/npc9754-v8.0000.swf" name="帝释天"/>
+    <npc sn="9755" url="/gres/npc/npc9750-v8.0000.swf" name="魂桥守备"/>
+    <npc sn="9756" url="/gres/npc/npc9756-v8.0000.swf" name="笼雾游魂"/>
+    <npc sn="9757" url="/gres/npc/npc9757-v8.0000.swf" name="摄魂梦魇"/>
+    <npc sn="9758" url="/gres/npc/npc9758-v8.0000.swf" name="双生游魂"/>
+    <npc sn="9759" url="/gres/npc/npc9759-v8.0000.swf" name="引渡人"/>
+    <npc sn="9760" url="/gres/npc/npc9750-v8.0000.swf" name="须臾哨兵"/>
+    <npc sn="9761" url="/gres/npc/npc9761-v8.0000.swf" name="时间旅者"/>
+    <npc sn="9762" url="/gres/npc/npc9756-v8.0000.swf" name="笼雾幽魂"/>
+    <npc sn="9763" url="/gres/npc/npc9763-v8.0000.swf" name="星移师"/>
+    <npc sn="9764" url="/gres/npc/npc9764-v8.0000.swf" name="须臾"/>
+    <npc sn="9765" url="/gres/npc/npc9750-v8.0000.swf" name="护镜使者"/>
+    <npc sn="9766" url="/gres/npc/npc9756-v8.0000.swf" name="笼雾幽灵"/>
+    <npc sn="9767" url="/gres/npc/npc9767-v8.0000.swf" name="镜中灵"/>
+    <npc sn="9768" url="/gres/npc/npc9768-v8.0000.swf" name="执镜祭司"/>
+    <npc sn="9769" url="/gres/npc/npc9769-v8.0000.swf" name="灾厄执政官"/>
+    <npc sn="9770" url="/gres/npc/npc9750-v8.0000.swf" name="心灵护卫"/>
+    <npc sn="9771" url="/gres/npc/npc9758-v8.0000.swf" name="双生幽魂"/>
+    <npc sn="9772" url="/gres/npc/npc9772-v8.0000.swf" name="影刺"/>
+    <npc sn="9773" url="/gres/npc/npc9773-v8.0000.swf" name="筑界术士"/>
+    <npc sn="9775" url="/gres/npc/npc9750-v8.0000.swf" name="厄源巡守"/>
+    <npc sn="9776" url="/gres/npc/npc9776-v8.0000.swf" name="吞昼祸斗"/>
+    <npc sn="9777" url="/gres/npc/npc9758-v8.0000.swf" name="双生幽灵"/>
+    <npc sn="9778" url="/gres/npc/npc9778-v8.0000.swf" name="汲魂领主"/>
+    <npc sn="9774" url="/gres/npc/npc9774-v8.0000.swf" name="未来洞见"/>
+    <npc sn="9779" url="/gres/npc/npc9779-v8.0000.swf" name="源初虚影"/>
+    <npc sn="9920" url="/gres/npc/npc9920-v8.0200.swf" name="梅超风"/>
+    <npc sn="84" spc="0" show="1" url="/gres/npc/npc84-v8.1800.swf" name="光明圣骑士"/>
+    <npc sn="9921" url="/gres/npc/npc9921-v8.1800.swf" name="周伯通"/>
+    <npc sn="161" url="/gres/npc/npc9779-v8.1800.swf" name="斗神幻像"/>
+    <npc sn="9550" url="/gres/npc/npc18-v8.1800.swf" name="海寇"/>
+    <npc sn="9551" url="/gres/npc/npc17-v8.1800.swf" name="桃花岛哑仆1"/>
+    <npc sn="9552" url="/gres/npc/npc17-v8.1800.swf" name="桃花岛哑仆2"/>
+    <npc sn="9553" url="/gres/npc/npc9910-v8.1800.swf" name="岛主黄药师"/>
+    <npc sn="9554" url="/gres/npc/npc9921-v8.1800.swf" name="周伯通"/>
+    <npc sn="9780" url="/gres/npc/npc9768-v8.1800.swf" name="祭礼灵仆"/>
+    <npc sn="9781" url="/gres/npc/npc9773-v8.1800.swf" name="呓语者"/>
+    <npc sn="9782" url="/gres/npc/npc9776-v8.1800.swf" name="渊秘之嗣"/>
+    <npc sn="9783" url="/gres/npc/npc9750-v8.1800.swf" name="无序界王"/>
+    <npc sn="9784" url="/gres/npc/npc9779-v8.1800.swf" name="厄之源初"/>
+    <npc sn="85" spc="0" show="1" url="/gres/npc/npc85-v8.3200.swf" name="新春游侠"/>
+    <npc sn="9922" url="/gres/npc/npc9922-v9.6900.swf" name="张无忌"/>
+    <npc sn="9555" url="/gres/npc/npc17-v8.3200.swf" name="梦境恶敌1"/>
+    <npc sn="9556" url="/gres/npc/npc17-v8.3200.swf" name="梦境恶敌2"/>
+    <npc sn="9557" url="/gres/npc/npc9922-v9.6900.swf" name="张无忌的心魔"/>
+    <npc sn="9703" spc="1" show="0" url="/gres/npc/npc9703-v8.3200.swf" name="兔年年兽"/>
+    <npc sn="162" spc="0" show="1" url="/gres/npc/npc162-v8.3500.swf" name="月桂兔形象卡"/>
+    <npc sn="86" spc="0" show="1" url="/gres/npc/npc86-v8.4100.swf" name="可乐游侠"/>
+    <npc sn="87" spc="0" show="1" url="/gres/npc/npc87-v8.4700.swf" name="雀星宿"/>
+    <npc sn="9923" url="/gres/npc/npc9923-v8.4800.swf" name="郭襄"/>
+    <npc sn="9558" url="/gres/npc/npc17-v8.5300.swf" name="蒙军将领1"/>
+    <npc sn="9559" url="/gres/npc/npc20-v8.5300.swf" name="金轮弟子"/>
+    <npc sn="9560" url="/gres/npc/npc9918-v8.5300.swf" name="邪.金轮法王"/>
+    <npc sn="9924" url="/gres/npc/npc9924-v8.5600.swf" name="王处一"/>
+    <npc sn="88" spc="0" show="1" url="/gres/npc/npc88-v8.6400.swf" name="天蓬元帅"/>
+    <npc sn="9925" url="/gres/npc/npc9925-v8.6700.swf" name="张三丰"/>
+    <npc sn="9561" url="/gres/npc/npc17-v8.6900.swf" name="元朝兵将"/>
+    <npc sn="9562" url="/gres/npc/npc17-v8.6900.swf" name="元朝兵将"/>
+    <npc sn="9563" url="/gres/npc/npc153-v8.6900.swf" name="大元统帅"/>
+    <npc sn="9564" url="/gres/npc/npc153-v8.6900.swf" name="大元统帅"/>
+    <npc sn="9565" url="/gres/npc/npc20-v8.6900.swf" name="玄冥"/>
+    <npc sn="9926" url="/gres/npc/npc9926-v8.8000.swf" name="周芷若"/>
+    <npc sn="89" spc="0" show="1" url="/gres/npc/npc89-v8.8200.swf" name="周"/>
+    <npc sn="9566" url="/gres/npc/npc9915-v8.8300.swf" name="武.林朝英"/>
+    <npc sn="9567" url="/gres/npc/npc9909-v8.8300.swf" name="武.王重阳"/>
+    <npc sn="9568" url="/gres/npc/npc9920-v8.8300.swf" name="武.梅超风"/>
+    <npc sn="9569" url="/gres/npc/npc9924-v8.8300.swf" name="武.王处一"/>
+    <npc sn="9704" spc="1" show="0" url="/gres/npc/npc9704-v8.8700.swf" name="龙年年兽"/>
+    <npc sn="163" spc="0" show="1" url="/gres/npc/npc163-v8.9000.swf" name="晴昼龙形象卡"/>
+    <npc sn="90" spc="0" show="1" url="/gres/npc/npc90-v8.9600.swf" name="虚日鼠"/>
+    <npc sn="9570" url="/gres/npc/npc9750-v8.9700.swf" name="迷阵守卫"/>
+    <npc sn="9571" url="/gres/npc/npc9769-v8.9700.swf" name="迷阵大将"/>
+    <npc sn="9927" url="/gres/npc/npc9927-v8.9900.swf" name="龙岛主"/>
+    <npc sn="9785" url="/gres/npc/npc9785-v9.0500.swf" name="少昊金天"/>
+    <npc sn="9786" url="/gres/npc/npc9786-v9.0500.swf" name="颛顼高阳"/>
+    <npc sn="9787" url="/gres/npc/npc9787-v9.0500.swf" name="太昊伏羲"/>
+    <npc sn="9788" url="/gres/npc/npc9788-v9.0500.swf" name="炎帝神农"/>
+    <npc sn="9789" url="/gres/npc/npc9789-v9.0500.swf" name="黄帝轩辕"/>
+    <npc sn="9572" url="/gres/npc/npc9927-v9.0600.swf" name="龙岛主"/>
+    <npc sn="9928" url="/gres/npc/npc9928-v9.0700.swf" name="斗酒僧"/>
+    <npc sn="9790" url="/gres/npc/npc9790-v9.2900.swf" name="异兽幼崽"/>
+    <npc sn="9791" url="/gres/npc/npc9791-v9.2900.swf" name="异兽战士"/>
+    <npc sn="9792" url="/gres/npc/npc9792-v9.2900.swf" name="异兽将领"/>
+    <npc sn="9793" url="/gres/npc/npc9793-v9.2900.swf" name="异兽元帅"/>
+    <npc sn="9794" url="/gres/npc/npc9794-v9.2900.swf" name="异兽母巢"/>
+    <npc sn="9929" url="/gres/npc/npc9929-v9.1600.swf" name="行者鹅"/>
+    <npc sn="9705" spc="1" show="0" url="/gres/npc/npc9705-v9.3600.swf" name="枫语"/>
+    <npc sn="9575" url="/gres/npc/npc18-v9.2400.swf" name="暗道黑衣人1"/>
+    <npc sn="9576" url="/gres/npc/npc18-v9.2400.swf" name="暗道黑衣人2"/>
+    <npc sn="9577" url="/gres/npc/npc9926-v9.2400.swf" name="峨.周芷若"/>
+    <npc sn="91" spc="0" show="1" url="/gres/npc/npc91-v9.2700.swf" name="奥丁"/>
+    <npc sn="9706" spc="1" show="0" url="/gres/npc/npc9706-v9.3000.swf" name="夜半"/>
+    <npc sn="9930" url="/gres/npc/npc9930-v9.3100.swf" name="木岛主"/>
+    <npc sn="9707" spc="1" show="0" url="/gres/npc/npc9707-v9.3600.swf" name="寒渊"/>
+    <npc sn="9711" spc="1" show="0" url="/gres/npc/npc9711-v9.3600.swf" name="蛇年年兽"/>
+    <npc sn="164" spc="0" show="1" url="/gres/npc/npc164-v9.3700.swf" name="圣灵蛇形象卡"/>
+    <npc sn="9708" spc="1" show="0" url="/gres/npc/npc9708-v9.4400.swf" name="流火"/>
+    <npc sn="9931" url="/gres/npc/npc9931-v9.4700.swf" name="石破天"/>
+    <npc sn="92" spc="0" show="1" url="/gres/npc/npc92-v9.4800.swf" name="燕人张飞"/>
+    <npc sn="9932" url="/gres/npc/npc9932-v9.5400.swf" name="胡斐"/>
+    <npc sn="9709" spc="1" show="0" url="/gres/npc/npc9709-v9.5400.swf" name="风骤"/>
+    <npc sn="9578" url="/gres/npc/npc18-v9.5500.swf" name="雪山盗匪1"/>
+    <npc sn="9579" url="/gres/npc/npc18-v9.5500.swf" name="雪山盗匪2"/>
+    <npc sn="9580" url="/gres/npc/npc9932-v9.5500.swf" name="义.胡斐"/>
+    <npc sn="9710" spc="1" show="0" url="/gres/npc/npc9710-v9.6000.swf" name="怒涛"/>
+    <npc sn="93" spc="0" show="1" url="/gres/npc/npc93-v9.6400.swf" name="郭靖"/>
+    <npc sn="9573" url="/gres/npc/npc9927-v9.7700.swf" name="龙岛主"/>
+    <npc sn="9574" url="/gres/npc/npc9927-v9.7700.swf" name="龙岛主"/>
+    <npc sn="9933" url="/gres/npc/npc9933-v9.8200.swf" name="笑红尘"/>
+    <npc sn="9581" url="/gres/npc/npc9933-v10.1500.swf" name="后天境初期.伪装邪派"/>
+    <npc sn="9582" url="/gres/npc/npc9933-v10.1500.swf" name="后天境中期.伪装邪派"/>
+    <npc sn="9583" url="/gres/npc/npc9933-v10.1500.swf" name="后天境后期.伪装邪派"/>
+    <npc sn="9584" url="/gres/npc/npc9933-v10.1500.swf" name="后天境巅峰.伪装邪派"/>
+    <npc sn="9585" url="/gres/npc/npc9933-v10.1500.swf" name="后天境圆满.伪装邪派"/>
+    <npc sn="9586" url="/gres/npc/npc9936-v10.1500.swf" name="先天境初期.伪装邪派"/>
+    <npc sn="9587" url="/gres/npc/npc9936-v10.1500.swf" name="先天境中期.伪装邪派"/>
+    <npc sn="9588" url="/gres/npc/npc9936-v10.1500.swf" name="先天境后期.伪装邪派"/>
+    <npc sn="9589" url="/gres/npc/npc9936-v10.1500.swf" name="先天境巅峰.伪装邪派"/>
+    <npc sn="9590" url="/gres/npc/npc9936-v10.1500.swf" name="先天境圆满.伪装邪派"/>
+    <npc sn="9591" url="/gres/npc/npc9939-v10.1500.swf" name="宗师境初期.伪装邪派"/>
+    <npc sn="9592" url="/gres/npc/npc9939-v10.1500.swf" name="宗师境中期.伪装邪派"/>
+    <npc sn="9593" url="/gres/npc/npc9939-v10.1500.swf" name="宗师境后期.伪装邪派"/>
+    <npc sn="9594" url="/gres/npc/npc9939-v10.1500.swf" name="宗师境巅峰.伪装邪派"/>
+    <npc sn="9595" url="/gres/npc/npc9939-v10.1500.swf" name="宗师境圆满.伪装邪派"/>
+    <npc sn="9596" url="/gres/npc/npc9936-v9.9800.swf" name="宗师境初期.伪装邪派"/>
+    <npc sn="9597" url="/gres/npc/npc9936-v9.9800.swf" name="宗师境中期.伪装邪派"/>
+    <npc sn="9598" url="/gres/npc/npc9936-v9.9800.swf" name="宗师境后期.伪装邪派"/>
+    <npc sn="9599" url="/gres/npc/npc9936-v9.9800.swf" name="宗师境巅峰.伪装邪派"/>
+    <npc sn="9600" url="/gres/npc/npc9936-v9.9800.swf" name="宗师境圆满.伪装邪派"/>
+    <npc sn="9601" url="/gres/npc/npc9932-v9.8200.swf" name="测试胡斐"/>
+    <npc sn="9602" url="/gres/npc/npc9933-v9.8200.swf" name="测试笑红尘"/>
+    <npc sn="94" spc="0" show="1" url="/gres/npc/npc94-v9.9300.swf" name="爆风9C"/>
+    <npc sn="9934" url="/gres/npc/npc9934-v9.8800.swf" name="福马鹅"/>
+    <npc sn="9935" url="/gres/npc/npc9935-v9.8800.swf" name="发财鹅"/>
+    <npc sn="9712" spc="1" show="0" url="/gres/npc/npc9712-v9.8800.swf" name="马年年兽"/>
+    <npc sn="165" url="/gres/npc/npc9934-v9.8800.swf" name="福神福马鹅"/>
+    <npc sn="166" url="/gres/npc/npc9935-v9.8800.swf" name="财神发财鹅"/>
+    <npc sn="6001" url="/gres/npc/npc17-v9.9200.swf" name="山贼"/>
+    <npc sn="6002" url="/gres/npc/npc18-v9.9200.swf" name="强盗"/>
+    <npc sn="6003" url="/gres/npc/npc5006-v9.9200.swf" name="赌徒"/>
+    <npc sn="6004" url="/gres/npc/npc5010-v9.9200.swf" name="镖头"/>
+    <npc sn="6005" spc="1" url="/gres/npc/npc5162-v9.9200.swf" name="木头人"/>
+    <npc sn="6006" spc="1" url="/gres/npc/npc5016-v9.9200.swf" name="树妖"/>
+    <npc sn="6007" spc="1" url="/gres/npc/npc5018-v9.9200.swf" name="花妖"/>
+    <npc sn="6008" spc="1" url="/gres/npc/npc5052-v9.9200.swf" name="蝴蝶"/>
+    <npc sn="6009" spc="1" url="/gres/npc/npc5022-v9.9200.swf" name="虾兵"/>
+    <npc sn="6010" spc="1" url="/gres/npc/npc5012-v9.9200.swf" name="青蛙"/>
+    <npc sn="6011" spc="1" url="/gres/npc/npc5024-v9.9200.swf" name="蟹兵"/>
+    <npc sn="6012" spc="1" url="/gres/npc/npc5028-v9.9200.swf" name="龟丞相"/>
+    <npc sn="6013" spc="1" url="/gres/npc/npc5026-v9.9200.swf" name="章鱼"/>
+    <npc sn="6014" spc="1" url="/gres/npc/npc4074-v9.9200.swf" name="巨鲸"/>
+    <npc sn="6015" spc="1" url="/gres/npc/npc4078-v9.9200.swf" name="酒仙"/>
+    <npc sn="6016" url="/gres/npc/npc5070-v9.9200.swf" name="圣斗士"/>
+    <npc sn="6017" url="/gres/npc/npc4080-v9.9200.swf" name="斗战神"/>
+    <npc sn="6018" show="1" url="/gres/npc/npc5089-v9.9200.swf" name="斗战天尊"/>
+    <npc sn="6019" spc="1" url="/gres/npc/npc5098-v9.9200.swf" name="骷髅企鹅"/>
+    <npc sn="6020" spc="1" url="/gres/npc/npc5100-v9.9200.swf" name="白银圣斗士"/>
+    <npc sn="6021" spc="1" url="/gres/npc/npc5118-v9.9200.swf" name="熔岩龟"/>
+    <npc sn="6022" spc="1" url="/gres/npc/npc5116-v9.9200.swf" name="吐火蛇"/>
+    <npc sn="6023" spc="1" url="/gres/npc/npc5112-v9.9200.swf" name="火灵"/>
+    <npc sn="6024" spc="1" url="/gres/npc/npc5120-v9.9200.swf" name="火之剑灵"/>
+    <npc sn="6025" spc="1" url="/gres/npc/npc5086-v9.9200.swf" name="蜘蛛"/>
+    <npc sn="6026" spc="1" url="/gres/npc/npc5068-v9.9200.swf" name="炎魔"/>
+    <npc sn="6027" spc="1" url="/gres/npc/npc5058-v9.9200.swf" name="雷公"/>
+    <npc sn="6028" spc="1" url="/gres/npc/npc5060-v9.9200.swf" name="电母"/>
+    <npc sn="6029" spc="1" url="/gres/npc/npc5042-v9.9200.swf" name="狼"/>
+    <npc sn="6030" spc="1" url="/gres/npc/npc5046-v9.9200.swf" name="老虎"/>
+    <npc sn="6031" spc="1" url="/gres/npc/npc5044-v9.9200.swf" name="金雕"/>
+    <npc sn="6032" spc="1" url="/gres/npc/npc5048-v9.9200.swf" name="凤凰"/>
+    <npc sn="6033" spc="1" url="/gres/npc/npc5076-v9.9200.swf" name="蛇"/>
+    <npc sn="6034" spc="1" url="/gres/npc/npc5050-v9.9200.swf" name="蛟龙"/>
+    <npc sn="6035" spc="1" url="/gres/npc/npc4078-v9.9200.swf" name="酒仙"/>
+    <npc sn="6036" url="/gres/npc/npc5070-v9.9200.swf" name="圣斗士"/>
+    <npc sn="6037" url="/gres/npc/npc4080-v9.9200.swf" name="斗战神"/>
+    <npc sn="6038" show="1" url="/gres/npc/npc5089-v9.9200.swf" name="斗战天尊"/>
+    <npc sn="6039" spc="1" url="/gres/npc/npc5098-v9.9200.swf" name="骷髅企鹅"/>
+    <npc sn="6040" spc="1" url="/gres/npc/npc5100-v9.9200.swf" name="白银圣斗士"/>
+    <npc sn="6041" spc="1" url="/gres/npc/npc5032-v9.9200.swf" name="骷髅"/>
+    <npc sn="6042" spc="1" url="/gres/npc/npc5030-v9.9200.swf" name="夜叉"/>
+    <npc sn="6043" spc="1" url="/gres/npc/npc5036-v9.9200.swf" name="僵尸"/>
+    <npc sn="6044" spc="1" url="/gres/npc/npc5040-v9.9200.swf" name="马面"/>
+    <npc sn="6045" spc="1" url="/gres/npc/npc5034-v9.9200.swf" name="野鬼"/>
+    <npc sn="6046" spc="1" url="/gres/npc/npc5038-v9.9200.swf" name="牛头"/>
+    <npc sn="6047" spc="1" url="/gres/npc/npc5072-v9.9200.swf" name="蝎"/>
+    <npc sn="6048" spc="1" url="/gres/npc/npc5064-v9.9200.swf" name="嗜血魔王"/>
+    <npc sn="6049" spc="1" url="/gres/npc/npc5014-v9.9200.swf" name="狐狸精"/>
+    <npc sn="6050" spc="1" url="/gres/npc/npc5152-v9.9200.swf" name="九尾狐"/>
+    <npc sn="6051" spc="1" url="/gres/npc/npc5154-v9.9200.swf" name="麒麟"/>
+    <npc sn="6052" spc="1" url="/gres/npc/npc4076-v9.9200.swf" name="麒麟"/>
+    <npc sn="6053" spc="1" url="/gres/npc/npc5054-v9.9200.swf" name="天兵"/>
+    <npc sn="6054" spc="1" url="/gres/npc/npc5056-v9.9200.swf" name="天将"/>
+    <npc sn="6055" spc="1" url="/gres/npc/npc4078-v9.9200.swf" name="酒仙"/>
+    <npc sn="6056" url="/gres/npc/npc5070-v9.9200.swf" name="圣斗士"/>
+    <npc sn="6057" url="/gres/npc/npc4080-v9.9200.swf" name="斗战神"/>
+    <npc sn="6058" show="1" url="/gres/npc/npc5089-v9.9200.swf" name="斗战天尊"/>
+    <npc sn="6059" spc="1" url="/gres/npc/npc5098-v9.9200.swf" name="骷髅企鹅"/>
+    <npc sn="6060" spc="1" url="/gres/npc/npc5100-v9.9200.swf" name="白银圣斗士"/>
+    <npc sn="9936" url="/gres/npc/npc9936-v9.9800.swf" name="鹅乔峰"/>
+    <npc sn="9937" url="/gres/npc/npc9937-v9.9800.swf" name="鹅晓峰"/>
+    <npc sn="95" spc="0" show="1" url="/gres/npc/npc95-v10.0400.swf" name="洛基"/>
+    <npc sn="9713" spc="1" show="0" url="/gres/npc/npc9705-v10.0500.swf" name="斧王"/>
+    <npc sn="9714" spc="1" show="0" url="/gres/npc/npc9708-v10.0500.swf" name="枪皇"/>
+    <npc sn="9715" spc="1" show="0" url="/gres/npc/npc9709-v10.0500.swf" name="剑仙"/>
+    <npc sn="9716" spc="1" show="0" url="/gres/npc/npc9710-v10.0500.swf" name="箭神"/>
+    <npc sn="9717" spc="1" show="0" url="/gres/npc/npc9707-v10.0500.swf" name="兵圣"/>
+    <npc sn="9938" url="/gres/npc/npc9938-v10.0900.swf" name="越女剑阿青"/>
+    <npc sn="9939" url="/gres/npc/npc9939-v10.1500.swf" name="风云依旧"/>
+  </npcs>
+  <sceens>
+    <sceen sn="1" url="/gres/sceen/sceen1-v3.7200.swf"/>
+    <sceen sn="2" url="/gres/sceen/sceen2-v3.7200.swf"/>
+    <sceen sn="3" url="/gres/sceen/sceen3-v3.7200.swf"/>
+    <sceen sn="4" url="/gres/sceen/sceen4-v3.7200.swf"/>
+    <sceen sn="5" url="/gres/sceen/sceen5-v3.7200.swf"/>
+    <sceen sn="6" url="/gres/sceen/sceen6-v3.7200.swf"/>
+    <sceen sn="7" url="/gres/sceen/sceen7-v3.7200.swf"/>
+    <sceen sn="8" url="/gres/sceen/sceen8-v3.7200.swf"/>
+    <sceen sn="9" url="/gres/sceen/sceen9-v3.7200.swf"/>
+    <sceen sn="10" url="/gres/sceen/sceen10-v3.2000.swf"/>
+    <sceen sn="11" url="/gres/sceen/sceen11-v3.7200.swf"/>
+    <sceen sn="12" url="/gres/sceen/sceen12-v3.7200.swf"/>
+    <sceen sn="13" url="/gres/sceen/sceen13-v3.3000.swf"/>
+    <sceen sn="14" url="/gres/sceen/sceen14-v3.4000.swf"/>
+    <sceen sn="15" url="/gres/sceen/sceen15-v3.4300.swf"/>
+    <sceen sn="16" url="/gres/sceen/sceen16-v3.4700.swf"/>
+    <sceen sn="17" url="/gres/sceen/sceen17-v3.5000.swf"/>
+    <sceen sn="18" url="/gres/sceen/sceen18-v3.7200.swf"/>
+    <sceen sn="19" url="/gres/sceen/sceen19-v3.7200.swf"/>
+    <sceen sn="20" url="/gres/sceen/sceen20-v3.7400.swf"/>
+  </sceens>
+  <mercenarys>
+    <mercenary sn="10001" url="/gres/mercenary/mercenary10001-v2.9100.swf"/>
+    <mercenary sn="10002" url="/gres/mercenary/mercenary10002-v2.9200.swf"/>
+    <mercenary sn="10003" url="/gres/mercenary/mercenary10003-v2.9500.swf"/>
+    <mercenary sn="10004" url="/gres/mercenary/mercenary10004-v2.9800.swf"/>
+    <mercenary sn="10005" url="/gres/mercenary/mercenary10005-v3.4800.swf"/>
+    <mercenary sn="10006" url="/gres/mercenary/mercenary10006-v3.1500.swf"/>
+    <mercenary sn="10007" url="/gres/mercenary/mercenary10007-v5.0400.swf"/>
+    <mercenary sn="10008" url="/gres/mercenary/mercenary10008-v3.2900.swf"/>
+    <mercenary sn="810001" url="/gres/mercenary/mercenary810001-v3.2800.swf"/>
+    <mercenary sn="810003" url="/gres/mercenary/mercenary810003-v3.2900.swf"/>
+    <mercenary sn="810002" url="/gres/mercenary/mercenary810002-v3.2900.swf"/>
+    <mercenary sn="810004" url="/gres/mercenary/mercenary810004-v3.3100.swf"/>
+    <mercenary sn="810006" url="/gres/mercenary/mercenary810006-v3.3200.swf"/>
+    <mercenary sn="810005" url="/gres/mercenary/mercenary810005-v3.4800.swf"/>
+    <mercenary sn="810007" url="/gres/mercenary/mercenary810007-v3.3500.swf"/>
+    <mercenary sn="810008" url="/gres/mercenary/mercenary810008-v3.3700.swf"/>
+    <mercenary sn="10009" url="/gres/mercenary/mercenary10009-v3.5300.swf"/>
+    <mercenary sn="810009" url="/gres/mercenary/mercenary810009-v3.5300.swf"/>
+    <mercenary sn="810010" url="/gres/mercenary/mercenary810010-v3.4900.swf"/>
+    <mercenary sn="810011" url="/gres/mercenary/mercenary810011-v3.4900.swf"/>
+    <mercenary sn="10010" url="/gres/mercenary/mercenary10010-v3.4900.swf"/>
+    <mercenary sn="10011" url="/gres/mercenary/mercenary10011-v3.4900.swf"/>
+    <mercenary sn="10012" url="/gres/mercenary/mercenary10012-v4.0800.swf"/>
+    <mercenary sn="10013" url="/gres/mercenary/mercenary10008-v4.0900.swf"/>
+    <mercenary sn="10014" url="/gres/mercenary/mercenary810001-v4.6200.swf"/>
+    <mercenary sn="10015" url="/gres/mercenary/mercenary10015-v4.6200.swf"/>
+    <mercenary sn="810016" url="/gres/mercenary/mercenary810016-v4.8300.swf"/>
+    <mercenary sn="10016" url="/gres/mercenary/mercenary10016-v4.8300.swf"/>
+    <mercenary sn="810015" url="/gres/mercenary/mercenary10015-v4.8500.swf"/>
+    <mercenary sn="810012" url="/gres/mercenary/mercenary10012-v4.8500.swf"/>
+    <mercenary sn="810013" url="/gres/mercenary/mercenary10008-v4.8500.swf"/>
+    <mercenary sn="810014" url="/gres/mercenary/mercenary810001-v4.8500.swf"/>
+    <mercenary sn="10017" url="/gres/mercenary/mercenary10017-v5.0400.swf"/>
+    <mercenary sn="810017" url="/gres/mercenary/mercenary810017-v5.0400.swf"/>
+    <mercenary sn="810018" url="/gres/mercenary/mercenary810018-v5.4100.swf"/>
+    <mercenary sn="10018" url="/gres/mercenary/mercenary10018-v5.4100.swf"/>
+    <mercenary sn="810019" url="/gres/mercenary/mercenary810019-v5.5000.swf"/>
+    <mercenary sn="10019" url="/gres/mercenary/mercenary10019-v5.5000.swf"/>
+    <mercenary sn="810020" url="/gres/mercenary/mercenary810020-v5.5400.swf"/>
+    <mercenary sn="10020" url="/gres/mercenary/mercenary10020-v5.5400.swf"/>
+    <mercenary sn="810021" url="/gres/mercenary/mercenary810021-v5.6000.swf"/>
+    <mercenary sn="10021" url="/gres/mercenary/mercenary10021-v5.6000.swf"/>
+    <mercenary sn="10022" url="/gres/mercenary/mercenary10022-v5.6800.swf"/>
+    <mercenary sn="810022" url="/gres/mercenary/mercenary810022-v5.6800.swf"/>
+    <mercenary sn="10023" url="/gres/mercenary/mercenary10023-v5.7500.swf"/>
+    <mercenary sn="810023" url="/gres/mercenary/mercenary810023-v5.7500.swf"/>
+    <mercenary sn="10024" url="/gres/mercenary/mercenary10024-v6.1600.swf"/>
+    <mercenary sn="810024" url="/gres/mercenary/mercenary810024-v5.8800.swf"/>
+    <mercenary sn="10025" url="/gres/mercenary/mercenary10025-v6.1600.swf"/>
+    <mercenary sn="810025" url="/gres/mercenary/mercenary810025-v6.1600.swf"/>
+    <mercenary sn="10026" url="/gres/mercenary/mercenary10026-v6.6500.swf"/>
+    <mercenary sn="810026" url="/gres/mercenary/mercenary810026-v6.6500.swf"/>
+    <mercenary sn="10027" url="/gres/mercenary/mercenary10027-v6.8900.swf"/>
+    <mercenary sn="810027" url="/gres/mercenary/mercenary810027-v6.8900.swf"/>
+    <mercenary sn="10028" url="/gres/mercenary/mercenary10028-v7.0500.swf"/>
+    <mercenary sn="810028" url="/gres/mercenary/mercenary810028-v7.0500.swf"/>
+    <mercenary sn="10029" url="/gres/mercenary/mercenary10029-v7.1900.swf"/>
+    <mercenary sn="810029" url="/gres/mercenary/mercenary810029-v7.1900.swf"/>
+    <mercenary sn="10030" url="/gres/mercenary/mercenary10030-v7.4100.swf"/>
+    <mercenary sn="810030" url="/gres/mercenary/mercenary810030-v7.4100.swf"/>
+    <mercenary sn="10031" url="/gres/mercenary/mercenary10031-v7.5400.swf"/>
+    <mercenary sn="810031" url="/gres/mercenary/mercenary810031-v7.5400.swf"/>
+    <mercenary sn="10032" url="/gres/mercenary/mercenary10032-v7.7300.swf"/>
+    <mercenary sn="810032" url="/gres/mercenary/mercenary810032-v7.7300.swf"/>
+    <mercenary sn="10033" url="/gres/mercenary/mercenary10033-v7.9100.swf"/>
+    <mercenary sn="810033" url="/gres/mercenary/mercenary810033-v7.9100.swf"/>
+    <mercenary sn="10034" url="/gres/mercenary/mercenary10034-v8.0800.swf"/>
+    <mercenary sn="810034" url="/gres/mercenary/mercenary810034-v8.0800.swf"/>
+    <mercenary sn="10035" url="/gres/mercenary/mercenary10035-v8.1200.swf"/>
+    <mercenary sn="810035" url="/gres/mercenary/mercenary810035-v8.1200.swf"/>
+    <mercenary sn="10036" url="/gres/mercenary/mercenary10036-v8.2500.swf"/>
+    <mercenary sn="810036" url="/gres/mercenary/mercenary810036-v8.2500.swf"/>
+    <mercenary sn="10037" url="/gres/mercenary/mercenary10037-v8.6000.swf"/>
+    <mercenary sn="810037" url="/gres/mercenary/mercenary810037-v8.6000.swf"/>
+    <mercenary sn="10038" url="/gres/mercenary/mercenary10038-v8.7700.swf"/>
+    <mercenary sn="810038" url="/gres/mercenary/mercenary810038-v8.7700.swf"/>
+    <mercenary sn="10039" url="/gres/mercenary/mercenary10039-v9.1100.swf"/>
+    <mercenary sn="810039" url="/gres/mercenary/mercenary810039-v9.1100.swf"/>
+    <mercenary sn="10040" url="/gres/mercenary/mercenary10040-v9.5100.swf"/>
+    <mercenary sn="810040" url="/gres/mercenary/mercenary810040-v9.5100.swf"/>
+    <mercenary sn="10041" url="/gres/mercenary/mercenary10041-v9.5100.swf"/>
+    <mercenary sn="810041" url="/gres/mercenary/mercenary810041-v9.5100.swf"/>
+    <mercenary sn="10043" url="/gres/mercenary/mercenary10043-v10.0800.swf"/>
+    <mercenary sn="810043" url="/gres/mercenary/mercenary810043-v9.9500.swf"/>
+    <mercenary sn="10044" url="/gres/mercenary/mercenary10044-v10.1100.swf"/>
+    <mercenary sn="810044" url="/gres/mercenary/mercenary810044-v10.1100.swf"/>
+  </mercenarys>
+  <duorenpve url="/gres/pve-v5.0800.swf" code="1"/>
+  <cityfractionwars url="/gres/cityfractionwars-v5.0800.swf" code="1"/>
+  <citybg>
+    <bg sn="1" url="/gres/bg/citybg1-v5.4800.swf"/>
+    <bg sn="2" url="/gres/bg/citybg2-v3.4900.swf"/>
+  </citybg>
+  <teach url="/gres/teach-v3.1300.xml"/>
+  <freshmanguide url="/gres/freshmanguide-v3.1400.swf"/>
+  <jingmai url="/gres/jingmai-v5.2000.swf" code="1"/>
+  <chongzhi url="/gres/chongzhi-v7.1600.swf" code="1"/>
+  <growthfund url="/gres/growthfund-v7.1800.swf" code="1"/>
+  <makelunch url="/gres/makelunch-v3.3100.swf"/>
+  <xuyuan url="/gres/xuyuan-v5.0800.swf" code="1"/>
+  <cooking url="/gres/makelunch-v5.0800.swf" code="1"/>
+  <activehall url="/gres/activehall-v9.6500.swf" code="1"/>
+  <shangxiang url="/gres/shangxiang-v5.0800.swf" code="1"/>
+  <ledoubank url="/gres/ledoubank-v10.1600.swf" code="1"/>
+  <xmls url="/gres/xmls-v10.1700.swf" code="0"/>
+  <organization url="/gres/organizationpray-v5.6900.swf" code="1"/>
+  <huiyuan url="/gres/huiyuan-v5.0800.swf" code="1"/>
+  <ranklist url="/gres/ranklist-v5.0800.swf" code="1"/>
+  <sevendaygift url="/gres/sevendaygift-v7.1800.swf" code="1"/>
+  <leitai url="/gres/leitai-v5.0800.swf" code="1"/>
+  <leitaiitem>
+    <item sn="2" url="/gres/leitai/2-v3.4200.swf"/>
+    <item sn="3" url="/gres/leitai/3-v3.4200.swf"/>
+    <item sn="4" url="/gres/leitai/4-v3.4200.swf"/>
+    <item sn="5" url="/gres/leitai/5-v3.4200.swf"/>
+    <item sn="6" url="/gres/leitai/6-v3.4200.swf"/>
+    <item sn="7" url="/gres/leitai/7-v3.4200.swf"/>
+    <item sn="9" url="/gres/leitai/9-v3.4200.swf"/>
+    <item sn="11" url="/gres/leitai/11-v3.4200.swf"/>
+    <item sn="21" url="/gres/leitai/21-v3.4200.swf"/>
+    <item sn="23" url="/gres/leitai/23-v3.4200.swf"/>
+    <item sn="gg" url="/gres/leitai/gg-v3.4200.swf"/>
+    <item sn="mm" url="/gres/leitai/mm-v3.4200.swf"/>
+    <item sn="stone" url="/gres/leitai/stone-v3.4200.swf"/>
+  </leitaiitem>
+  <notice url="/gres/notice-v5.0800.swf" code="1"/>
+  <mine url="/gres/mine-v9.5400.swf" code="1"/>
+  <stronger url="/gres/stronger-v5.0800.swf" code="1"/>
+  <egg url="/gres/egg-v5.0800.swf" code="1"/>
+  <cool url="/gres/cool-v5.0800.swf" code="1"/>
+  <qixi url="/gres/qixi-v5.0800.swf" code="1"/>
+  <freshmanupup url="/gres/freshmanupup-v5.0800.swf" code="1"/>
+  <weaponguess url="/gres/weaponguess-v5.0800.swf" code="1"/>
+  <wenwu url="/gres/wenwu-v5.0800.swf" code="1"/>
+  <exchange url="/gres/exchange-v5.0800.swf" code="1"/>
+  <chongzhidou url="/gres/chongzhidou-v5.0800.swf" code="1"/>
+  <halloween url="/gres/halloween-v6.6300.swf" code="1"/>
+  <zhuzhen url="/gres/zhuzhen-v10.0800.swf" code="1"/>
+  <zhuzhenxml url="/gres/zhuzhen-v9.9500.xml" code="1"/>
+  <card url="/gres/card-v5.0800.swf" code="1"/>
+  <fiveelements url="/gres/fiveelements-v5.3000.swf" code="1"/>
+  <seektreasure url="/gres/seektreasure-v5.0800.swf" code="1"/>
+  <duobao url="/gres/duobao-v5.0800.swf" code="1"/>
+  <zhulu url="/gres/dianfeng-v5.0800.swf" code="1"/>
+  <tnt url="/gres/TNT-v5.0800.swf" code="1"/>
+  <qyouji url="/gres/qyouji-v5.0800.swf" code="1"/>
+  <christmas url="/gres/christmas-v5.1700.swf" code="1"/>
+  <limitime url="/gres/limitime-v5.0800.swf" code="1"/>
+  <newyeargift url="/gres/newyeargift-v5.0800.swf" code="1"/>
+  <mercenary url="/gres/mercenary-v8.7400.swf" code="1"/>
+  <adventure url="/gres/damaoxian-v5.1300.swf" code="1"/>
+  <stonegift url="/gres/stonegift-v5.0800.swf" code="1"/>
+  <mercenarygift url="/gres/mercenarygift-v5.0800.swf" code="1"/>
+  <hongbao url="/gres/hongbao-v5.0800.swf" code="1"/>
+  <ai url="/gres/AI-v5.0800.swf" code="1"/>
+  <qqgame url="/gres/qqgame-v5.0800.swf" code="1"/>
+  <bainianjika url="/gres/bainianjika-v5.0800.swf" code="1"/>
+  <signactive url="/gres/signactive-v5.5300.swf" code="1"/>
+  <invitegift url="/gres/invitegift-v9.6200.swf" code="1"/>
+  <tnt2 url="/gres/tnt2-v5.0800.swf" code="1"/>
+  <weibo url="/gres/weibo-v5.0800.swf" code="1"/>
+  <yuanxiao url="/gres/yuanxiao-v9.8900.swf" code="1"/>
+  <protect url="/gres/protect-v5.7300.swf" code="1"/>
+  <zone url="/gres/zone-v5.0800.swf" code="1"/>
+  <chat url="/gres/chat-v5.0800.swf" code="1"/>
+  <neili url="/gres/neili-v5.0800.swf" code="1"/>
+  <surprisecard url="/gres/surprisecard-v5.0800.swf" code="1"/>
+  <reminder url="/gres/reminder-v5.0800.swf" code="1"/>
+  <weiduan url="/gres/weiduan-v5.0800.swf" code="1"/>
+  <clock url="/gres/clock-v7.2500.swf" code="1"/>
+  <fristcharge url="/gres/fristcharge-v9.8700.swf" code="1"/>
+  <bestfaction url="/gres/bestfaction-v5.0800.swf" code="1"/>
+  <pve url="/gres/pvesys-v5.0704.swf">
+    <item sn="1" name="config" url="/gres/PVEXML-v4.7900.xml"/>
+    <item sn="2" name="map" url="/gres/PVEMap-v8.6400.xml"/>
+    <item sn="3" name="change" url="/gres/PVEChange-v7.5100.xml"/>
+  </pve>
+  <treasure url="/gres/treasure-v5.0800.swf" code="1"/>
+  <tnthezuo url="/gres/tnthezuo-v5.0800.swf" code="1"/>
+  <luokehezuo url="/gres/luokehezuo-v5.0800.swf" code="1"/>
+  <shuihuhezuo url="/gres/shuihuhezuo-v5.4000.swf" code="1"/>
+  <freshmanwelfare url="/gres/freshmanwelfare-v5.0800.swf" code="1"/>
+  <luckybox url="/gres/luckybox-v5.0800.swf" code="1"/>
+  <fanli url="/gres/fanli-v5.0800.swf" code="1"/>
+  <taskqb url="/gres/taskqb-v5.0800.swf" code="1"/>
+  <qblibao url="/gres/QBlibao-v5.0800.swf" code="1"/>
+  <dazhuanpan url="/gres/dazhuanpan-v8.6200.swf" code="1"/>
+  <balance url="/gres/balance-v5.3400.swf" code="1"/>
+  <guacardone url="/gres/guacardone-v5.0800.swf" code="1"/>
+  <fouryeargift url="/gres/fouryeargift-v5.0800.swf" code="1"/>
+  <partener url="/gres/partener-v5.2800.swf" code="1"/>
+  <qqgamegift url="/gres/qqgamegift-v5.0800.swf" code="1"/>
+  <baozipu url="/gres/baozipu-v7.1800.swf" code="1"/>
+  <baojian url="/gres/baojian-v8.9800.swf" code="1"/>
+  <qqgamegift2 url="/gres/QQGAMEgift2-v5.0800.swf" code="1"/>
+  <tntbag url="/gres/tntbag-v5.0800.swf" code="1"/>
+  <yabiao url="/gres/yabiao-v5.0800.swf" code="1"/>
+  <jingjichang url="/gres/jingjichang-v5.5600.swf" code="1"/>
+  <shenzhuang url="/gres/shenzhuang-v9.6200.swf" code="1"/>
+  <shenzhuangxml url="/gres/shenzhuang-v4.2800.xml" code="1"/>
+  <tiguan url="/gres/tiguan-v9.0200.swf" code="1"/>
+  <laohuji url="/gres/laohuji-v5.0800.swf" code="1"/>
+  <longzhu url="/gres/qilongzhu-v5.1300.swf" code="1"/>
+  <liangcao url="/gres/liangcao-v7.4300.swf" code="1"/>
+  <baoxiang url="/gres/dabaoxiang-v5.0800.swf" code="1"/>
+  <kuangdong url="/gres/kuangdong-v5.0800.swf" code="1"/>
+  <doudoucard url="/gres/doudoucard-v5.0800.swf" code="1"/>
+  <pray url="/gres/pray-v5.0800.swf" code="1"/>
+  <exchangstore url="/gres/exchangestore-v9.0200.xml" code="1"/>
+  <shangxiangqin url="/gres/shangxiang2-v5.0800.swf" code="1"/>
+  <fengkuanglianmeng url="/gres/fengkuanglianmeng-v5.0800.swf" code="1"/>
+  <zhuanjing url="/gres/zhuanjing-v5.0800.swf" code="1"/>
+  <loadingSWF2 url="/gres/loadingSWC-v4.3500.swf"/>
+  <subpanel url="/gres/SubPanel-v6.4500.swf" code="0"/>
+  <menpai url="/gres/menpai-v5.0800.swf" code="1"/>
+  <dianlazhu url="/gres/dianlazhu-v5.0800.swf" code="1"/>
+  <summerfight url="/gres/summerfight-v8.6900.swf" code="1"/>
+  <binfa url="/gres/binfa-v5.0800.swf" code="1"/>
+  <run url="/gres/running-v5.0800.swf" code="1"/>
+  <xiguatan url="/gres/xiguatan-v8.6200.swf" code="1"/>
+  <medal url="/gres/huizhangguan-v10.0700.swf" code="1"/>
+  <shack url="/gres/shack-v5.0800.swf" code="1"/>
+  <tree url="/gres/tree-v9.2800.swf" code="1"/>
+  <tanbao url="/gres/tanbao-v5.0800.swf" code="1"/>
+  <soaring url="/gres/soaring-v10.1200.swf" code="1"/>
+  <factiongift url="/gres/factiongift-v7.4700.swf" code="1"/>
+  <baoku url="/gres/baoku-v7.1800.swf" code="1"/>
+  <piaomiao url="/gres/piaomiao-v5.7400.swf" code="1"/>
+  <piaomiaoxml url="/gres/piaomiao-v5.7400.xml" code="1"/>
+  <qiangqb url="/gres/qiangqb-v8.6000.swf" code="1"/>
+  <chargegift url="/gres/chargegift-v5.0800.swf" code="1"/>
+  <mingke url="/gres/minke-v9.6800.swf" code="1"/>
+  <mingrenbang url="/gres/mingrenbang-v7.1600.swf" code="1"/>
+  <limitZhuanPan url="/gres/limitZhuanPan-v7.2200.swf" code="1"/>
+  <scrollpic url="/gres/scrollpic-v5.0800.swf" code="1"/>
+  <activecard url="/gres/activecard-v5.0800.swf" code="1"/>
+  <greatuin url="/gres/greatuin-v5.0800.swf" code="1"/>
+  <fool url="/gres/fool-v9.9400.swf" code="1"/>
+  <everydaygift url="/gres/everydaygift-v5.3400.swf" code="1"/>
+  <menpaisystem url="/gres/menpaisystem-v5.2100.swf" code="1"/>
+  <MenpaisysXML url="/gres/MenpaisysXML-v5.0900.xml" code="1"/>
+  <menpaixinfa url="/gres/menpaixinfa-v5.0900.swf" code="1"/>
+  <menpaiweapon url="/gres/menpaiweapon-v5.0900.swf" code="1"/>
+  <u url="/gres/menpaiweapon-v4.8800.swf"/>
+  <eggPanel url="/gres/eggPanel-v5.0800.swf" code="1"/>
+  <guesssd url="/gres/guessds-v5.0800.swf" code="1"/>
+  <menpaitournament url="/gres/menpaitournament-v5.0900.swf" code="1"/>
+  <bangpaialtar url="/gres/bangpaialtar-v7.4300.swf" code="1"/>
+  <skillaoyi url="/gres/skillaoyi-v9.6600.swf" code="1"/>
+  <danzhu code="1" url="/gres/danzhu-v5.1200.swf"/>
+  <firstpay code="1" url="/gres/firstpay-v7.1800.swf"/>
+  <mustdone code="1" url="/gres/mustdone-v5.1400.swf"/>
+  <liumen code="1" url="/gres/liumenhuiwu-v5.2700.swf"/>
+  <jubaopen code="1" url="/gres/jubaopen-v5.2000.swf"/>
+  <cardOfYear code="1" url="/gres/cardOfYear-v5.2000.swf"/>
+  <yuanying code="1" url="/gres/yuanying-v9.0600.swf"/>
+  <chunwan code="1" url="/gres/chunwan-v5.2300.swf"/>
+  <chunjiegift code="1" url="/gres/chunjiegift-v5.2300.swf"/>
+  <flowerfind code="1" url="/gres/flowerfind-v5.2800.swf"/>
+  <siling code="1" url="/gres/silingjitan-v5.6700.swf"/>
+  <shenmolu code="1" url="/gres/shenmolu-v9.2800.swf"/>
+  <huaguoshan code="1" url="/gres/huaguoshan-v7.7200.swf"/>
+  <wending code="1" url="/gres/wending-v5.4200.swf"/>
+  <fuyuan code="1" url="/gres/fuyuan-v9.6500.swf"/>
+  <princebless code="1" url="/gres/princebless-v5.3900.swf"/>
+  <baiyidouquan code="1" url="/gres/baiyidouquan-v5.4000.swf"/>
+  <baodian code="1" url="/gres/baodian-v5.4000.swf"/>
+  <timemachine code="1" url="/gres/timemachine-v5.4000.swf"/>
+  <sevenyeargift code="1" url="/gres/7yearsgift-v5.4000.swf"/>
+  <dreamtrue code="1" url="/gres/dreamtrue-v5.4100.swf"/>
+  <dreamtrip code="1" url="/gres/dreamtrip-v5.4700.swf"/>
+  <xieshen code="1" url="/gres/xieshen-v9.6600.swf"/>
+  <bangpaishanghui code="1" url="/gres/bangpaishanghui-v8.7300.swf"/>
+  <bangpaigift code="1" url="/gres/bangpaigift-v7.1800.swf"/>
+  <newmercenary code="1" url="/gres/newmercenary-v10.0800.swf"/>
+  <tongxinjie code="1" url="/gres/tongxinjie-v10.1400.swf"/>
+  <mercenarystore code="1" url="/gres/mercenarystore-v10.1100.swf"/>
+  <shenmolottery code="1" url="/gres/shenmolottery-v6.4800.swf"/>
+  <quanminduobao code="1" url="/gres/quanminduobao-v5.7400.swf"/>
+  <lanzuan code="1" url="/gres/lanzuan-v5.6600.swf"/>
+  <chrismasgift code="1" url="/gres/chrismasgiftwf-v5.6800.swf"/>
+  <friendscallback code="1" url="/gres/friendscallback-v9.8700.swf"/>
+  <chrismasseven code="1" url="/gres/chrismasseven-v5.6800.swf"/>
+  <consumgift code="1" url="/gres/consumgift-v5.7000.swf"/>
+  <shenmobless code="1" url="/gres/shenmobless-v6.1300.swf"/>
+  <activitygift code="1" url="/gres/activitygift-v5.7000.swf"/>
+  <shenjiangfang code="1" url="/gres/shenjiangfang-v9.6800.swf"/>
+  <baoxiangshilian code="1" url="/gres/baoxiangshilian-v6.6800.swf"/>
+  <dogcardofyear code="1" url="/gres/dogcardOfYear-v9.3600.swf"/>
+  <yuanzhengjun code="1" url="/gres/yuanzhengjun-v5.7500.swf"/>
+  <qbstore code="1" url="/gres/QBstore-v7.1600.swf"/>
+  <zhencang code="1" url="/gres/yuanzhenjunzhencang-v5.7300.swf"/>
+  <lefantian code="1" url="/gres/xinchunlefantian-v9.9800.swf"/>
+  <xinniansongfu code="1" url="/gres/xinniansongzhufu-v6.7600.swf"/>
+  <yinxingift code="1" url="/gres/yinxingift-v9.8100.swf"/>
+  <xinnianfudan code="1" url="/gres/nianshoufudan-v9.8100.swf"/>
+  <leijidenglu code="1" url="/gres/leijidenglu-v9.8800.swf"/>
+  <dogfight code="1" url="/gres/dogfight-v5.7500.swf"/>
+  <newfanli code="1" url="/gres/newfanli-v5.7900.swf"/>
+  <newyuanying code="1" url="/gres/newyuanying-v7.6300.swf"/>
+  <juexingshengdian code="1" url="/gres/juexingshengdiang-v6.2300.swf"/>
+  <yurenjie code="1" url="/gres/yurenjie-v5.8100.swf"/>
+  <zhaocaiwu code="1" url="/gres/zhaocaiwu-v7.1800.swf"/>
+  <priencebag code="1" url="/gres/priencebag-v9.6400.swf"/>
+  <nengliangbang code="1" url="/gres/nengliangbang-v7.6900.swf"/>
+  <qingmingshangxiang code="1" url="/gres/qingmingshangxiang-v6.3300.swf"/>
+  <luckegg code="1" url="/gres/luckegg-v9.1400.swf"/>
+  <minkebless code="1" url="/gres/mingkebless-v6.1200.swf"/>
+  <workday code="1" url="/gres/workday-v6.8900.swf"/>
+  <wuyichongzhi code="1" url="/gres/wuyichongzhi-v5.8500.swf"/>
+  <spzhuzhen code="1" url="/gres/newspzhuzhen-v6.1500.swf"/>
+  <huanjinliansai code="1" url="/gres/huanjinliansai-v6.0200.swf"/>
+  <eightyeardata code="1" url="/gres/eightyeardata-v5.8900.swf"/>
+  <eightyearprehot code="1" url="/gres/eightyearprehot-v10.0200.swf"/>
+  <douji code="1" url="/gres/douji-v6.0200.swf"/>
+  <sceneskill code="1" url="/gres/sceneskill-v6.8200.swf"/>
+  <eightyearfanli code="1" url="/gres/eightyearfanli-v6.7200.swf"/>
+  <doudoustore code="1" url="/gres/doudoustore-v6.6600.swf"/>
+  <eightyearknuanghuan code="1" url="/gres/eightyearknuanghuan-v10.0400.swf"/>
+  <shenqizhinan code="1" url="/gres/shenqizhinan-v5.9100.swf"/>
+  <duanwujie code="1" url="/gres/duanwujie-v10.0500.swf"/>
+  <newbangpaiqifu code="1" url="/gres/newbangpaiqifu-v9.5400.swf"/>
+  <jiawawa code="1" url="/gres/jiawawa-v6.6600.swf"/>
+  <xilian code="1" url="/gres/xilian-v9.6000.swf"/>
+  <dreamcometrue code="1" url="/gres/dreamtrue2-v6.2000.swf"/>
+  <shenzhuangbless code="1" url="/gres/shenzhuanbless-v6.1600.swf"/>
+  <spnpcs>
+    <spnpc sn="54" url="/gres/spnpc/spnpc54-v5.9500.swf" name="吕布"/>
+    <spnpc sn="55" url="/gres/spnpc/spnpc55-v5.9800.swf" name="熊猫"/>
+    <spnpc sn="56" url="/gres/spnpc/spnpc56-v6.0600.swf" name="帅帅"/>
+    <spnpc sn="57" url="/gres/spnpc/spnpc57-v6.0600.swf" name="菜菜"/>
+    <spnpc sn="58" url="/gres/spnpc/spnpc58-v6.0600.swf" name="剑君"/>
+    <spnpc sn="59" url="/gres/spnpc/spnpc59-v6.0600.swf" name="关羽"/>
+    <spnpc sn="60" url="/gres/spnpc/spnpc60-v6.0600.swf" name="狮王"/>
+    <spnpc sn="61" url="/gres/spnpc/spnpc61-v6.1400.swf" name="雷神"/>
+    <spnpc sn="62" url="/gres/spnpc/spnpc62-v6.1400.swf" name="海王"/>
+    <spnpc sn="63" url="/gres/spnpc/spnpc63-v6.3600.swf" name="灭世"/>
+    <spnpc sn="64" url="/gres/spnpc/spnpc64-v6.4200.swf" name="女帝"/>
+    <spnpc sn="65" url="/gres/spnpc/spnpc65-v6.4200.swf" name="盘古"/>
+    <spnpc sn="67" url="/gres/spnpc/spnpc67-v6.5300.swf" name="死神"/>
+    <spnpc sn="66" url="/gres/spnpc/spnpc66-v6.5900.swf" name="机甲"/>
+    <spnpc sn="68" url="/gres/spnpc/spnpc68-v6.6600.swf" name="死骑"/>
+    <spnpc sn="70" url="/gres/spnpc/spnpc70-v6.7600.swf" name="哪吒"/>
+    <spnpc sn="71" url="/gres/spnpc/spnpc71-v6.7600.swf" name="姜子牙"/>
+    <spnpc sn="72" url="/gres/spnpc/spnpc72-v6.8000.swf" name="项羽"/>
+    <spnpc sn="73" url="/gres/spnpc/spnpc73-v6.8500.swf" name="刘邦"/>
+    <spnpc sn="74" url="/gres/spnpc/spnpc74-v6.9400.swf" name="杨玉环"/>
+    <spnpc sn="75" url="/gres/spnpc/spnpc75-v7.0100.swf" name="李白"/>
+    <spnpc sn="76" url="/gres/spnpc/spnpc76-v7.1100.swf" name="小丑"/>
+    <spnpc sn="77" url="/gres/spnpc/spnpc77-v7.2400.swf" name="炫炫"/>
+    <spnpc sn="78" url="/gres/spnpc/spnpc78-v7.3600.swf" name="樱木"/>
+    <spnpc sn="79" url="/gres/spnpc/spnpc79-v7.4600.swf" name="纣王"/>
+    <spnpc sn="80" url="/gres/spnpc/spnpc80-v7.6500.swf" name="嬴政"/>
+    <spnpc sn="81" url="/gres/spnpc/spnpc81-v7.8400.swf" name="鹅卡西"/>
+    <spnpc sn="82" url="/gres/spnpc/spnpc82-v7.9500.swf" name="红莲"/>
+    <spnpc sn="83" url="/gres/spnpc/spnpc83-v8.0000.swf" name="猎魔人"/>
+    <spnpc sn="84" url="/gres/spnpc/spnpc84-v8.1800.swf" name="光明圣骑士"/>
+    <spnpc sn="85" url="/gres/spnpc/spnpc85-v8.3200.swf" name="新春游侠"/>
+    <spnpc sn="86" url="/gres/spnpc/spnpc86-v8.4100.swf" name="可乐游侠"/>
+    <spnpc sn="87" url="/gres/spnpc/spnpc87-v8.4700.swf" name="雀星宿"/>
+    <spnpc sn="88" url="/gres/spnpc/spnpc88-v8.6400.swf" name="天蓬元帅"/>
+    <spnpc sn="89" url="/gres/spnpc/spnpc89-v8.8200.swf" name="周"/>
+    <spnpc sn="90" url="/gres/spnpc/spnpc90-v8.9600.swf" name="虚日鼠"/>
+    <spnpc sn="91" url="/gres/spnpc/spnpc91-v9.5900.swf" name="奥丁"/>
+    <spnpc sn="92" url="/gres/spnpc/spnpc92-v9.4800.swf" name="燕人张飞"/>
+    <spnpc sn="93" url="/gres/spnpc/spnpc93-v9.6400.swf" name="郭靖"/>
+    <spnpc sn="94" url="/gres/spnpc/spnpc94-v9.8700.swf" name="爆风9C"/>
+    <spnpc sn="95" url="/gres/spnpc/spnpc95-v10.0400.swf" name="洛基"/>
+  </spnpcs>
+  <percentfanli code="1" url="/gres/percentfanli-v5.9700.swf"/>
+  <jiqingcuxiao code="1" url="/gres/jiqingcuxiao-v8.6000.swf"/>
+  <freshgift code="1" url="/gres/freshgift-v6.5000.swf"/>
+  <pandagift code="1" url="/gres/pandagift-v5.9800.swf"/>
+  <VIPbag code="1" url="/gres/VIPbag-v7.6800.swf"/>
+  <zhekoudian code="1" url="/gres/zhekoudian-v9.6400.swf"/>
+  <qixinew code="1" url="/gres/qixinew-v9.1300.swf"/>
+  <yudinggift code="1" url="/gres/yudinggift-v8.9900.swf"/>
+  <fanlitwo code="1" url="/gres/fanlitwo-v6.0000.swf"/>
+  <kaixueji code="1" url="/gres/kaixueji-v10.1500.swf"/>
+  <chongnenggift code="1" url="/gres/chongnenggift-v6.0300.swf"/>
+  <doujibless code="1" url="/gres/doujibless-v6.1600.swf"/>
+  <sendtask code="1" url="/gres/sendtask-v10.0800.swf"/>
+  <huangjinfuwa code="1" url="/gres/huangjinfuwa-v6.2900.swf"/>
+  <shenjianglu code="1" url="/gres/shenjianglu-v10.0400.swf"/>
+  <zhongqiujie code="1" url="/gres/zhongqiujie-v9.6900.swf"/>
+  <guoqingstore code="1" url="/gres/guoqingstore-v8.6900.swf"/>
+  <shenjiangduobao code="1" url="/gres/shenjiangduobao-v6.1300.swf"/>
+  <guoqingxianshi code="1" url="/gres/guoqingxianshi-v6.0700.swf"/>
+  <guoqingqingdian code="1" url="/gres/guoqingqingdian-v6.0700.swf"/>
+  <xicongtianjiang code="1" url="/gres/xicongtianjiang-v9.8800.swf"/>
+  <guoqinggiftswf code="1" url="/gres/guoqinggiftswf-v6.0700.swf"/>
+  <goldweek code="1" url="/gres/goldweek-v6.0700.swf"/>
+  <tuanduifuli code="1" url="/gres/tuanduifuli-v6.1000.swf"/>
+  <tulongzhibao code="1" url="/gres/tulongzhibao-v6.1000.swf"/>
+  <pandasongfu code="1" url="/gres/pandasongfu-v6.6400.swf"/>
+  <shuangshiyi code="1" url="/gres/shuangshiyi-v7.1600.swf"/>
+  <jinyong code="1" url="/gres/jinyong-v9.9400.swf"/>
+  <leishenchongzhi code="1" url="/gres/leishenchongzhi-v6.4900.swf"/>
+  <limitblessgift code="1" url="/gres/limitblessgift-v10.1400.swf"/>
+  <shenjiangduonew code="1" url="/gres/shenjiangduonew-v10.1700.swf"/>
+  <shuajiesign code="1" url="/gres/shuajiesign-v9.8100.swf"/>
+  <lianliankan code="1" url="/gres/lianliankan-v9.8300.swf"/>
+  <christmasbaodian code="1" url="/gres/chrismasbaodian-v7.2300.swf"/>
+  <newyearfeedback code="1" url="/gres/newyearfeedback-v6.2100.swf"/>
+  <wulinmengzhu code="1" url="/gres/wulinmengzhu-v6.3100.swf"/>
+  <shenjiangfudai code="1" url="/gres/shenjiangfudai-v6.2100.swf"/>
+  <oneqb code="1" url="/gres/oneqb-v9.5200.swf"/>
+  <christgoodgift code="1" url="/gres/christgoodgift-v6.2200.swf"/>
+  <newyeargiftbag code="1" url="/gres/newyeargiftbag-v7.8200.swf"/>
+  <newyearfanli code="1" url="/gres/newyearfanli-v6.2400.swf"/>
+  <chunlianhuodong code="1" url="/gres/chunlianhuodong-v9.8700.swf"/>
+  <xinchunbainian code="1" url="/gres/xinchunbainian-v9.8700.swf"/>
+  <huoyingyinliu code="1" url="/gres/huoyingyinliu-v6.2800.swf"/>
+  <wanderpenguin code="1" url="/gres/wanderpenguin-v6.3200.swf"/>
+  <avengergift code="1" url="/gres/avengergift-v6.3500.swf"/>
+  <deathincoming code="1" url="/gres/deathincoming-v6.3600.swf"/>
+  <supremetreasure code="1" url="/gres/supremetreasure-v9.6400.swf"/>
+  <wholefight code="1" url="/gres/wholefight-v6.4700.swf"/>
+  <mercenarygiftnew code="1" url="/gres/mercenarygiftnew-v9.7700.swf"/>
+  <surprisecardnew code="1" url="/gres/surprisecardnew-v9.6300.swf"/>
+  <limitgift code="1" url="/gres/limitgift-v9.8500.swf"/>
+  <nineyearqb code="1" url="/gres/nineyearqb-v10.0200.swf"/>
+  <nineyearfanli code="1" url="/gres/nineyearfanli-v6.4200.swf"/>
+  <nineyeartour code="1" url="/gres/nineyeartour-v6.4200.swf"/>
+  <emperoredict code="1" url="/gres/emperoredict-v6.4300.swf"/>
+  <rankact code="1" url="/gres/rankact-v9.8700.swf"/>
+  <azraelcomming code="1" url="/gres/azraelcomming-v6.5300.swf"/>
+  <warriorinn code="1" url="/gres/warriorinn-v10.1400.swf"/>
+  <warriorhostel code="1" url="/gres/warriorhostel-v10.1400.swf"/>
+  <haojiebaoxiang code="1" url="/gres/haojiebaoxiang-v7.1700.swf"/>
+  <longwaybless code="1" url="/gres/longwaybless-v10.1400.swf"/>
+  <transformer code="1" url="/gres/transformer-v6.5900.swf"/>
+  <warriortour code="1" url="/gres/warriortour-v10.0400.swf"/>
+  <inntongfu code="1" url="/gres/inntongfu-v9.6700.swf"/>
+  <action_gg2 code="1" url="/gres/action_gg2-v10.1400.swf"/>
+  <action_mm2 code="1" url="/gres/action_mm2-v10.1400.swf"/>
+  <godcard code="1" url="/gres/godcard-v9.8300.swf"/>
+  <limitgift11 code="1" url="/gres/limitgift11-v6.6400.swf"/>
+  <deathknight code="1" url="/gres/deathknight-v6.6600.swf"/>
+  <startreasure code="1" url="/gres/startreasure-v7.1800.swf"/>
+  <chrismasgiftnew code="1" url="/gres/chrismasgiftnew-v6.7000.swf"/>
+  <alwaysloveyou code="1" url="/gres/alwaysloveyou-v6.7100.swf"/>
+  <warriorconfig code="1" url="/gres/warriorconfig-v10.1400.swf"/>
+  <battleofgods code="1" url="/gres/battleofgods-v6.7600.swf"/>
+  <fightepidemic code="1" url="/gres/fightepidemic-v6.7800.swf"/>
+  <overlordcomming code="1" url="/gres/overlordcomming-v7.5800.swf"/>
+  <simianchuge code="1" url="/gres/simianchuge-v6.8400.swf"/>
+  <emperorcomming code="1" url="/gres/emperorcomming-v6.8500.swf"/>
+  <haojiebaoxiang2 code="1" url="/gres/haojiebaoxiang2-v7.1500.swf"/>
+  <knightPVE code="1" url="/gres/knightPVE-v10.1400.swf"/>
+  <saodishenseng code="1" url="/gres/saodishenseng-v6.8900.swf"/>
+  <zhangebattle code="1" url="/gres/zhangebattle-v6.9100.swf"/>
+  <weaponseal code="1" url="/gres/weaponseal-v6.9500.swf"/>
+  <jianghutreasure code="1" url="/gres/jianghutreasure-v10.0800.swf"/>
+  <jiyuncard code="1" url="/gres/jiyuncard-v10.0500.swf"/>
+  <flourishing code="1" url="/gres/flourishing-v6.9400.swf"/>
+  <jokerbox code="1" url="/gres/jokerbox-v9.8200.swf"/>
+  <tenyeargift code="1" url="/gres/tenyeargift-v9.0600.swf"/>
+  <timespacecheer code="1" url="/gres/timespacecheer-v7.5200.swf"/>
+  <spacesword code="1" url="/gres/spacesword-v7.0100.swf"/>
+  <hgcomming code="1" url="/gres/hgcomming-v7.0500.swf"/>
+  <metalshop code="1" url="/gres/metalshop-v7.1100.swf"/>
+  <ledoupost code="1" url="/gres/ledoupost-v9.7500.swf"/>
+  <darkwarrior code="1" url="/gres/darkwarrior-v7.1100.swf"/>
+  <taibaishihui code="1" url="/gres/taibaishihui-v9.2100.swf"/>
+  <qishanfengshen code="1" url="/gres/qishanfengshen-v7.1800.swf"/>
+  <zycomming code="1" url="/gres/zycomming-v7.1900.swf"/>
+  <tenyearmofang code="1" url="/gres/tenyearmofang-v7.2300.swf"/>
+  <petmemory code="1" url="/gres/petmemory-v9.3200.swf"/>
+  <championxuan code="1" url="/gres/championxuan-v7.2400.swf"/>
+  <newweiduan code="1" url="/gres/newweiduan-v7.2600.swf"/>
+  <newyearpve code="1" url="/gres/newyearpve-v10.0500.swf"/>
+  <newinnconfig>
+    <item sn="1" name="inn" url="/gres/NewInnConfig-v8.5000.xml"/>
+  </newinnconfig>
+  <newyearfanli2021 code="1" url="/gres/newyearfanli2021-v7.2900.swf"/>
+  <newyearrankact code="1" url="/gres/newyearrankact-v10.0800.swf"/>
+  <sakuragi code="1" url="/gres/sakuragi-v7.3600.swf"/>
+  <warriorshop code="1" url="/gres/warriorshop-v9.4700.swf"/>
+  <zilongcoming code="1" url="/gres/zilongcoming-v7.4100.swf"/>
+  <xianwuxiuzhen code="1" url="/gres/xiuzhen-v9.8800.swf"/>
+  <xianxiafanli code="1" url="/gres/xianxiafanli-v7.4800.swf"/>
+  <almanac code="1" url="/gres/almanac-v7.4700.swf"/>
+  <luckyexchange code="1" url="/gres/luckyexchange-v9.2000.swf"/>
+  <monsterking code="1" url="/gres/monsterking-v7.5400.swf"/>
+  <rongyaochengjiu code="1" url="/gres/rongyaochengjiu-v7.6100.swf"/>
+  <yingzheng code="1" url="/gres/yingzheng-v7.6300.swf"/>
+  <heavenbattle code="1" url="/gres/heavenbattle-v9.9600.swf"/>
+  <bashenfanli code="1" url="/gres/bashenfanli-v7.7300.swf"/>
+  <badgewarorder code="1" url="/gres/badgewarorder-v10.1700.swf"/>
+  <addressadd code="1" url="/gres/addressadd-v7.7800.swf"/>
+  <newyearfanli2022 code="1" url="/gres/newyearfanli2022-v7.8200.swf"/>
+  <caozhifanli code="1" url="/gres/caozhifanli-v7.9100.swf"/>
+  <honglianfanli code="1" url="/gres/honglianfanli-v7.9500.swf"/>
+  <shenyuanzhichao code="1" url="/gres/shenyuanzhichao-v9.5900.swf"/>
+  <yearfanli12 code="1" url="/gres/12yearfanli-v8.5300.swf"/>
+  <shengxiaofucard code="1" url="/gres/shengxiaofucard-v8.0000.swf"/>
+  <piaomiaofanli code="1" url="/gres/piaomiaofanli-v8.0800.swf"/>
+  <shenyuanmibao code="1" url="/gres/shenyuanmibao-v8.6900.swf"/>
+  <xianjianfanli code="1" url="/gres/xianjianfanli-v8.6000.swf"/>
+  <shengqifanli code="1" url="/gres/shengqifanli-v8.1800.swf"/>
+  <ledouyouji code="1" url="/gres/ledouyouji-v8.2100.swf"/>
+  <huashanlunjian code="1" url="/gres/huashanlunjian-v10.1600.swf"/>
+  <fanli23 code="1" url="/gres/fanli23-v8.3200.swf"/>
+  <colafanli code="1" url="/gres/colafanli-v8.4100.swf"/>
+  <xingxiufanli code="1" url="/gres/xingxiufanli-v8.4700.swf"/>
+  <enchantstonexml code="1" url="/gres/EnchantStoneConfig-v10.1100.xml"/>
+  <enchantstone code="1" url="/gres/enchantstone-v10.1100.swf"/>
+  <tianpengfanli code="1" url="/gres/tianpengfanli-v8.6400.swf"/>
+  <jingfengfanli code="1" url="/gres/jingfengfanli-v8.6900.swf"/>
+  <exploremysteries code="1" url="/gres/exploremysteries-v10.0800.swf"/>
+  <yutianfanli code="1" url="/gres/yutianfanli-v8.7700.swf"/>
+  <kuanianfanli code="1" url="/gres/kuanianfanli-v8.8200.swf"/>
+  <xiakeisland code="1" url="/gres/xiakeisland-v10.1400.swf"/>
+  <xiakeislandxml code="1" url="/gres/XiakeIslandConfig-v10.0900.xml"/>
+  <fanli24 code="1" url="/gres/fanli24-v8.8700.swf"/>
+  <shufanli code="1" url="/gres/shufanli-v8.9600.swf"/>
+  <shikong code="1" url="/gres/shikong-v10.1700.swf"/>
+  <qiankunfanli code="1" url="/gres/qiankunfanli-v9.1600.swf"/>
+  <yearfanli14 code="1" url="/gres/yearfanli14-v9.0400.swf"/>
+  <huayufanli code="1" url="/gres/huayufanli-v9.1100.swf"/>
+  <shikongxml code="1" url="/gres/ShiKongShopConfig-v9.1900.xml"/>
+  <zhenhaifanli code="1" url="/gres/zhenhaifanli-v9.7200.swf"/>
+  <zhigaofanli code="1" url="/gres/zhigaofanli-v9.2700.swf"/>
+  <worldtree code="1" url="/gres/worldtree-v9.9800.swf"/>
+  <worldtreexml code="1" url="/gres/WorldtreeConfig-v9.6600.xml"/>
+  <xunjinfanli code="1" url="/gres/xunjinfanli-v9.3200.swf"/>
+  <shenianfanli code="1" url="/gres/shenianfanli-v9.3600.swf"/>
+  <longjifanli code="1" url="/gres/longjifanli-v9.4300.swf"/>
+  <springfanli code="1" url="/gres/springfanli-v9.4900.swf"/>
+  <zhangfeifanli code="1" url="/gres/zhangfeifanli-v9.4800.swf"/>
+  <dragonarea code="1" url="/gres/dragonarea-v9.7900.swf"/>
+  <dragonareaxml code="1" url="/gres/DragonareaConfig-v9.5200.xml"/>
+  <yearfanli15 code="1" url="/gres/yearfanli15-v9.5300.swf"/>
+  <choosegift code="1" url="/gres/choosegift-v9.5600.swf"/>
+  <shengongfanli code="1" url="/gres/shengongfanli-v9.6000.swf"/>
+  <guojingfanli code="1" url="/gres/guojingfanli-v9.6500.swf"/>
+  <shemaofanli code="1" url="/gres/shemaofanli-v10.1100.swf"/>
+  <haoxiazhaomufanli code="1" url="/gres/haoxiazhaomufanli-v10.1500.swf"/>
+  <enchantcard code="1" url="/gres/enchantcard-v9.8300.swf"/>
+  <bigrebate code="1" url="/gres/bigrebate-v10.0600.swf"/>
+  <horseyearcard code="1" url="/gres/horseyearcard-v9.8700.swf"/>
+  <caishendian code="1" url="/gres/caishendian-v9.8800.swf"/>
+  <wbgstore code="1" url="/gres/wbgstore-v9.9200.swf"/>
+  <rankhyfy code="1" url="/gres/rankhyfy-v9.9800.swf"/>
+  <jobsystem code="1" url="/gres/jobsystem-v10.1200.swf"/>
+</config>
