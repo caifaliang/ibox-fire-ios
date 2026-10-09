@@ -79,11 +79,7 @@ final class RuffleSchemeHandler: NSObject, WKURLSchemeHandler {
                 return
             }
         }
-        if RuffleLocalServer.shouldStubReplayAsset(lowRel) {
-            logRes("STUB heavy \(rel)")
-            finish(urlSchemeTask, url: url, data: Self.emptySwf, mime: mime(for: rel))
-            return
-        }
+        // 主路径已切饭店助手 flashreplay；scheme 兜底不再 stub 大厅
 
         // 预下载缓存（Documents/ruffle_cdn）
         let cached = ActionPackPrefetch.localURL(for: rel.hasPrefix("gres/") ? rel : (path.contains("/gres/") ? "gres/" + (rel as NSString).lastPathComponent : rel))

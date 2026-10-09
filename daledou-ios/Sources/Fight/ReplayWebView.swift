@@ -282,7 +282,7 @@ struct ReplayWebView: UIViewRepresentable {
             let idEsc = replayId
                 .replacingOccurrences(of: "\\", with: "\\\\")
                 .replacingOccurrences(of: "\"", with: "\\\"")
-            let mainURL = Self.petFunFightURL
+            let mainURL = ReplayWebView.petFunFightURL
             let js = """
             (function(){
               if (!window.DaledouReplay || !window.DaledouReplay.start) return 'no-api';

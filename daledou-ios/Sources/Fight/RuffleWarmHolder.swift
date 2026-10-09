@@ -3,7 +3,7 @@ import WebKit
 
 /// 对齐 Android `RuffleWarmHolder`：跨场保留已解析的 PetFunFight + action_gg。
 /// 磁盘已有 ~37MB；贵的是 Ruffle 再 parse。关动画页只 detach，不 destroy。
-@MainActor
+/// 须在主线程使用（WKWebView）；不加 @MainActor 以免 UIViewRepresentable 编译报隔离错误。
 final class RuffleWarmHolder {
     static let shared = RuffleWarmHolder()
 
