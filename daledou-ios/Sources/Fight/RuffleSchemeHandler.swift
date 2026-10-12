@@ -158,9 +158,8 @@ final class RuffleSchemeHandler: NSObject, WKURLSchemeHandler {
         if query.contains("cmd=query") {
             body = Self.petpkQueryStub(root: root)
         } else if query.contains("weapon_specialize") {
-            // 对齐 Android buildWeaponSpecializeStub：空 list 会导致专精/开战异常
-            body = Self.weaponSpecializeStub(query: rawQuery)
-            logRes("CGI weapon_specialize stub \(body.count)B")
+            body = WeaponSpeReplayCache.stubResponse(query: rawQuery)
+            logRes("CGI weapon_specialize \(WeaponSpeReplayCache.hasOfficialSpecialize() ? "official" : "minimal") \(body.count)B")
         } else if query.contains("cmd=popup") {
             body = "{\"result\":\"0\",\"msg\":\"\",\"sn\":\"1\",\"list\":[],\"popupList\":[]}"
         } else if query.contains("skillenhance") {
@@ -184,26 +183,6 @@ final class RuffleSchemeHandler: NSObject, WKURLSchemeHandler {
         }
         let name = "2$16$123$10001$\(nowSec)$app"
         return "{\"result\":\"0\",\"msg\":\"\",\"name\":\"\(name)\",\"sn\":\"1\"}"
-    }
-
-    private static func weaponSpecializeStub(query: String) -> String {
-        func qp(_ name: String) -> String {
-            guard let re = try? NSRegularExpression(pattern: "(?:^|&)\(NSRegularExpression.escapedPattern(for: name))=([^&]*)"),
-                  let m = re.firstMatch(in: query, range: NSRange(query.startIndex..., in: query)),
-                  m.numberOfRanges > 1,
-                  let r = Range(m.range(at: 1), in: query) else { return "" }
-            return query[r].removingPercentEncoding ?? String(query[r])
-        }
-        func esc(_ s: String) -> String {
-            s.replacingOccurrences(of: "\\", with: "\\\\")
-                .replacingOccurrences(of: "\"", with: "\\\"")
-                .replacingOccurrences(of: "\n", with: "\\n")
-        }
-        let w1 = qp("weaponspe1")
-        let w2 = qp("weaponspe2")
-        return """
-        {"result":"0","msg":"","weapons_num":"1","src_weapons0":[],"dst_weapons0":[],"weaponspe1":"\(esc(w1))","weaponspe2":"\(esc(w2))","weaponspe":"\(esc(w1))"}
-        """
     }
 
     private func cdnURL(for rel: String, originalPath: String) -> URL? {

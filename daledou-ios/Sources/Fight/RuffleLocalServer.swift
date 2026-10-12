@@ -468,7 +468,7 @@ final class RuffleLocalServer {
             return petpkQueryStub(root: root)
         }
         if q.contains("weapon_specialize") {
-            return weaponSpecializeStub(query: query)
+            return WeaponSpeReplayCache.stubResponse(query: query)
         }
         if q.contains("cmd=popup") {
             return "{\"result\":\"0\",\"msg\":\"\",\"sn\":\"1\",\"list\":[],\"popupList\":[]}"
@@ -501,23 +501,4 @@ final class RuffleLocalServer {
         return "{\"result\":\"0\",\"msg\":\"\",\"name\":\"\(name)\",\"sn\":\"1\"}"
     }
 
-    private static func weaponSpecializeStub(query: String) -> String {
-        func qp(_ name: String) -> String {
-            guard let re = try? NSRegularExpression(pattern: "(?:^|&)\(NSRegularExpression.escapedPattern(for: name))=([^&]*)"),
-                  let m = re.firstMatch(in: query, range: NSRange(query.startIndex..., in: query)),
-                  m.numberOfRanges > 1,
-                  let r = Range(m.range(at: 1), in: query) else { return "" }
-            return query[r].removingPercentEncoding ?? String(query[r])
-        }
-        func esc(_ s: String) -> String {
-            s.replacingOccurrences(of: "\\", with: "\\\\")
-                .replacingOccurrences(of: "\"", with: "\\\"")
-                .replacingOccurrences(of: "\n", with: "\\n")
-        }
-        let w1 = qp("weaponspe1")
-        let w2 = qp("weaponspe2")
-        return """
-        {"result":"0","msg":"","weapons_num":"1","src_weapons0":[],"dst_weapons0":[],"weaponspe1":"\(esc(w1))","weaponspe2":"\(esc(w2))","weaponspe":"\(esc(w1))"}
-        """
-    }
 }

@@ -408,8 +408,8 @@
     (async function main() {
       try {
         const params = new URLSearchParams(location.search);
-        // iOS WKWebView：wgpu-webgl 易卡 loadingSWC；canvas 已验证能过加载链
-        const renderer = (params.get('renderer') || 'canvas');
+        // 官方武器/专精面板依赖 BitmapData.draw → wgpu-webgl；失败再回退 canvas
+        const renderer = (params.get('renderer') || 'wgpu-webgl');
         preferMm = params.get('preferMm') === '1';
         // 仅显式 ?wasm=vanilla 时强制；失败后也会自动跳一次。
         const forceVanilla = params.get('wasm') === 'vanilla';
@@ -500,18 +500,21 @@
         setStatus('loading PetFunFight… origin=' + location.origin + ' dpr=' + (Math.round((window.__replayDpr || 0) * 100) / 100));
         // 饭店助手：FlashVars a=replay → 跳过大厅资源路径，少占内存
         fightReady = false;
+        movieLoaded = false;
         injected = false;
-        // 回退已验证能过 loadingSWC→leisure 的 bundled SWF；v10.19+wgpu 在 iOS 上死循环 POST loadingSWC
+        // 饭店助手 1.3.8：官方 PetFunFight-v10.19（bundled 调试包会 sr_skip_chrome / ra_eff_skip，武器专精错乱）
         await player.load(Object.assign({
-          url: 'PetFunFight.swf',
+          url: 'PetFunFight-v10.19.swf',
           allowScriptAccess: true,
           allowNetworking: 'all',
           base: location.origin + '/ruffle_fight/gres/main/blank.xml',
           parameters: { a: 'replay' }
         }, baseCfg));
-        notifyAndroid('swf_ready', { attempt: 'url-120', wasm: forceVanilla ? 'vanilla' : 'lazy-gpu', a: 'replay', swf: 'bundled' });
+        movieLoaded = true;
+        notifyAndroid('swf_ready', { attempt: 'url-120', wasm: forceVanilla ? 'vanilla' : 'lazy-gpu', a: 'replay', swf: 'v10.19' });
         setStatus('swf ready · wait EI… dpr=' + (Math.round((window.__replayDpr || 0) * 100) / 100));
         if (window.__startReplayFpsSampler) window.__startReplayFpsSampler();
+        tryInject();
         let tries = 0;
         const maxTries = 120;
         const t = setInterval(() => {

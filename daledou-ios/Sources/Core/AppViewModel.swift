@@ -183,6 +183,13 @@ final class AppViewModel: ObservableObject {
             }
             replayAct = result.act
             replayId = FightActFetcher.replayId(from: page)
+            // 对齐 Android：开战前预取官方专精 JSON（武器/专精面板）
+            WeaponSpeReplayCache.captureFromAct(result.act)
+            let rid = replayId
+            let cookieForSpe = cookie
+            Task.detached(priority: .utility) {
+                await WeaponSpeReplayCache.prefetchOfficial(replayId: rid, cookieHeader: cookieForSpe)
+            }
             // 先拆游戏页，再下载/ZWS→FWS：预解压峰值(~70MB)不要和游戏 WebContent 叠峰
             statusText = "释放游戏页内存…"
             resumeGameURL = gameWebView?.url
@@ -204,8 +211,15 @@ final class AppViewModel: ObservableObject {
             } catch {
                 statusText = "动作包下载失败，仍尝试播放: \(error.localizedDescription)"
             }
+            // 专精预取再给一点时间（与动作包并行）
+            if !WeaponSpeReplayCache.hasOfficialSpecialize() {
+                statusText = "同步武器专精…"
+                await WeaponSpeReplayCache.prefetchOfficial(replayId: rid, cookieHeader: cookieForSpe)
+            }
             viewFightLoading = false
-            statusText = "已取到战斗数据，打开官方动画"
+            statusText = WeaponSpeReplayCache.hasOfficialSpecialize()
+                ? "已取到战斗数据+专精，打开官方动画"
+                : "已取到战斗数据，打开官方动画"
             showReplay = true
         }
     }
