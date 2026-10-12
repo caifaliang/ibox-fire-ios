@@ -106,7 +106,19 @@ enum SwfPrefixStrip {
 
     /// gres 子 SWF：FWS + 9 NUL，供 NewLoader encode 路径一次 loadBytes 成功。
     static func prepareGresSwfForNewLoader(_ raw: Data) -> Data {
-        encodePrefixForNewLoader(cwsToFws(raw))
+        encodePrefixForNewLoader(stripData(raw)) // CWS 即可；NewLoader 剥 9 后 loadBytes
+    }
+
+    /// 按文件名分流（BeginLoading）：
+    /// - `xmls*` → URLLoader BINARY，必须干净签名（加 9NUL 会卡「配置文件 80%」，见 fd11）
+    /// - `petfunfight*` → Ruffle 主 SWF，干净签名
+    /// - 其余 gres → NewLoader(isEncode)，补 9 NUL
+    static func prepareGresAsset(_ raw: Data, fileName: String) -> Data {
+        let low = fileName.lowercased()
+        if low.contains("xmls") || low.hasPrefix("petfunfight") {
+            return stripData(raw)
+        }
+        return prepareGresSwfForNewLoader(raw)
     }
 
     private static func prefixSkip(in data: Data) -> Int? {

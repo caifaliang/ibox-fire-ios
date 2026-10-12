@@ -428,13 +428,9 @@ final class RuffleLocalServer {
             let nameLow = remote.lastPathComponent.lowercased()
             if remote.pathExtension.lowercased() == "swf" {
                 let before = payload.count
-                if nameLow.hasPrefix("petfunfight") {
-                    payload = SwfPrefixStrip.stripData(payload)
-                } else {
-                    // 与 respondFile 一致：9NUL+FWS，否则 ui-v10 等 CDN SWF POST 死循环（fd10 日志）
-                    payload = SwfPrefixStrip.prepareGresSwfForNewLoader(payload)
-                    self.log("SWF prep CDN \(remote.lastPathComponent) \(before)→\(payload.count)B")
-                }
+                payload = SwfPrefixStrip.prepareGresAsset(payload, fileName: nameLow)
+                let mode = nameLow.contains("xmls") || nameLow.hasPrefix("petfunfight") ? "clean" : "nul9"
+                self.log("SWF prep CDN \(remote.lastPathComponent) \(before)→\(payload.count)B \(mode)")
                 mime = "application/x-shockwave-flash"
             }
             self.log("CDN OK \(code) \(remote.lastPathComponent) \(payload.count)B")
@@ -495,21 +491,17 @@ final class RuffleLocalServer {
             let isMainPff = name.hasPrefix("petfunfight")
             let ext = fileURL.pathExtension.lowercased()
             if ext == "swf" {
-                if isMainPff {
-                    payload = SwfPrefixStrip.stripData(payload)
-                } else {
-                    let before = payload.count
-                    payload = SwfPrefixStrip.prepareGresSwfForNewLoader(payload)
-                    if name.contains("loadingswc") || payload.count != before {
-                        let head = payload.prefix(12)
-                        let sigOff = SwfPrefixStrip.hasValidSig(Data(head)) ? 0 : 9
-                        let sig: String = {
-                            guard payload.count > sigOff + 2 else { return "?" }
-                            let i = payload.startIndex
-                            return String(bytes: [payload[i+sigOff], payload[i+sigOff+1], payload[i+sigOff+2]], encoding: .ascii) ?? "?"
-                        }()
-                        log("SWF prep \(fileURL.lastPathComponent) \(before)→\(payload.count)B nul9+\(sig)")
-                    }
+                let before = payload.count
+                payload = SwfPrefixStrip.prepareGresAsset(payload, fileName: name)
+                if name.contains("loadingswc") || name.contains("xmls") || payload.count != before {
+                    let sigOff = SwfPrefixStrip.hasValidSig(payload) ? 0 : (payload.count > 12 ? 9 : 0)
+                    let sig: String = {
+                        guard payload.count > sigOff + 2 else { return "?" }
+                        let i = payload.startIndex
+                        return String(bytes: [payload[i+sigOff], payload[i+sigOff+1], payload[i+sigOff+2]], encoding: .ascii) ?? "?"
+                    }()
+                    let mode = name.contains("xmls") || isMainPff ? "clean" : "nul9"
+                    log("SWF prep \(fileURL.lastPathComponent) \(before)→\(payload.count)B \(mode)+\(sig)")
                 }
             }
             log("SEND \(fileURL.lastPathComponent) \(payload.count)B mem")

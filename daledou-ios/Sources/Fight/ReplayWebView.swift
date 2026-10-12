@@ -22,7 +22,7 @@ struct ReplayWebView: UIViewRepresentable {
         ActionPackPrefetch.sessionPreferMm = preferMm
         // 饭店助手 flashreplay 在 iOS 上假注入/卡 loadingSWC；切回已验证能进 action_gg 的 ruffle_fight
         // 版本戳：若日志不是这一行，说明装的不是本提交 IPA
-        log.append("boot RUFFLE_FIGHT build=138-fd11 replayId=\(replayId) actLen=\(act.count) preferMm=\(preferMm)")
+        log.append("boot RUFFLE_FIGHT build=138-fd12 replayId=\(replayId) actLen=\(act.count) preferMm=\(preferMm)")
         WeaponSpeReplayCache.captureFromAct(act)
         log.append("weaponspe w1=\(WeaponSpeReplayCache.weaponspe1.count) w2=\(WeaponSpeReplayCache.weaponspe2.count) officialSpe=\(WeaponSpeReplayCache.hasOfficialSpecialize())")
         let packRel = preferMm ? ActionPackPrefetch.mmRel : ActionPackPrefetch.ggRel
@@ -136,7 +136,7 @@ struct ReplayWebView: UIViewRepresentable {
                 preferMm: preferMm,
                 vanilla: forceVanilla
             )
-            log.append("HTTP \(base.absoluteString) wasm=flashreplay-fd11")
+            log.append("HTTP \(base.absoluteString) wasm=flashreplay-fd12")
         } catch {
             log.append("HTTP start FAIL \(error.localizedDescription) → scheme fallback")
             pageURL = Self.fightPageURL(
@@ -166,7 +166,7 @@ struct ReplayWebView: UIViewRepresentable {
     private static func fightPageURL(base: String, preferMm: Bool, vanilla: Bool, lowmem: Bool = false) -> URL {
         var s = base
         if !s.hasSuffix("/") { s += "/" }
-        // 138-fd11：CDN gres 同样 9NUL+FWS；取消 stub xianxia（文件错误）
+        // 138-fd12：xmls 走 URLLoader 必须 clean（勿 9NUL）；其它 gres 仍 nul9
         return URL(string: "\(s)flashreplay/index.html")!
     }
 
