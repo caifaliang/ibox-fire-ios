@@ -1,11 +1,18 @@
 ﻿#Requires -Version 5.1
 param(
-    [switch]$SkipAppleDevicesHint
+    [switch]$SkipAppleDevicesHint,
+    [string]$SetupUrl = ""
 )
 
 $ErrorActionPreference = "Stop"
 $ScriptDir = $PSScriptRoot
 . (Join-Path $ScriptDir "Find-IpasideEngine.ps1")
+
+# Optional token from config (avoids GitHub API rate limit)
+$localCfg = Join-Path $ScriptDir "config.local.ps1"
+if (Test-Path $localCfg) {
+    . $localCfg
+}
 
 Write-Host "=== DaLedou local install tools ===" -ForegroundColor Cyan
 
@@ -19,20 +26,42 @@ if (-not $SkipAppleDevicesHint) {
     Write-Host ""
 }
 
+function Get-IpasideSetupUrl {
+    param([string]$Override)
+    if ($Override) { return $Override }
+
+    # 1) Prefer API with token (higher rate limit)
+    $headers = @{
+        "User-Agent" = "daledou-ios-setup"
+        "Accept"     = "application/vnd.github+json"
+    }
+    if ($GitHubToken -and $GitHubToken -notlike "ghp_xxx*") {
+        $headers["Authorization"] = "Bearer $GitHubToken"
+    }
+
+    try {
+        $api = "https://api.github.com/repos/pwnapplehat/iPASide/releases/latest"
+        $rel = Invoke-RestMethod -Uri $api -Headers $headers
+        $asset = $rel.assets | Where-Object { $_.name -like "iPASide-Setup-*-x64.exe" } | Select-Object -First 1
+        if ($asset) { return $asset.browser_download_url }
+    } catch {
+        Write-Host "[!] GitHub API failed: $($_.Exception.Message)" -ForegroundColor Yellow
+        Write-Host "    Falling back to direct release URL..." -ForegroundColor Yellow
+    }
+
+    # 2) No API: pinned known good release (update when needed)
+    return "https://github.com/pwnapplehat/iPASide/releases/download/v1.2.6/iPASide-Setup-1.2.6-x64.exe"
+}
+
 $py = Find-IpasideEngine
 if ($py) {
     Write-Host "[OK] iPASide engine: $py" -ForegroundColor Green
 } else {
     Write-Host "[..] Downloading iPASide setup..." -ForegroundColor Yellow
-    $api = "https://api.github.com/repos/pwnapplehat/iPASide/releases/latest"
-    $headers = @{ "User-Agent" = "daledou-ios-setup"; "Accept" = "application/vnd.github+json" }
-    $rel = Invoke-RestMethod -Uri $api -Headers $headers
-    $asset = $rel.assets | Where-Object { $_.name -like "iPASide-Setup-*-x64.exe" } | Select-Object -First 1
-    if (-not $asset) { throw "iPASide-Setup x64 asset not found" }
-
+    $url = Get-IpasideSetupUrl -Override $SetupUrl
     $cache = Join-Path $env:TEMP "iPASide-Setup.exe"
-    Write-Host "    $($asset.browser_download_url)"
-    Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $cache -UseBasicParsing
+    Write-Host "    $url"
+    Invoke-WebRequest -Uri $url -OutFile $cache -UseBasicParsing -UserAgent "daledou-ios-setup"
     Write-Host "[..] Starting installer (SmartScreen: More info -> Run anyway)..." -ForegroundColor Yellow
     Start-Process -FilePath $cache -Wait
     Start-Sleep -Seconds 2

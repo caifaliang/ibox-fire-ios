@@ -20,7 +20,10 @@ if (-not $pass) { $pass = $env:IPASIDE_APPLE_PASSWORD }
 if (-not $pass) { throw "Set `$AppleIdPassword in config.local.ps1 or env IPASIDE_APPLE_PASSWORD" }
 
 $credsPath = Join-Path $env:TEMP "ipaside-creds-daledou.json"
-@{ email = $AppleIdEmail; password = $pass } | ConvertTo-Json | Set-Content -Path $credsPath -Encoding UTF8
+# IMPORTANT: no UTF-8 BOM — Python json.loads(utf-8) rejects BOM
+$utf8NoBom = New-Object System.Text.UTF8Encoding $false
+$json = (@{ email = $AppleIdEmail; password = $pass } | ConvertTo-Json)
+[System.IO.File]::WriteAllText($credsPath, $json, $utf8NoBom)
 
 try {
     $engineArgs = @("login", "--creds-file", $credsPath)
