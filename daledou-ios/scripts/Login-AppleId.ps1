@@ -1,8 +1,4 @@
-#Requires -Version 5.1
-<#
-.SYNOPSIS
-  用 config.local.ps1 里的 Apple ID 登录 iPASide（免费账号首次会要 2FA）。
-#>
+﻿#Requires -Version 5.1
 param(
     [string]$Code = ""
 )
@@ -13,27 +9,28 @@ $ScriptDir = $PSScriptRoot
 
 $local = Join-Path $ScriptDir "config.local.ps1"
 if (-not (Test-Path $local)) {
-    throw "缺少 config.local.ps1。请先运行 Setup-SideloadTools.ps1"
+    throw "Missing config.local.ps1. Run Setup-SideloadTools.ps1 first."
 }
 . $local
 
-if (-not $AppleIdEmail) { throw "config.local.ps1 未设置 `$AppleIdEmail" }
+if (-not $AppleIdEmail) { throw "config.local.ps1: set `$AppleIdEmail" }
 
 $pass = $AppleIdPassword
 if (-not $pass) { $pass = $env:IPASIDE_APPLE_PASSWORD }
-if (-not $pass) { throw "请在 config.local.ps1 设置 `$AppleIdPassword，或设环境变量 IPASIDE_APPLE_PASSWORD" }
+if (-not $pass) { throw "Set `$AppleIdPassword in config.local.ps1 or env IPASIDE_APPLE_PASSWORD" }
 
 $credsPath = Join-Path $env:TEMP "ipaside-creds-daledou.json"
 @{ email = $AppleIdEmail; password = $pass } | ConvertTo-Json | Set-Content -Path $credsPath -Encoding UTF8
 
 try {
-    $args = @("login", "--creds-file", $credsPath)
-    if ($Code) { $args += @("--code", $Code) }
-    $code = Invoke-IpasideEngine -Args $args
+    $engineArgs = @("login", "--creds-file", $credsPath)
+    if ($Code) { $engineArgs += @("--code", $Code) }
+    $code = Invoke-IpasideEngine -EngineArgs $engineArgs
     if ($code -ne 0) { exit $code }
 
-    Write-Host "`n=== 登录状态 ===" -ForegroundColor Cyan
-    Invoke-IpasideEngine -Args @("login", "--status") | Out-Null
+    Write-Host ""
+    Write-Host "=== login status ===" -ForegroundColor Cyan
+    [void](Invoke-IpasideEngine -EngineArgs @("login", "--status"))
 } finally {
     Remove-Item -LiteralPath $credsPath -Force -ErrorAction SilentlyContinue
 }

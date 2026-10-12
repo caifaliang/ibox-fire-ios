@@ -1,17 +1,4 @@
-#Requires -Version 5.1
-<#
-.SYNOPSIS
-  下载最新 CI unsigned IPA → iPASide 免费 Apple ID 重签 → USB 装到已连接 iPhone。
-
-.PARAMETER WaitCi
-  轮询当前 origin/HEAD 对应的 Actions run，成功后再下载。
-
-.PARAMETER IpaPath
-  跳过下载，直接安装本地 IPA。
-
-.PARAMETER SkipInstall
-  只下载，不装机。
-#>
+﻿#Requires -Version 5.1
 param(
     [switch]$WaitCi,
     [string]$IpaPath = "",
@@ -25,7 +12,7 @@ $ScriptDir = $PSScriptRoot
 
 $local = Join-Path $ScriptDir "config.local.ps1"
 if (-not (Test-Path $local)) {
-    throw "缺少 config.local.ps1。请先: .\Setup-SideloadTools.ps1"
+    throw "Missing config.local.ps1. Run Setup-SideloadTools.ps1 first."
 }
 . $local
 
@@ -38,7 +25,7 @@ New-Item -ItemType Directory -Force -Path $IpaCacheDir | Out-Null
 
 function Get-GhHeaders {
     if (-not $GitHubToken -or $GitHubToken -like "ghp_xxx*") {
-        throw "请在 config.local.ps1 填写有效 `$GitHubToken（repo/actions 读权限）"
+        throw "Set a valid `$GitHubToken in config.local.ps1 (actions:read)"
     }
     return @{
         "Authorization" = "Bearer $GitHubToken"
@@ -52,7 +39,8 @@ function Wait-LatestWorkflow {
     param([string]$Sha)
     $headers = Get-GhHeaders
     $deadline = (Get-Date).AddMinutes($WaitTimeoutMin)
-    Write-Host "等待 CI（sha=$($Sha.Substring(0,[Math]::Min(7,$Sha.Length)))）…" -ForegroundColor Cyan
+    $short = $Sha.Substring(0, [Math]::Min(7, $Sha.Length))
+    Write-Host "Waiting CI (sha=$short)..." -ForegroundColor Cyan
     while ((Get-Date) -lt $deadline) {
         $url = "https://api.github.com/repos/$GitHubRepo/actions/runs?per_page=15"
         $runs = (Invoke-RestMethod -Uri $url -Headers $headers).workflow_runs
@@ -66,14 +54,14 @@ function Wait-LatestWorkflow {
             Write-Host ("  run #{0} status={1} conclusion={2}" -f $mine.run_number, $mine.status, $mine.conclusion)
             if ($mine.status -eq "completed") {
                 if ($mine.conclusion -eq "success") { return $mine }
-                throw "CI 失败: $($mine.conclusion) — $($mine.html_url)"
+                throw ("CI failed: {0} - {1}" -f $mine.conclusion, $mine.html_url)
             }
         } else {
-            Write-Host "  尚未看到该 commit 的 run…"
+            Write-Host "  no run for this commit yet..."
         }
         Start-Sleep -Seconds 20
     }
-    throw "等待 CI 超时（${WaitTimeoutMin} 分钟）"
+    throw ("Wait CI timeout ({0} min)" -f $WaitTimeoutMin)
 }
 
 function Find-LatestSuccessfulArtifact {
@@ -84,7 +72,7 @@ function Find-LatestSuccessfulArtifact {
         $_.name -eq $ArtifactName -and -not $_.expired
     } | Select-Object -First 1
     if (-not $hit) {
-        throw "没有未过期的 artifact「$ArtifactName」。先 push 触发 CI 或检查仓库名。"
+        throw ("No fresh artifact '{0}'. Push to trigger CI first." -f $ArtifactName)
     }
     return $hit
 }
@@ -94,56 +82,55 @@ function Download-ArtifactIpa {
     $headers = Get-GhHeaders
     $zipPath = Join-Path $IpaCacheDir ("artifact_{0}.zip" -f $Artifact.id)
     $extract = Join-Path $IpaCacheDir ("artifact_{0}" -f $Artifact.id)
-    Write-Host "下载 artifact #$($Artifact.id) ($([math]::Round($Artifact.size_in_bytes/1MB,1)) MB)…" -ForegroundColor Cyan
+    $mb = [math]::Round($Artifact.size_in_bytes / 1MB, 1)
+    Write-Host ("Download artifact #{0} ({1} MB)..." -f $Artifact.id, $mb) -ForegroundColor Cyan
     $dl = "https://api.github.com/repos/$GitHubRepo/actions/artifacts/$($Artifact.id)/zip"
     Invoke-WebRequest -Uri $dl -Headers $headers -OutFile $zipPath -UseBasicParsing
     if (Test-Path $extract) { Remove-Item $extract -Recurse -Force }
     Expand-Archive -LiteralPath $zipPath -DestinationPath $extract -Force
     $ipa = Get-ChildItem -Path $extract -Filter "*.ipa" -Recurse | Select-Object -First 1
-    if (-not $ipa) { throw "zip 内没有 .ipa：$extract" }
+    if (-not $ipa) { throw ("No .ipa inside zip: {0}" -f $extract) }
     $dest = Join-Path $IpaCacheDir ("daledou-{0}.ipa" -f (Get-Date -Format "yyyyMMdd-HHmmss"))
     Copy-Item $ipa.FullName $dest -Force
-    Write-Host "[OK] IPA → $dest" -ForegroundColor Green
+    Write-Host "[OK] IPA -> $dest" -ForegroundColor Green
     return $dest
 }
 
-# ---- main ----
-Write-Host "=== Deploy DaLedou → iPhone ===" -ForegroundColor Cyan
+Write-Host "=== Deploy DaLedou to iPhone ===" -ForegroundColor Cyan
 
 if ($WaitCi) {
     Push-Location (Join-Path $ScriptDir "..\..")
     try {
         $sha = (git rev-parse HEAD).Trim()
     } finally { Pop-Location }
-    Wait-LatestWorkflow -Sha $sha | Out-Null
+    [void](Wait-LatestWorkflow -Sha $sha)
 }
 
 if (-not $IpaPath) {
     $art = Find-LatestSuccessfulArtifact
-    Write-Host ("最新 artifact: {0} @ {1}" -f $art.name, $art.created_at)
+    Write-Host ("Latest artifact: {0} @ {1}" -f $art.name, $art.created_at)
     $IpaPath = Download-ArtifactIpa -Artifact $art
 } else {
-    if (-not (Test-Path -LiteralPath $IpaPath)) { throw "IPA 不存在: $IpaPath" }
+    if (-not (Test-Path -LiteralPath $IpaPath)) { throw "IPA not found: $IpaPath" }
 }
 
 if ($SkipInstall) {
-    Write-Host "SkipInstall：已下载 $IpaPath"
+    Write-Host "SkipInstall: downloaded $IpaPath"
     exit 0
 }
 
-# 设备检查
-Write-Host "`n=== 已连接设备 ===" -ForegroundColor Cyan
-$devCode = Invoke-IpasideEngine -Args @("devices")
+Write-Host ""
+Write-Host "=== Connected devices ===" -ForegroundColor Cyan
+$devCode = Invoke-IpasideEngine -EngineArgs @("devices")
 if ($devCode -ne 0) {
-    throw "devices 失败。请插上 iPhone、解锁并点信任，确认已装 Apple Devices。"
+    throw "devices failed. Plug iPhone, unlock, Trust, install Apple Devices."
 }
 
-# 登录状态
 $st = Join-Path $env:TEMP "ipaside-status.json"
 & (Find-IpasideEngine) -m ipaside_engine login --status --json 2>$null | Out-File $st -Encoding utf8
 $raw = Get-Content $st -Raw -ErrorAction SilentlyContinue
 if ($raw -notmatch '"authenticated"\s*:\s*true') {
-    Write-Host "[!] Apple ID 未登录。先运行: .\Login-AppleId.ps1" -ForegroundColor Red
+    Write-Host "[!] Apple ID not logged in. Run: .\Login-AppleId.ps1" -ForegroundColor Red
     exit 2
 }
 
@@ -157,29 +144,20 @@ if ($BundleIdOverride) {
     $sideArgs += @("--bundle-id", $BundleIdOverride)
 }
 
-Write-Host "`n=== 重签并安装（约 1–3 分钟）===" -ForegroundColor Cyan
-$rc = Invoke-IpasideEngine -Args $sideArgs
+Write-Host ""
+Write-Host "=== Resign + install (1-3 min) ===" -ForegroundColor Cyan
+$rc = Invoke-IpasideEngine -EngineArgs $sideArgs
 if ($rc -ne 0) {
-    Write-Host @"
-
-安装失败 (exit=$rc)。常见原因：
-  - 免费账号同时只能装 3 个 App → 删掉旧 sideload 再试
-  - 本周 App ID 额度用尽 → 改 `$BundleIdOverride` 或换小号
-  - 未信任开发者 → 设置 → 通用 → VPN 与设备管理
-  - Developer Mode 未开（iOS 16+）
-
-"@ -ForegroundColor Red
+    Write-Host ""
+    Write-Host ("Install failed (exit={0}). Common fixes:" -f $rc) -ForegroundColor Red
+    Write-Host "  - Free Apple ID: max 3 apps - uninstall old sideloads"
+    Write-Host "  - Weekly App ID limit - change BundleIdOverride or use another Apple ID"
+    Write-Host "  - Trust developer: Settings -> General -> VPN & Device Management"
+    Write-Host "  - Enable Developer Mode (iOS 16+)"
     exit $rc
 }
 
-Write-Host @"
-
-[OK] 已装上。手机上：
-  设置 → 通用 → VPN 与设备管理 → 信任该开发者
-  （仅首次）然后打开 DaLedou。
-
-下次调试只需：
-  git push
-  .\Deploy-DaLedou.ps1 -WaitCi
-
-"@ -ForegroundColor Green
+Write-Host ""
+Write-Host "[OK] Installed." -ForegroundColor Green
+Write-Host "On phone (first time): Settings -> General -> VPN & Device Management -> Trust"
+Write-Host "Next time: git push ; then .\Deploy-DaLedou.ps1 -WaitCi"

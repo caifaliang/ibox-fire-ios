@@ -1,4 +1,4 @@
-# 定位已安装的 iPASide 引擎：python.exe -m ipaside_engine
+﻿# Locate iPASide engine: python.exe -m ipaside_engine
 function Find-IpasideEngine {
     $candidates = @(
         "${env:ProgramFiles}\iPASide\engine\python\python.exe",
@@ -9,7 +9,6 @@ function Find-IpasideEngine {
     foreach ($p in $candidates) {
         if ($p -and (Test-Path -LiteralPath $p)) { return $p }
     }
-    # 扫一遍常见安装根
     foreach ($root in @(${env:ProgramFiles}, ${env:ProgramFiles(x86)}, $env:LOCALAPPDATA)) {
         if (-not $root) { continue }
         $hit = Get-ChildItem -Path $root -Filter "python.exe" -Recurse -ErrorAction SilentlyContinue |
@@ -22,18 +21,18 @@ function Find-IpasideEngine {
 
 function Invoke-IpasideEngine {
     param(
-        [Parameter(Mandatory)][string[]]$Args,
+        [Parameter(Mandatory)][string[]]$EngineArgs,
         [switch]$Json
     )
     $py = Find-IpasideEngine
     if (-not $py) {
-        throw "未找到 iPASide 引擎。请先运行 Setup-SideloadTools.ps1 安装。"
+        throw "iPASide engine not found. Run Setup-SideloadTools.ps1 first."
     }
-    $all = @("-m", "ipaside_engine") + $Args
-    if ($Json -and ($Args -notcontains "--json")) {
+    $all = @("-m", "ipaside_engine") + $EngineArgs
+    if ($Json -and ($EngineArgs -notcontains "--json")) {
         $all += "--json"
     }
-    Write-Host ">> $py $($all -join ' ')" -ForegroundColor DarkGray
+    Write-Host (">> {0} {1}" -f $py, ($all -join " ")) -ForegroundColor DarkGray
     & $py @all
     return $LASTEXITCODE
 }
