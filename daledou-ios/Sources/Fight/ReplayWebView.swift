@@ -23,7 +23,7 @@ struct ReplayWebView: UIViewRepresentable {
         ActionPackPrefetch.sessionPreferMm = preferMm
         // 饭店助手 flashreplay 在 iOS 上假注入/卡 loadingSWC；切回已验证能进 action_gg 的 ruffle_fight
         // 版本戳：若日志不是这一行，说明装的不是本提交 IPA
-        log.append("boot RUFFLE_FIGHT build=138-fd19 replayId=\(replayId) actLen=\(act.count) preferMm=\(preferMm)")
+        log.append("boot RUFFLE_FIGHT build=138-fd19b replayId=\(replayId) actLen=\(act.count) preferMm=\(preferMm)")
         WeaponSpeReplayCache.captureFromAct(act)
         log.append("weaponspe w1=\(WeaponSpeReplayCache.weaponspe1.count) w2=\(WeaponSpeReplayCache.weaponspe2.count) officialSpe=\(WeaponSpeReplayCache.hasOfficialSpecialize())")
         let packRel = preferMm ? ActionPackPrefetch.mmRel : ActionPackPrefetch.ggRel
@@ -137,7 +137,7 @@ struct ReplayWebView: UIViewRepresentable {
                 preferMm: preferMm,
                 vanilla: forceVanilla
             )
-            log.append("HTTP \(base.absoluteString) wasm=flashreplay-fd19")
+            log.append("HTTP \(base.absoluteString) wasm=flashreplay-fd19b")
         } catch {
             log.append("HTTP start FAIL \(error.localizedDescription) → scheme fallback")
             pageURL = Self.fightPageURL(
@@ -274,7 +274,7 @@ struct ReplayWebView: UIViewRepresentable {
                     "window.__setParseSafe && window.__setParseSafe(false,'native_pack_parsed');try{window.DaledouReplay&&window.DaledouReplay.allowSound()}catch(e){}",
                     completionHandler: nil
                 )
-                Self.activateAudioSessionIfNeeded()
+                ReplayWebView.activateAudioSessionIfNeeded()
                 if let (a, id) = RuffleWarmHolder.shared.takePendingAct(), let wv = webView {
                     log.append("WARM drain pending act=\(a.count)")
                     injectAct(a, id: id, into: wv)
@@ -309,7 +309,7 @@ struct ReplayWebView: UIViewRepresentable {
                     NotificationCenter.default.post(name: .daledouReplayClose, object: nil)
                 case "sound_on":
                     statusLine.wrappedValue = "声音已开"
-                    Self.activateAudioSessionIfNeeded()
+                    ReplayWebView.activateAudioSessionIfNeeded()
                 case "injected", "reinjected":
                     statusLine.wrappedValue = "已注入，等待动作包/开战…"
                 case "fight_ready":
@@ -335,7 +335,7 @@ struct ReplayWebView: UIViewRepresentable {
                                 "try{window.DaledouReplay&&window.DaledouReplay.allowSound()}catch(e){}",
                                 completionHandler: nil
                             )
-                            Self.activateAudioSessionIfNeeded()
+                            ReplayWebView.activateAudioSessionIfNeeded()
                         }
                     }
                 case "ready_kick":
