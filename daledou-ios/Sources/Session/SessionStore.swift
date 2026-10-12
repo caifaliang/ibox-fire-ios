@@ -1,7 +1,9 @@
 import Foundation
 import Security
 
-/// Cookie 会话持久化（Keychain），对齐 Android EncryptedSharedPreferences SessionStore。
+/// Cookie 会话持久化。
+/// Keychain 在免费重签换证书后常读不到；同时写入 Application Support，
+/// 同 bundle 覆盖安装后可自动恢复登录（无需再扫码）。
 @MainActor
 final class SessionStore: ObservableObject {
     static let shared = SessionStore()
@@ -11,10 +13,16 @@ final class SessionStore: ObservableObject {
 
     private let service = "com.daledou.app.session"
     private let account = "cookie_header"
+    private let fileName = "session_cookie.txt"
 
     private init() {
-        cookieHeader = load() ?? ""
-        qq = LoginURLs.extractQq(cookieHeader) ?? ""
+        let loaded = load() ?? ""
+        cookieHeader = loaded
+        qq = LoginURLs.extractQq(loaded) ?? ""
+        // 若只从文件恢复到，立刻回写 Keychain，方便本会话其它路径
+        if LoginURLs.hasRealSkey(loaded) {
+            persistKeychain(loaded)
+        }
     }
 
     var isLoggedIn: Bool { LoginURLs.hasRealSkey(cookieHeader) }
@@ -23,18 +31,33 @@ final class SessionStore: ObservableObject {
         let trimmed = cookieHeader.trimmingCharacters(in: .whitespacesAndNewlines)
         self.cookieHeader = trimmed
         self.qq = LoginURLs.extractQq(trimmed) ?? ""
-        persist(trimmed)
+        persistKeychain(trimmed)
+        persistFile(trimmed)
     }
 
     func clear() {
         cookieHeader = ""
         qq = ""
-        delete()
+        deleteKeychain()
+        deleteFile()
+    }
+
+    // MARK: - Load (Keychain → file)
+
+    private func load() -> String? {
+        if let k = loadKeychain(), LoginURLs.hasRealSkey(k) {
+            persistFile(k)
+            return k
+        }
+        if let f = loadFile(), LoginURLs.hasRealSkey(f) {
+            return f
+        }
+        return loadFile() ?? loadKeychain()
     }
 
     // MARK: - Keychain
 
-    private func persist(_ value: String) {
+    private func persistKeychain(_ value: String) {
         let data = Data(value.utf8)
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -42,13 +65,14 @@ final class SessionStore: ObservableObject {
             kSecAttrAccount as String: account,
         ]
         SecItemDelete(query as CFDictionary)
+        guard !value.isEmpty else { return }
         var add = query
         add[kSecValueData as String] = data
         add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
         SecItemAdd(add as CFDictionary, nil)
     }
 
-    private func load() -> String? {
+    private func loadKeychain() -> String? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -62,12 +86,45 @@ final class SessionStore: ObservableObject {
         return String(data: data, encoding: .utf8)
     }
 
-    private func delete() {
+    private func deleteKeychain() {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
         ]
         SecItemDelete(query as CFDictionary)
+    }
+
+    // MARK: - Application Support file (survives same-bundle upgrade)
+
+    private var fileURL: URL? {
+        let fm = FileManager.default
+        guard let root = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+            return nil
+        }
+        let dir = root.appendingPathComponent("DaLedou", isDirectory: true)
+        try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir.appendingPathComponent(fileName)
+    }
+
+    private func persistFile(_ value: String) {
+        guard let url = fileURL else { return }
+        if value.isEmpty {
+            try? FileManager.default.removeItem(at: url)
+            return
+        }
+        try? value.write(to: url, atomically: true, encoding: .utf8)
+    }
+
+    private func loadFile() -> String? {
+        guard let url = fileURL,
+              let s = try? String(contentsOf: url, encoding: .utf8) else { return nil }
+        let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        return t.isEmpty ? nil : t
+    }
+
+    private func deleteFile() {
+        guard let url = fileURL else { return }
+        try? FileManager.default.removeItem(at: url)
     }
 }

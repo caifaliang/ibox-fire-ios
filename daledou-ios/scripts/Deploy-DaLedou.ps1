@@ -65,7 +65,18 @@ function Wait-LatestWorkflow {
 }
 
 function Find-LatestSuccessfulArtifact {
+    param([object]$FromRun = $null)
     $headers = Get-GhHeaders
+    if ($FromRun) {
+        # Strict: artifact belonging to the waited CI run (guarantees "this commit")
+        $url = "https://api.github.com/repos/$GitHubRepo/actions/runs/$($FromRun.id)/artifacts"
+        $arts = (Invoke-RestMethod -Uri $url -Headers $headers).artifacts
+        $hit = $arts | Where-Object { $_.name -eq $ArtifactName -and -not $_.expired } | Select-Object -First 1
+        if (-not $hit) {
+            throw ("No artifact '{0}' on run #{1}. Check CI upload step." -f $ArtifactName, $FromRun.run_number)
+        }
+        return $hit
+    }
     $url = "https://api.github.com/repos/$GitHubRepo/actions/artifacts?per_page=30"
     $arts = (Invoke-RestMethod -Uri $url -Headers $headers).artifacts
     $hit = $arts | Where-Object {
@@ -98,21 +109,47 @@ function Download-ArtifactIpa {
 
 Write-Host "=== Deploy DaLedou to iPhone ===" -ForegroundColor Cyan
 
+$ciRun = $null
 if ($WaitCi) {
     Push-Location (Join-Path $ScriptDir "..\..")
     try {
         $sha = (git rev-parse HEAD).Trim()
     } finally { Pop-Location }
-    [void](Wait-LatestWorkflow -Sha $sha)
+    $ciRun = Wait-LatestWorkflow -Sha $sha
+    Write-Host ("CI matched HEAD {0} run#{1} {2}" -f $sha.Substring(0,7), $ciRun.run_number, $ciRun.html_url) -ForegroundColor Green
 }
 
 if (-not $IpaPath) {
-    $art = Find-LatestSuccessfulArtifact
-    Write-Host ("Latest artifact: {0} @ {1}" -f $art.name, $art.created_at)
+    $art = Find-LatestSuccessfulArtifact -FromRun $ciRun
+    Write-Host ("Artifact: {0} @ {1}" -f $art.name, $art.created_at)
     $IpaPath = Download-ArtifactIpa -Artifact $art
 } else {
     if (-not (Test-Path -LiteralPath $IpaPath)) { throw "IPA not found: $IpaPath" }
 }
+
+# Show identity so you can confirm "latest"
+$localSha = ""
+Push-Location (Join-Path $ScriptDir "..\..")
+try { $localSha = (git rev-parse HEAD).Trim() } catch {}
+finally { Pop-Location }
+Write-Host ""
+Write-Host "=== VERIFY (is this the build you want?) ===" -ForegroundColor Yellow
+Write-Host ("  local git HEAD : {0}" -f $localSha)
+if ($art) {
+    Write-Host ("  artifact id    : {0}" -f $art.id)
+    Write-Host ("  artifact time  : {0}" -f $art.created_at)
+    Write-Host ("  workflow run   : {0}" -f $art.workflow_run.id)
+}
+Write-Host ("  ipa path       : {0}" -f $IpaPath)
+try {
+    $insp = & (Find-IpasideEngine) -m ipaside_engine inspect $IpaPath --json 2>$null | Out-String
+    if ($insp -match '"bundle_id"\s*:\s*"([^"]+)"') { Write-Host ("  bundle id      : {0}" -f $Matches[1]) }
+    if ($insp -match '"version"\s*:\s*"([^"]+)"') { Write-Host ("  version        : {0}" -f $Matches[1]) }
+    if ($insp -match '"build"\s*:\s*"([^"]+)"') { Write-Host ("  build          : {0}" -f $Matches[1]) }
+    if ($insp -match '"name"\s*:\s*"([^"]+)"') { Write-Host ("  name           : {0}" -f $Matches[1]) }
+} catch {}
+Write-Host "  phone check    : open official replay -> log must contain build=138-fdXX matching this push"
+Write-Host "================================================" -ForegroundColor Yellow
 
 if ($SkipInstall) {
     Write-Host "SkipInstall: downloaded $IpaPath"
@@ -121,8 +158,8 @@ if ($SkipInstall) {
 
 Write-Host ""
 Write-Host "=== Connected devices ===" -ForegroundColor Cyan
-$devCode = Invoke-IpasideEngine -EngineArgs @("devices")
-if ($devCode -ne 0) {
+[void](Invoke-IpasideEngine -EngineArgs @("devices"))
+if ($LASTEXITCODE -ne 0) {
     throw "devices failed. Plug iPhone, unlock, Trust, install Apple Devices."
 }
 
@@ -138,7 +175,8 @@ $conn = if ($PreferUsb -ne $false) { "usb" } else { "auto" }
 $sideArgs = @(
     "sideload", $IpaPath,
     "--connection", $conn,
-    "--enable-file-sharing"
+    "--enable-file-sharing",
+    "--name", "DaLedou"
 )
 if ($BundleIdOverride) {
     $sideArgs += @("--bundle-id", $BundleIdOverride)
