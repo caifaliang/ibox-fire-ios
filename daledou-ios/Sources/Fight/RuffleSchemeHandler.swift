@@ -171,18 +171,9 @@ final class RuffleSchemeHandler: NSObject, WKURLSchemeHandler {
     }
 
     private static func petpkQueryStub(root: URL) -> String {
-        let nowSec = String(Int(Date().timeIntervalSince1970))
-        let stubURL = root.appendingPathComponent("petpk_query.json")
-        if let data = try? Data(contentsOf: stubURL),
-           var s = String(data: data, encoding: .utf8) {
-            if let re = try? NSRegularExpression(pattern: #"("name"\s*:\s*"[^"]*\$)(\d+)(\$[^"]*")"#) {
-                let range = NSRange(s.startIndex..., in: s)
-                s = re.stringByReplacingMatches(in: s, range: range, withTemplate: "$1\(nowSec)$3")
-            }
-            return s
-        }
-        let name = "2$16$123$10001$\(nowSec)$app"
-        return "{\"result\":\"0\",\"msg\":\"\",\"name\":\"\(name)\",\"sn\":\"1\"}"
+        _ = root
+        // 对齐饭店助手：官方 v10.19 回放态 query=-5
+        return "{\"result\":\"-5\",\"msg\":\"正在加载战斗回放…\"}"
     }
 
     private func cdnURL(for rel: String, originalPath: String) -> URL? {

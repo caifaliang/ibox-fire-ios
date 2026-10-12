@@ -155,6 +155,11 @@ final class RuffleLocalServer {
 
         if path.contains("/__cgi/petpk") {
             let body = Self.stubCGI(query: query, root: root)
+            if query.lowercased().contains("cmd=query") {
+                log("CGI query → \(body.prefix(48))…")
+            } else if query.lowercased().contains("weapon_specialize") {
+                log("CGI weapon_specialize \(body.count)B")
+            }
             respond(conn, status: 200, mime: "text/plain", body: Data(body.utf8), headOnly: isHead)
             return
         }
@@ -196,6 +201,16 @@ final class RuffleLocalServer {
         var fileRel = rel
         if fileRel.hasPrefix("ruffle_fight/") {
             fileRel = String(fileRel.dropFirst("ruffle_fight/".count))
+        }
+        // 饭店 mainUrl 形态：…/swf/gres/main/PetFunFight-v10.19.swf → 包内根目录同名文件
+        let lowEarly = fileRel.lowercased()
+        if lowEarly == "gres/main/petfunfight-v10.19.swf" || lowEarly == "main/petfunfight-v10.19.swf" {
+            let alt = root.appendingPathComponent("PetFunFight-v10.19.swf")
+            if FileManager.default.fileExists(atPath: alt.path) {
+                log("ALIAS \(fileRel) → PetFunFight-v10.19.swf")
+                respondFile(conn, fileURL: alt, mime: mime(fileRel), headOnly: headOnly)
+                return
+            }
         }
         let low = fileRel.lowercased()
         if low.contains("action_") || low.hasSuffix(".swf") || low.hasSuffix(".wasm") {
@@ -482,23 +497,11 @@ final class RuffleLocalServer {
         return "{\"result\":\"0\",\"msg\":\"\",\"sn\":\"1\",\"list\":[]}"
     }
 
-    /// iOS ruffle_fight + bundled PetFunFight：result=0 才能走出 loadingSWC（138 上 -5 会卡死）。
-    /// 大厅重资源仍靠 shouldStubReplayAsset / FWS / lazy-gpu 压峰。
+    /// 饭店助手 flashreplay + 官方 PetFunFight-v10.19：cmd=query 必须 result=-5。
+    /// （补丁 PetFunFight.swf 曾依赖 result=0；官方回放态用 0 会卡在 loadingSWC。）
     private static func petpkQueryStub(root: URL?) -> String {
-        let nowSec = String(Int(Date().timeIntervalSince1970))
-        if let root {
-            let stubURL = root.appendingPathComponent("petpk_query.json")
-            if let data = try? Data(contentsOf: stubURL),
-               var s = String(data: data, encoding: .utf8) {
-                if let re = try? NSRegularExpression(pattern: #"("name"\s*:\s*"[^"]*\$)(\d+)(\$[^"]*")"#) {
-                    let range = NSRange(s.startIndex..., in: s)
-                    s = re.stringByReplacingMatches(in: s, range: range, withTemplate: "$1\(nowSec)$3")
-                }
-                return s
-            }
-        }
-        let name = "2$16$123$10001$\(nowSec)$app"
-        return "{\"result\":\"0\",\"msg\":\"\",\"name\":\"\(name)\",\"sn\":\"1\"}"
+        _ = root
+        return "{\"result\":\"-5\",\"msg\":\"正在加载战斗回放…\"}"
     }
 
 }

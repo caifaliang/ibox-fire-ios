@@ -218,25 +218,37 @@
       return XO.apply(this, arguments);
     };
 
-    window.swfhand_Obj = new Proxy({}, {
-      get(_t, prop) {
-        const name = String(prop);
-        if (name === 'then' || name === 'toJSON' || name.startsWith('__')) return undefined;
-        return function() {
-          if (name === 'CloseFlash') {
-            setStatus('CloseFlash');
-            notifyAndroid('console', { msg: 'CloseFlash' });
-          }
-          return null;
-        };
-      }
-    });
-    // Flash ExternalInterface.call('swfhand_Obj.CloseFlash') 字面名
-    window['swfhand_Obj.CloseFlash'] = function() {
-      setStatus('CloseFlash');
-      notifyAndroid('console', { msg: 'CloseFlash' });
+    // 对齐饭店助手 flashreplay：官方 SWF 会调这些 EI，缺了可能卡在 BeginLoading
+    window.getCookie = function (name) {
+      if (name === 'chrometag') return '0';
+      if (name === 'voice') return '0';
       return null;
     };
+    window.getVoice = function () { return 0; };
+    window.setCookie = function () {};
+    window.isqzone = function () { return '16'; };
+    window.pgvSendClick = window.pgvSendPV = window.game_fcm = function () {};
+    window.flashreload = function () {
+      setStatus('flashreload');
+      notifyAndroid('console', { msg: 'flashreload' });
+    };
+    window.swfhand_Obj = {
+      weaponpanel: function () { return 'daledou_replay'; },
+      weaponshow: function () { return null; },
+      weaponhide: function () { return null; },
+      CloseFlash: function () {
+        setStatus('CloseFlash');
+        notifyAndroid('console', { msg: 'CloseFlash' });
+        return null;
+      },
+      OpenFlash: function () {
+        if (window.FightComplete) window.FightComplete();
+        return null;
+      }
+    };
+    window['swfhand_Obj.CloseFlash'] = window.swfhand_Obj.CloseFlash;
+    window.HF = { tower: function () { if (window.FightComplete) window.FightComplete(); } };
+    window.getSwfInstance = function () { return window.__player || null; };
 
     /**
      * Flash → JS：ExternalControl.callFunction('setVelocimetry', tag, val)
@@ -387,17 +399,31 @@
         setStatus('wait movie load…');
         return false;
       }
-      if (typeof player.setFightReplayData !== 'function') {
+      const cgi = makeCgi(pendingAct.act);
+      const rid = pendingAct.id;
+      try {
+        // 饭店：优先 callExternalInterface('setFightReplayData', …)
+        try {
+          var eng = player.ruffle && player.ruffle();
+          if (eng && typeof eng.callExternalInterface === 'function') {
+            eng.callExternalInterface('setFightReplayData', cgi, rid);
+            injected = true;
+            setStatus('replay injected via callEI act=' + pendingAct.act.length);
+            notifyAndroid('injected', { ok: true, actLen: pendingAct.act.length, via: 'callEI' });
+            applyPendingSpeed();
+            return true;
+          }
+        } catch (_) {}
+        if (typeof player.setFightReplayData === 'function') {
+          player.setFightReplayData(cgi, rid);
+          injected = true;
+          setStatus('replay injected act=' + pendingAct.act.length);
+          notifyAndroid('injected', { ok: true, actLen: pendingAct.act.length, via: 'prop' });
+          applyPendingSpeed();
+          return true;
+        }
         setStatus('swf ready · wait EI…');
         return false;
-      }
-      try {
-        player.setFightReplayData(makeCgi(pendingAct.act), pendingAct.id);
-        injected = true;
-        setStatus('replay injected act=' + pendingAct.act.length);
-        notifyAndroid('injected', { ok: true, actLen: pendingAct.act.length });
-        applyPendingSpeed();
-        return true;
       } catch (e) {
         notifyAndroid('inject_fail', { err: String(e) });
         setStatus('inject fail: ' + e);
@@ -408,9 +434,8 @@
     (async function main() {
       try {
         const params = new URLSearchParams(location.search);
-        // iOS：官方 v10.19 会卡在 loadingSWC POST 环（canvas/wgpu 均复现）；
-        // 与 Android 一致走补丁 PetFunFight.swf + canvas，才能进到 setFightReplayData。
-        const renderer = (params.get('renderer') || 'canvas');
+        // 饭店 flashreplay：官方 v10.19 需要 wgpu（BitmapData.draw）；失败再回退 canvas
+        const renderer = (params.get('renderer') || 'wgpu-webgl');
         preferMm = params.get('preferMm') === '1';
         // 仅显式 ?wasm=vanilla 时强制；失败后也会自动跳一次。
         const forceVanilla = params.get('wasm') === 'vanilla';
@@ -503,17 +528,17 @@
         fightReady = false;
         movieLoaded = false;
         injected = false;
-        // 对齐 Android ruffle_fight：PetFunFight.swf + 空 flashvars + blank.xml base。
-        // v10.19 + a=replay 在本机 HTTP 上永远卡 loadingSWC（见 138-native / 138-v19c 日志）。
+        // 对齐饭店助手：CDN 形态 mainUrl（gres/main/…）+ a=replay，不设 blank.xml。
+        // 配合本机 query=-5 / CDN config / getCookie，才能走出 BeginLoading。
+        const mainUrl = location.origin + '/gres/main/PetFunFight-v10.19.swf';
         await player.load(Object.assign({
-          url: 'PetFunFight.swf',
+          url: mainUrl,
           allowScriptAccess: true,
           allowNetworking: 'all',
-          base: location.origin + '/ruffle_fight/gres/main/blank.xml',
-          parameters: {}
+          parameters: { a: 'replay' }
         }, baseCfg));
         movieLoaded = true;
-        notifyAndroid('swf_ready', { attempt: 'url-120', wasm: forceVanilla ? 'vanilla' : 'lazy-gpu', a: '', swf: 'bundled' });
+        notifyAndroid('swf_ready', { attempt: 'url-fd', wasm: forceVanilla ? 'vanilla' : 'lazy-gpu', a: 'replay', swf: 'v10.19' });
         setStatus('swf ready · wait EI… dpr=' + (Math.round((window.__replayDpr || 0) * 100) / 100));
         if (window.__startReplayFpsSampler) window.__startReplayFpsSampler();
         tryInject();
