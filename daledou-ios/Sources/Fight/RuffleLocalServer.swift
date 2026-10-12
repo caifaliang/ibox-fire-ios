@@ -486,13 +486,26 @@ final class RuffleLocalServer {
             })
             return
         }
-        // < 2MB：整包（loadingSWC / leisure / config 依赖完整 body）
-        if size < 2_000_000, let data = try? Data(contentsOf: fileURL) {
+        // < 8MB：整包。gres 子 SWF：剥前缀 + CWS→FWS（对齐饭店干净签名，避开 iOS CWS Loader 卡死）。
+        if size < 8_000_000, let data = try? Data(contentsOf: fileURL) {
             var payload = data
+            let name = fileURL.lastPathComponent.lowercased()
+            let isMainPff = name.hasPrefix("petfunfight")
             if fileURL.pathExtension.lowercased() == "swf" {
-                payload = SwfPrefixStrip.stripData(payload)
+                if isMainPff {
+                    payload = SwfPrefixStrip.stripData(payload)
+                } else {
+                    let before = payload.count
+                    payload = SwfPrefixStrip.cwsToFws(payload)
+                    if name.contains("loadingswc") || payload.count != before {
+                        let sig = payload.count >= 3
+                            ? String(bytes: [payload[payload.startIndex], payload[payload.startIndex+1], payload[payload.startIndex+2]], encoding: .ascii) ?? "?"
+                            : "?"
+                        log("SWF prep \(fileURL.lastPathComponent) \(before)→\(payload.count)B sig=\(sig)")
+                    }
+                }
             }
-            log("SEND \(fileURL.lastPathComponent) \(payload.count)B mem")
+            logSpam("SEND \(fileURL.lastPathComponent) \(payload.count)B mem")
             respond(conn, status: 200, mime: mime, body: payload, headOnly: false)
             return
         }
@@ -524,6 +537,7 @@ final class RuffleLocalServer {
         head += "Content-Type: \(mime)\r\n"
         head += "Content-Length: \(length)\r\n"
         head += "Access-Control-Allow-Origin: *\r\n"
+        head += "Cache-Control: max-age=86400\r\n"
         head += "Connection: close\r\n"
         head += "\r\n"
         return Data(head.utf8)
@@ -580,9 +594,32 @@ final class RuffleLocalServer {
         }
     }
 
-    private func log(_ msg: String) {
+    /// loadingSWC POST 重试刷屏：首条 + 每 10 次摘要（不经 log 再入，避免递归）
+    private var spamCounts: [String: Int] = [:]
+    private func emitLog(_ msg: String) {
         let cb = onLog
         DispatchQueue.main.async { cb?(msg) }
+    }
+    private func logSpam(_ msg: String) {
+        let key = msg.contains("loadingSWC") ? "loadingSWC" : msg
+        if key == msg {
+            emitLog(msg)
+            return
+        }
+        let n = (spamCounts[key] ?? 0) + 1
+        spamCounts[key] = n
+        if n == 1 {
+            emitLog(msg)
+        } else if n % 10 == 0 {
+            emitLog("… \(key) ×\(n)")
+        }
+    }
+    private func log(_ msg: String) {
+        if msg.contains("loadingSWC") {
+            logSpam(msg)
+            return
+        }
+        emitLog(msg)
     }
 
     // MARK: - CGI stubs（与 RuffleSchemeHandler 对齐）

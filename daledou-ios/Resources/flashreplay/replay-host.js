@@ -174,7 +174,8 @@
       // iOS 本机 http://127.0.0.1：upgradeToHttps 会把请求改成 https://127.0.0.1 → 失败
       upgradeToHttps: !isLocalIOS, splashScreen: false, contextMenu: 'off',
       showSwfDownload: false, openUrlMode: 'deny', logLevel: 'warn',
-      preferredRenderer: 'wgpu-webgl', quality: 'low',
+      // 对齐饭店 APK：默认 canvas（wgpu-webgl 在部分 iOS 上 Loader 异常）
+      preferredRenderer: 'canvas', quality: 'low',
       frameRate: 30,
       deviceFontRenderer: 'canvas',
       maxExecutionDuration: 60,

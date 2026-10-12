@@ -66,6 +66,29 @@ enum SwfPrefixStrip {
         return raw.subdata(in: skip..<raw.count)
     }
 
+    /// CWS(zlib) → FWS。嵌套 Loader 在 iOS Ruffle 上对 CWS 偶发不 COMPLETE（fd6 POST×2s 环）；
+    /// 饭店 Android 同文件能过，先对齐为预解压再送，排除 zlib 路径差异。
+    static func cwsToFws(_ raw: Data) -> Data {
+        let clean = stripData(raw)
+        guard clean.count >= 8,
+              clean[clean.startIndex] == 0x43,
+              clean[clean.startIndex + 1] == 0x57,
+              clean[clean.startIndex + 2] == 0x53 else { return clean }
+        let body = clean.subdata(in: (clean.startIndex + 8)..<clean.endIndex)
+        guard let inflated = try? (body as NSData).decompressed(using: .zlib) as Data else {
+            return clean
+        }
+        var out = Data(capacity: 8 + inflated.count)
+        out.append(0x46) // F
+        out.append(0x57) // W
+        out.append(0x53) // S
+        out.append(clean[clean.startIndex + 3]) // version
+        // 保留原声明长度（与 zlib 解压结果应对齐）
+        out.append(clean.subdata(in: (clean.startIndex + 4)..<(clean.startIndex + 8)))
+        out.append(inflated)
+        return out
+    }
+
     private static func prefixSkip(in data: Data) -> Int? {
         var best: Int?
         let bytes = [UInt8](data.prefix(64))
