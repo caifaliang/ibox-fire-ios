@@ -567,7 +567,7 @@ final class RuffleLocalServer {
                 let before = payload.count
                 payload = SwfPrefixStrip.prepareGresAsset(payload, fileName: name)
                 if name.contains("loadingswc") || name.contains("xmls") || name.contains("bg")
-                    || name.contains("npc") || payload.count != before {
+                    || name.contains("npc") || name.contains("xianxia") || payload.count != before {
                     let sigOff = SwfPrefixStrip.hasValidSig(payload) ? 0 : (payload.count > 12 ? 9 : 0)
                     let sig: String = {
                         guard payload.count > sigOff + 2 else { return "?" }

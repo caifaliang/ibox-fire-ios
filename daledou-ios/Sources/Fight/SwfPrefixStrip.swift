@@ -154,9 +154,12 @@ enum SwfPrefixStrip {
     }
 
     /// 分流原则（对齐 AS3）：
-    /// - NewLoader(isEncode=true)：loadingSWC / leisure / ui / action_* / spchack / menpai → nul9+FWS
+    /// - NewLoader(isEncode=true)：loadingSWC / leisure / ui / action_* / spchack / menpai / xianxia* → nul9+FWS
     /// - GameingLoadingControl(decode_flag 默认 false)：npc / mercenary / 多数运行时资源 → clean FWS
     /// - xmls(URLLoader) / bg(NewLoader 跳过剥 9) / 主 SWF → clean（xmls 不强制 FWS）
+    ///
+    /// fd23 实证：CDN `xianxiatudis`/`xianxiagg` 已是 NUL×9+CWS；若只转 clean FWS，
+    /// NewLoader 再剥 9 → 坏包 → 每 2s POST 重试 →「文件错误，建议清理缓存」。
     static func prepareGresAsset(_ raw: Data, fileName: String) -> Data {
         let low = fileName.lowercased()
         if low.contains("xmls") || low.hasPrefix("petfunfight") {
@@ -183,6 +186,8 @@ enum SwfPrefixStrip {
         if low.contains("action_gg") || low.contains("action_mm") { return true }
         if low.contains("spchack") { return true }
         if low.contains("menpai") { return true }
+        // 仙侠土著 / 仙侠攻略等（CDN 自带 9NUL+CWS，与 leisure 同走 NewLoader）
+        if low.contains("xianxia") { return true }
         return false
     }
 
