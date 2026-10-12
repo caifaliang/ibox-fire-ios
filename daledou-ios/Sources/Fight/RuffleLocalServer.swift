@@ -10,7 +10,18 @@ final class RuffleLocalServer {
     private(set) var port: UInt16 = 0
     private var root: URL?
     private let queue = DispatchQueue(label: "daledou.ruffle.http", qos: .userInitiated)
-    private let session = URLSession(configuration: .ephemeral)
+    private let session: URLSession = {
+        let cfg = URLSessionConfiguration.ephemeral
+        cfg.httpMaximumConnectionsPerHost = 4
+        cfg.timeoutIntervalForRequest = 60
+        cfg.timeoutIntervalForResource = 120
+        return URLSession(configuration: cfg)
+    }()
+    /// 限制并发 CDN，避免 Button 雪崩饿死 xianxia/ui（fd22：文件错误/清缓存假象）
+    private let cdnGate = DispatchQueue(label: "daledou.cdn.gate")
+    private var cdnInFlight = 0
+    private var cdnWaiters: [() -> Void] = []
+    private let cdnMaxConcurrent = 3
     var onLog: ((String) -> Void)?
 
     var baseURL: URL? {
@@ -431,44 +442,87 @@ final class RuffleLocalServer {
         proxyAndCache(remote, rel: nil, conn: conn, headOnly: headOnly)
     }
 
+    private func releaseCdnSlot() {
+        cdnGate.async {
+            self.cdnInFlight = max(0, self.cdnInFlight - 1)
+            if !self.cdnWaiters.isEmpty {
+                let next = self.cdnWaiters.removeFirst()
+                self.cdnInFlight += 1
+                next()
+            }
+        }
+    }
+
     private func proxyAndCache(_ remote: URL, rel: String?, conn: NWConnection, headOnly: Bool) {
-        var req = URLRequest(url: remote)
-        req.timeoutInterval = 180
-        session.dataTask(with: req) { [weak self] data, resp, err in
+        let name = remote.lastPathComponent
+        let critical = {
+            let l = name.lowercased()
+            return l.contains("xianxia") || l.contains("ui-v") || l.contains("leisure")
+                || l.contains("npc") || l.contains("mercenary") || l.hasPrefix("bg")
+        }()
+        // 关键资源插队：排到队头
+        let enqueue: (@escaping () -> Void) -> Void = { [weak self] work in
             guard let self else { return }
-            if let err {
-                self.log("CDN FAIL \(remote.lastPathComponent) \(err.localizedDescription)")
-                self.respond(conn, status: 502, mime: "text/plain", body: Data("cdn fail".utf8))
-                return
+            self.cdnGate.async {
+                if critical {
+                    self.cdnWaiters.insert(work, at: 0)
+                } else {
+                    self.cdnWaiters.append(work)
+                }
+                if self.cdnInFlight < self.cdnMaxConcurrent, !self.cdnWaiters.isEmpty {
+                    let next = self.cdnWaiters.removeFirst()
+                    self.cdnInFlight += 1
+                    next()
+                }
             }
-            var payload = data ?? Data()
-            let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
-            var mime = (resp as? HTTPURLResponse)?.mimeType ?? self.mime(remote.lastPathComponent)
-            let nameLow = remote.lastPathComponent.lowercased()
-            if remote.pathExtension.lowercased() == "swf" {
-                let before = payload.count
-                payload = SwfPrefixStrip.prepareGresAsset(payload, fileName: nameLow)
-                let mode = SwfPrefixStrip.needsCleanSwf(fileName: nameLow) ? "clean" : "nul9"
-                self.log("SWF prep CDN \(remote.lastPathComponent) \(before)→\(payload.count)B \(mode)")
-                mime = "application/x-shockwave-flash"
-            }
-            self.log("CDN OK \(code) \(remote.lastPathComponent) \(payload.count)B")
-            // 缓存已 prep 的 gres，避免每次 POST 重下 7MB+ 并重复 inflate
-            if let rel, remote.pathExtension.lowercased() == "swf", payload.count > 10_000 {
-                let dest = ActionPackPrefetch.localURL(
-                    for: rel.hasPrefix("gres/") ? rel : {
-                        if let r = rel.range(of: "gres/") { return String(rel[r.lowerBound...]) }
-                        return "gres/\((rel as NSString).lastPathComponent)"
-                    }()
-                )
-                try? FileManager.default.createDirectory(
-                    at: dest.deletingLastPathComponent(), withIntermediateDirectories: true
-                )
-                try? payload.write(to: dest, options: .atomic)
-                self.log("CACHE write \(dest.lastPathComponent) \(payload.count)B")
-            }
-            self.respond(conn, status: (200..<300).contains(code) ? 200 : code, mime: mime, body: payload, headOnly: headOnly)
-        }.resume()
+        }
+        enqueue { [weak self] in
+            guard let self else { return }
+            self.log("CDN begin \(name) critical=\(critical) inflight≈\(self.cdnMaxConcurrent)")
+            var req = URLRequest(url: remote)
+            req.timeoutInterval = critical ? 90 : 45
+            self.session.dataTask(with: req) { [weak self] data, resp, err in
+                defer { self?.releaseCdnSlot() }
+                guard let self else { return }
+                if let err {
+                    self.log("CDN FAIL \(name) \(err.localizedDescription)")
+                    self.respond(conn, status: 502, mime: "text/plain", body: Data("cdn fail".utf8))
+                    return
+                }
+                var payload = data ?? Data()
+                let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+                if !(200..<300).contains(code) || payload.isEmpty {
+                    self.log("CDN BAD \(code) \(name) \(payload.count)B")
+                    self.respond(conn, status: code == 0 ? 502 : code, mime: "text/plain", body: Data("cdn bad".utf8))
+                    return
+                }
+                var mime = (resp as? HTTPURLResponse)?.mimeType ?? self.mime(name)
+                let nameLow = name.lowercased()
+                if remote.pathExtension.lowercased() == "swf" {
+                    let before = payload.count
+                    payload = SwfPrefixStrip.prepareGresAsset(payload, fileName: nameLow)
+                    let mode = SwfPrefixStrip.needsCleanSwf(fileName: nameLow) ? "clean" : "nul9"
+                    self.log("SWF prep CDN \(name) \(before)→\(payload.count)B \(mode)")
+                    mime = "application/x-shockwave-flash"
+                }
+                self.log("CDN OK \(code) \(name) \(payload.count)B")
+                // 先落盘再 respond：连接被掐断时，重试可走 CACHE
+                if let rel, remote.pathExtension.lowercased() == "swf", payload.count > 1_000 {
+                    let dest = ActionPackPrefetch.localURL(
+                        for: rel.hasPrefix("gres/") ? rel : {
+                            if let r = rel.range(of: "gres/") { return String(rel[r.lowerBound...]) }
+                            return "gres/\((rel as NSString).lastPathComponent)"
+                        }()
+                    )
+                    try? FileManager.default.createDirectory(
+                        at: dest.deletingLastPathComponent(), withIntermediateDirectories: true
+                    )
+                    try? payload.write(to: dest, options: .atomic)
+                    self.log("CACHE write \(dest.lastPathComponent) \(payload.count)B")
+                }
+                self.respond(conn, status: 200, mime: mime, body: payload, headOnly: headOnly)
+            }.resume()
+        }
     }
 
     private func respond(

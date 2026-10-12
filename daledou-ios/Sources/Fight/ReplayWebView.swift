@@ -23,7 +23,7 @@ struct ReplayWebView: UIViewRepresentable {
         ActionPackPrefetch.sessionPreferMm = preferMm
         // 饭店助手 flashreplay 在 iOS 上假注入/卡 loadingSWC；切回已验证能进 action_gg 的 ruffle_fight
         // 版本戳：若日志不是这一行，说明装的不是本提交 IPA
-        log.append("boot RUFFLE_FIGHT build=138-fd22 replayId=\(replayId) actLen=\(act.count) preferMm=\(preferMm)")
+        log.append("boot RUFFLE_FIGHT build=138-fd23 replayId=\(replayId) actLen=\(act.count) preferMm=\(preferMm)")
         WeaponSpeReplayCache.captureFromAct(act)
         log.append("weaponspe w1=\(WeaponSpeReplayCache.weaponspe1.count) w2=\(WeaponSpeReplayCache.weaponspe2.count) officialSpe=\(WeaponSpeReplayCache.hasOfficialSpecialize())")
         let packRel = preferMm ? ActionPackPrefetch.mmRel : ActionPackPrefetch.ggRel
@@ -137,7 +137,7 @@ struct ReplayWebView: UIViewRepresentable {
                 preferMm: preferMm,
                 vanilla: forceVanilla
             )
-            log.append("HTTP \(base.absoluteString) wasm=flashreplay-fd22")
+            log.append("HTTP \(base.absoluteString) wasm=flashreplay-fd23")
         } catch {
             log.append("HTTP start FAIL \(error.localizedDescription) → scheme fallback")
             pageURL = Self.fightPageURL(
@@ -525,6 +525,9 @@ struct ReplaySheet: View {
     @StateObject private var log = ReplayDebugLog()
     @State private var statusLine = "启动中…"
     @State private var copiedHint = false
+    @State private var shareURL: URL?
+    @State private var showShare = false
+    @State private var exportHint = ""
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -544,6 +547,18 @@ struct ReplaySheet: View {
                     }
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(.white)
+                    Button("导出txt") {
+                        if let url = log.exportTxtFile() {
+                            shareURL = url
+                            showShare = true
+                            exportHint = "已生成 \(url.lastPathComponent)"
+                        } else {
+                            exportHint = "导出失败"
+                        }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { exportHint = "" }
+                    }
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.orange)
                     Button("复制") {
                         UIPasteboard.general.string = log.joinedText
                         log.flushToDisk()
@@ -553,7 +568,7 @@ struct ReplaySheet: View {
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(.cyan)
                     Button {
-                        log.flushToDisk()
+                        _ = log.exportTxtFile()
                         dismiss()
                     } label: {
                         Image(systemName: "xmark.circle.fill")
@@ -570,6 +585,12 @@ struct ReplaySheet: View {
                     Text("已复制全部日志到剪贴板")
                         .font(.caption2)
                         .foregroundStyle(.yellow)
+                        .padding(.top, 2)
+                }
+                if !exportHint.isEmpty {
+                    Text(exportHint)
+                        .font(.caption2)
+                        .foregroundStyle(.orange)
                         .padding(.top, 2)
                 }
 
@@ -600,17 +621,22 @@ struct ReplaySheet: View {
             }
         }
         .statusBarHidden(true)
+        .sheet(isPresented: $showShare) {
+            if let shareURL {
+                ReplayLogShareSheet(fileURL: shareURL)
+            }
+        }
         .onAppear {
             log.append("=== replay open rid=\(replayId) act=\(act.count)B ===")
             // AVAudioSession 推迟到 PACK/velocimetry 后再开（见 activateAudioSessionIfNeeded）
         }
         .onReceive(NotificationCenter.default.publisher(for: .daledouReplayClose)) { _ in
-            log.flushToDisk()
+            _ = log.exportTxtFile()
             dismiss()
         }
         .onDisappear {
             log.append("=== replay close ===")
-            log.flushToDisk()
+            _ = log.exportTxtFile()
             ReplayWebView.deactivateAudioSession()
         }
     }
@@ -630,4 +656,15 @@ struct ReplaySheet: View {
         }
         return .green.opacity(0.9)
     }
+}
+
+/// 系统分享面板：直接甩 `.txt`（微信/邮件/文件 App）
+private struct ReplayLogShareSheet: UIViewControllerRepresentable {
+    let fileURL: URL
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: [fileURL], applicationActivities: nil)
+    }
+
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }

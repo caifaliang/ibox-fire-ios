@@ -26,6 +26,10 @@ final class ReplayDebugLog: ObservableObject {
 
     private static func dedupeKey(_ message: String) -> String? {
         let m = message
+        // CDN 生命周期必须逐条可见（fd22 饿死时只剩 REMOTE×N，看不出 begin/OK/FAIL）
+        if m.contains("CDN ") || m.contains("CACHE write") || m.contains("SEND ") || m.contains("STREAM ") {
+            return nil
+        }
         if m.contains("loadingSWC") { return "loadingSWC" }
         if m.contains("ui-v10") { return "ui-v10" }
         if m.contains("bg/") || m.contains("bg1") || m.contains("bg2") { return "bg" }
@@ -43,6 +47,33 @@ final class ReplayDebugLog: ObservableObject {
             return "POST-remote"
         }
         return nil
+    }
+
+    /// 写一份可分享的 `.txt`（微信/文件 App 都能直接发出去），并同步 last 快照。
+    @discardableResult
+    func exportTxtFile() -> URL? {
+        flushToDisk()
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let dir = docs.appendingPathComponent("DaLedouLogs", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let fmt = DateFormatter()
+        fmt.locale = Locale(identifier: "en_US_POSIX")
+        fmt.dateFormat = "yyyyMMdd_HHmmss"
+        let name = "daledou_replay_\(fmt.string(from: Date())).txt"
+        let url = dir.appendingPathComponent(name)
+        let header = "DaLedou replay log\nexported=\(ISO8601DateFormatter().string(from: Date()))\nlines=\(lines.count)\n---\n"
+        let body = header + joinedText + "\n"
+        do {
+            try body.write(to: url, atomically: true, encoding: .utf8)
+            // 固定名，方便「文件」App / iTunes 直接找
+            let last = docs.appendingPathComponent("ruffle_replay_last.txt")
+            try? body.write(to: last, atomically: true, encoding: .utf8)
+            append("export txt → \(name) (\(body.utf8.count)B)")
+            return url
+        } catch {
+            append("export txt FAIL \(error.localizedDescription)")
+            return nil
+        }
     }
 
     func append(_ message: String) {
@@ -82,10 +113,11 @@ final class ReplayDebugLog: ObservableObject {
 
     func flushToDisk() {
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        let url = docs.appendingPathComponent("ruffle_replay_debug.log")
-        try? joinedText.write(to: url, atomically: false, encoding: .utf8)
+        // 主快照一律 .txt，方便「文件」App / 隔空投送直接发出去
         let stamp = docs.appendingPathComponent("ruffle_replay_last.txt")
-        try? joinedText.write(to: stamp, atomically: false, encoding: .utf8)
+        try? joinedText.write(to: stamp, atomically: true, encoding: .utf8)
+        let legacy = docs.appendingPathComponent("ruffle_replay_debug.log")
+        try? joinedText.write(to: legacy, atomically: true, encoding: .utf8)
     }
 
     // MARK: - Ship to PC LogReceiver
