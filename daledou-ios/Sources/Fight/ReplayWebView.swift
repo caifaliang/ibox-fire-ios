@@ -23,7 +23,7 @@ struct ReplayWebView: UIViewRepresentable {
         ActionPackPrefetch.sessionPreferMm = preferMm
         // 饭店助手 flashreplay 在 iOS 上假注入/卡 loadingSWC；切回已验证能进 action_gg 的 ruffle_fight
         // 版本戳：若日志不是这一行，说明装的不是本提交 IPA
-        log.append("boot RUFFLE_FIGHT build=138-fd19b replayId=\(replayId) actLen=\(act.count) preferMm=\(preferMm)")
+        log.append("boot RUFFLE_FIGHT build=138-fd20 replayId=\(replayId) actLen=\(act.count) preferMm=\(preferMm)")
         WeaponSpeReplayCache.captureFromAct(act)
         log.append("weaponspe w1=\(WeaponSpeReplayCache.weaponspe1.count) w2=\(WeaponSpeReplayCache.weaponspe2.count) officialSpe=\(WeaponSpeReplayCache.hasOfficialSpecialize())")
         let packRel = preferMm ? ActionPackPrefetch.mmRel : ActionPackPrefetch.ggRel
@@ -137,7 +137,7 @@ struct ReplayWebView: UIViewRepresentable {
                 preferMm: preferMm,
                 vanilla: forceVanilla
             )
-            log.append("HTTP \(base.absoluteString) wasm=flashreplay-fd19b")
+            log.append("HTTP \(base.absoluteString) wasm=flashreplay-fd20")
         } catch {
             log.append("HTTP start FAIL \(error.localizedDescription) → scheme fallback")
             pageURL = Self.fightPageURL(
@@ -186,7 +186,7 @@ struct ReplayWebView: UIViewRepresentable {
     private static func fightPageURL(base: String, preferMm: Bool, vanilla: Bool, lowmem: Bool = false) -> URL {
         var s = base
         if !s.hasSuffix("/") { s += "/" }
-        // 138-fd19：parse 期 mute，PACK ready 后再开声（修 fd18 jetsam）
+        // 138-fd20：CloseFlash 仅 complete 关页（修 preparing 误关闪退）
         return URL(string: "\(s)flashreplay/index.html")!
     }
 
@@ -302,10 +302,14 @@ struct ReplayWebView: UIViewRepresentable {
                 case "boot":
                     flashreplayStarted = true
                     statusLine.wrappedValue = "flashreplay 已启动…"
+                case "closeflash":
+                    // 加载期也会打到，只记日志不关页
+                    statusLine.wrappedValue = "CloseFlash \(stringify(payload))"
                 case "close":
-                    // SWF CloseFlash（播完返回）→ 关全屏，回游戏页
+                    // 仅 JS 在 complete 后发 close → 关全屏
                     statusLine.wrappedValue = "关闭动画…"
                     log.append("CloseFlash → dismiss")
+                    log.flushToDisk()
                     NotificationCenter.default.post(name: .daledouReplayClose, object: nil)
                 case "sound_on":
                     statusLine.wrappedValue = "声音已开"

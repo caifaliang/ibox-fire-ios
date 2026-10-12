@@ -162,11 +162,16 @@
     weaponpanel: function () { return connectionName; },
     weaponshow: function () { document.getElementById('weapons').style.display = 'block'; },
     weaponhide: function () { document.getElementById('weapons').style.display = 'none'; },
-    // 仅播完/对战中返回才关页；加载期误触会毁场
+    // fd19 把 preparing 也关页 → SWF 加载期常调 CloseFlash → 瞬间闪退（日志都来不及刷）
+    // 仅 complete 后关页；其余对齐 fd17：只改状态，不 dismiss
     CloseFlash: function () {
-      if (!/^(playing|complete|preparing)$/.test(playbackState)) return;
-      try { window.DaledouReplay.park(); } catch (_) {}
-      notifyIOS('close', {}, 'CloseFlash');
+      notifyIOS('closeflash', { state: playbackState }, 'CloseFlash state=' + playbackState);
+      if (playbackState === 'complete') {
+        try { window.DaledouReplay.park(); } catch (_) {}
+        notifyIOS('close', {}, 'CloseFlash dismiss');
+        return;
+      }
+      if (active) state('playing', '');
     },
     // The original initCompleteScreen invokes this before displaying the result.
     OpenFlash: window.FightComplete,

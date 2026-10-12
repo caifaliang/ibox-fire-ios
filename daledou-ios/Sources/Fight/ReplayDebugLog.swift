@@ -61,14 +61,24 @@ final class ReplayDebugLog: ObservableObject {
         if lines.count > maxLines {
             lines.removeFirst(lines.count - maxLines)
         }
-        if lines.count % 5 == 0 || message.contains("FAIL") || message.contains("err") {
+        // 闪退抓不到剪贴板时靠 Documents 落盘；关键节点每行都刷
+        let critical = message.contains("FAIL") || message.contains("err")
+            || message.contains("STREAM") || message.contains("PACK")
+            || message.contains("CloseFlash") || message.contains("closeflash")
+            || message.contains("OOM") || message.contains("boot ")
+            || message.contains("FightReady") || message.contains("sound")
+        if critical || lines.count % 3 == 0 {
             flushToDisk()
         }
     }
 
     func flushToDisk() {
-        let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("ruffle_replay_debug.log")
-        try? joinedText.write(to: url, atomically: true, encoding: .utf8)
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let url = docs.appendingPathComponent("ruffle_replay_debug.log")
+        // 非 atomically：闪退时尽量保住已写内容
+        try? joinedText.write(to: url, atomically: false, encoding: .utf8)
+        // 双写一份带时间戳，避免被下次开机覆盖前用户找不到
+        let stamp = docs.appendingPathComponent("ruffle_replay_last.txt")
+        try? joinedText.write(to: stamp, atomically: false, encoding: .utf8)
     }
 }
