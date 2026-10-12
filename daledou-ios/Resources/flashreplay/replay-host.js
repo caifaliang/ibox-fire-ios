@@ -336,10 +336,25 @@
     // the initial Ruffle setting, so a load-only quality flag cannot implement this.
     setQuality: function (value) {
       if (!Object.prototype.hasOwnProperty.call(qualityScales, value)) return false;
-      if (quality === value) return true;
       quality = value;
       renderScale = qualityScales[quality];
-      updatePixelRatio(); resetFrameSampler();
+      updatePixelRatio();
+      resetFrameSampler();
+      // 必须 resize，否则 Ruffle 仍用旧 backing store（iOS 点「清晰」无感）
+      try { window.dispatchEvent(new Event('resize')); } catch (_) {}
+      try {
+        var canvas = document.getElementById('canvas');
+        if (canvas) {
+          var w = canvas.clientWidth || 0;
+          canvas.style.width = (w + 1) + 'px';
+          requestAnimationFrame(function () {
+            canvas.style.width = w ? (w + 'px') : '';
+            try { window.dispatchEvent(new Event('resize')); } catch (_) {}
+          });
+        }
+      } catch (_) {}
+      notifyIOS('quality', { quality: quality, dpr: replayRatio },
+        '画质 ' + quality + ' dpr=' + (Math.round(replayRatio * 100) / 100));
       return true;
     },
     dispose: dispose,

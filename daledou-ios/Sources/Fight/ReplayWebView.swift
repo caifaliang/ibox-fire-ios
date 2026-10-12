@@ -10,6 +10,8 @@ struct ReplayWebView: UIViewRepresentable {
     @ObservedObject var log: ReplayDebugLog
     @Binding var statusLine: String
     @Binding var quality: String
+    /// 每次点选递增，确保 updateUIView 一定会跑 setQuality（同档重选也生效）
+    var qualityNonce: Int
 
     func makeCoordinator() -> Coordinator {
         Coordinator(act: act, replayId: replayId, log: log, statusLine: $statusLine, quality: quality)
@@ -24,7 +26,7 @@ struct ReplayWebView: UIViewRepresentable {
         ActionPackPrefetch.sessionPreferMm = preferMm
         // 饭店助手 flashreplay 在 iOS 上假注入/卡 loadingSWC；切回已验证能进 action_gg 的 ruffle_fight
         // 版本戳：若日志不是这一行，说明装的不是本提交 IPA
-        log.append("boot RUFFLE_FIGHT build=138-fd26 replayId=\(replayId) actLen=\(act.count) preferMm=\(preferMm)")
+        log.append("boot RUFFLE_FIGHT build=138-fd27 replayId=\(replayId) actLen=\(act.count) preferMm=\(preferMm)")
         WeaponSpeReplayCache.captureFromAct(act)
         log.append("weaponspe w1=\(WeaponSpeReplayCache.weaponspe1.count) w2=\(WeaponSpeReplayCache.weaponspe2.count) officialSpe=\(WeaponSpeReplayCache.hasOfficialSpecialize())")
         let packRel = preferMm ? ActionPackPrefetch.mmRel : ActionPackPrefetch.ggRel
@@ -138,7 +140,7 @@ struct ReplayWebView: UIViewRepresentable {
                 preferMm: preferMm,
                 vanilla: forceVanilla
             )
-            log.append("HTTP \(base.absoluteString) wasm=flashreplay-fd26")
+            log.append("HTTP \(base.absoluteString) wasm=flashreplay-fd27")
         } catch {
             log.append("HTTP start FAIL \(error.localizedDescription) → scheme fallback")
             pageURL = Self.fightPageURL(
@@ -195,7 +197,7 @@ struct ReplayWebView: UIViewRepresentable {
         if let wv = uiView.subviews.first as? WKWebView {
             context.coordinator.webView = wv
             wv.frame = uiView.bounds
-            context.coordinator.applyQualityIfNeeded(quality, to: wv)
+            context.coordinator.applyQuality(quality, nonce: qualityNonce, to: wv)
         }
     }
 
@@ -226,6 +228,7 @@ struct ReplayWebView: UIViewRepresentable {
         private var statusLine: Binding<String>
         private var isCold = true
         private var appliedQuality: String
+        private var appliedQualityNonce: Int = -1
 
         init(
             act: String,
@@ -241,10 +244,12 @@ struct ReplayWebView: UIViewRepresentable {
             self.appliedQuality = quality
         }
 
-        func applyQualityIfNeeded(_ quality: String, to webView: WKWebView) {
+        func applyQuality(_ quality: String, nonce: Int, to webView: WKWebView) {
             let q = ReplayQuality.order.contains(quality) ? quality : ReplayQuality.fallback
-            guard q != appliedQuality else { return }
+            // 开战前：只写入全局，等 start 时生效；开战后再 setQuality
+            if nonce == appliedQualityNonce, q == appliedQuality { return }
             appliedQuality = q
+            appliedQualityNonce = nonce
             let js = """
             (function(){
               window.__daledouReplayQuality=\(Self.jsString(q));
@@ -253,12 +258,20 @@ struct ReplayWebView: UIViewRepresentable {
                   return !!window.DaledouReplay.setQuality(\(Self.jsString(q)));
                 }
               }catch(e){}
-              return false;
+              return 'pending';
             })()
             """
-            webView.evaluateJavaScript(js) { [weak self] result, _ in
+            webView.evaluateJavaScript(js) { [weak self] result, error in
+                if let error {
+                    self?.log.append("quality FAIL \(error.localizedDescription)")
+                    return
+                }
                 let ok = (result as? Bool) == true
-                self?.log.append("quality → \(q) (\(ReplayQuality.label(for: q))) ok=\(ok)")
+                let pending = (result as? String) == "pending"
+                self?.log.append("quality → \(q) (\(ReplayQuality.label(for: q))) ok=\(ok) pending=\(pending)")
+                if ok {
+                    self?.statusLine.wrappedValue = "画质：\(ReplayQuality.label(for: q))"
+                }
             }
         }
 
@@ -346,6 +359,12 @@ struct ReplayWebView: UIViewRepresentable {
                     log.append("CloseFlash → dismiss")
                     log.flushToDisk()
                     NotificationCenter.default.post(name: .daledouReplayClose, object: nil)
+                case "quality":
+                    if let p = payload as? [String: Any] {
+                        let q = p["quality"] as? String ?? ""
+                        let dpr = p["dpr"] as? Double ?? 0
+                        statusLine.wrappedValue = "画质 \(ReplayQuality.label(for: q)) dpr=\(String(format: "%.2f", dpr))"
+                    }
                 case "sound_on":
                     statusLine.wrappedValue = "声音已开"
                     ReplayWebView.activateAudioSessionIfNeeded()
@@ -562,6 +581,8 @@ struct ReplaySheet: View {
     @StateObject private var log = ReplayDebugLog()
     @State private var statusLine = "启动中…"
     @State private var quality = ReplayQuality.current
+    @State private var qualityNonce = 0
+    @State private var qualityHint = ""
     @State private var copiedHint = false
     @State private var shareURL: URL?
     @State private var showShare = false
@@ -570,8 +591,15 @@ struct ReplaySheet: View {
     var body: some View {
         ZStack(alignment: .top) {
             Color.black.ignoresSafeArea()
-            ReplayWebView(act: act, replayId: replayId, log: log, statusLine: $statusLine, quality: $quality)
-                .ignoresSafeArea()
+            ReplayWebView(
+                act: act,
+                replayId: replayId,
+                log: log,
+                statusLine: $statusLine,
+                quality: $quality,
+                qualityNonce: qualityNonce
+            )
+            .ignoresSafeArea()
 
             VStack(spacing: 0) {
                 HStack(alignment: .top, spacing: 8) {
@@ -580,15 +608,35 @@ struct ReplaySheet: View {
                         .foregroundStyle(.green)
                         .lineLimit(2)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                    Button(ReplayQuality.label(for: quality)) {
-                        let next = ReplayQuality.next(after: quality)
-                        quality = next
-                        ReplayQuality.current = next
-                        log.append("quality tap → \(next) (\(ReplayQuality.label(for: next)))")
+                    Menu {
+                        ForEach(ReplayQuality.order, id: \.self) { key in
+                            Button {
+                                quality = key
+                                ReplayQuality.current = key
+                                qualityNonce += 1
+                                qualityHint = "已选：\(ReplayQuality.label(for: key))"
+                                log.append("quality select → \(key) (\(ReplayQuality.label(for: key))) nonce=\(qualityNonce)")
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                                    if qualityHint.hasPrefix("已选") { qualityHint = "" }
+                                }
+                            } label: {
+                                if quality == key {
+                                    Label(ReplayQuality.label(for: key), systemImage: "checkmark")
+                                } else {
+                                    Text(ReplayQuality.label(for: key))
+                                }
+                            }
+                        }
+                    } label: {
+                        Text("画质·\(ReplayQuality.label(for: quality))")
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(.black)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(Color.yellow)
+                            .clipShape(Capsule())
                     }
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.yellow)
-                    .accessibilityLabel("切换清晰度")
+                    .accessibilityLabel("选择画质")
                     Button(log.showPanel ? "藏日志" : "日志") {
                         log.showPanel.toggle()
                     }
@@ -638,6 +686,12 @@ struct ReplaySheet: View {
                     Text(exportHint)
                         .font(.caption2)
                         .foregroundStyle(.orange)
+                        .padding(.top, 2)
+                }
+                if !qualityHint.isEmpty {
+                    Text(qualityHint)
+                        .font(.caption2)
+                        .foregroundStyle(.yellow)
                         .padding(.top, 2)
                 }
 
