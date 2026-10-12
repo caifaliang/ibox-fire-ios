@@ -239,6 +239,8 @@
       CloseFlash: function () {
         setStatus('CloseFlash');
         notifyAndroid('console', { msg: 'CloseFlash' });
+        // 补丁 SWF 用 CloseFlash；官方 v10.19 仍等 FightReady
+        if (!officialReplay) tryInject();
         return null;
       },
       OpenFlash: function () {
@@ -280,9 +282,11 @@
     let player = null;
     let pendingAct = null;
     let injected = false;
-    // 空 player 上 setFightReplayData/callEI 会假成功（138-fix 0.19s）。必须等 load() 完成或 FightReady。
+    // 空 player 上 setFightReplayData/callEI 会假成功（138-fix 0.19s）。
+    // 官方 v10.19 必须等 FightReady（138-fd 在 1.53s 假注入 → loadingSWC 死循环）。
     let fightReady = false;
     let movieLoaded = false;
+    let officialReplay = false;
 
     window.__injectFightAct = function(act, replayId) {
       pendingAct = { act: String(act || ''), id: String(replayId || 'app_replay') };
@@ -399,10 +403,14 @@
         setStatus('wait movie load…');
         return false;
       }
+      if (officialReplay && !fightReady) {
+        setStatus('wait FightReady…');
+        return false;
+      }
       const cgi = makeCgi(pendingAct.act);
       const rid = pendingAct.id;
       try {
-        // 饭店：优先 callExternalInterface('setFightReplayData', …)
+        // 饭店 flashreplay：FightReady 后 callExternalInterface('setFightReplayData', …)
         try {
           var eng = player.ruffle && player.ruffle();
           if (eng && typeof eng.callExternalInterface === 'function') {
@@ -528,8 +536,9 @@
         fightReady = false;
         movieLoaded = false;
         injected = false;
+        officialReplay = true;
         // 对齐饭店助手：CDN 形态 mainUrl（gres/main/…）+ a=replay，不设 blank.xml。
-        // 配合本机 query=-5 / CDN config / getCookie，才能走出 BeginLoading。
+        // 战报必须等 FightReady 再注入（138-fd 假注入卡 loadingSWC）。
         const mainUrl = location.origin + '/gres/main/PetFunFight-v10.19.swf';
         await player.load(Object.assign({
           url: mainUrl,
@@ -539,16 +548,8 @@
         }, baseCfg));
         movieLoaded = true;
         notifyAndroid('swf_ready', { attempt: 'url-fd', wasm: forceVanilla ? 'vanilla' : 'lazy-gpu', a: 'replay', swf: 'v10.19' });
-        setStatus('swf ready · wait EI… dpr=' + (Math.round((window.__replayDpr || 0) * 100) / 100));
+        setStatus('swf loaded · wait FightReady… dpr=' + (Math.round((window.__replayDpr || 0) * 100) / 100));
         if (window.__startReplayFpsSampler) window.__startReplayFpsSampler();
-        tryInject();
-        let tries = 0;
-        const maxTries = 120;
-        const t = setInterval(() => {
-          tries++;
-          if (tryInject() || tries > maxTries) clearInterval(t);
-        }, 500);
-        setTimeout(() => clearInterval(t), 60000);
       } catch (e) {
         setStatus('fail: ' + e);
         notifyAndroid('boot_fail', { err: String(e) });
