@@ -18,13 +18,15 @@ final class RuffleLocalServer {
         return URL(string: "http://127.0.0.1:\(port)/")
     }
 
-    /// 最小合法 FWS（错性别 stub）
+    /// 最小合法 FWS（错性别 / heavy stub）
     private static let emptySwf = Data([
         0x46, 0x57, 0x53, 0x0A,
         0x18, 0x00, 0x00, 0x00,
         0x70, 0x00, 0x13, 0x88, 0x00, 0x00, 0xEA, 0x60,
         0x00, 0x0C, 0x01, 0x00, 0x40, 0x00, 0x00, 0x00,
     ])
+    /// NewLoader(isEncode) 会剥 9 字节；裸 emptySwf 剥完即坏 →「文件错误」（fd13 action_mm stub）
+    private static let emptySwfForNewLoader: Data = SwfPrefixStrip.encodePrefixForNewLoader(emptySwf)
 
     /// 严格对齐饭店 APK stubHeavy。fd10：stub xianxia 空壳 →「文件错误，建议清理缓存！」卡 100%。
     /// 不可 stub ui-v10 / leisure / xianxia。
@@ -298,16 +300,16 @@ final class RuffleLocalServer {
             let preferMm = ActionPackPrefetch.sessionPreferMm
             let wrong = preferMm ? low.contains("action_gg") : low.contains("action_mm")
             if wrong {
-                log("STUB wrong-gender \(fileRel)")
-                respond(conn, status: 200, mime: mime(fileRel), body: Self.emptySwf, headOnly: headOnly)
+                log("STUB wrong-gender \(fileRel) \(Self.emptySwfForNewLoader.count)B nul9")
+                respond(conn, status: 200, mime: mime(fileRel), body: Self.emptySwfForNewLoader, headOnly: headOnly)
                 return
             }
         }
 
         // 与 APK stubHeavy 一致（非半分辨率降配）
         if Self.shouldStubReplayAsset(low) {
-            log("STUB apk-heavy \(fileRel)")
-            respond(conn, status: 200, mime: mime(fileRel), body: Self.emptySwf, headOnly: headOnly)
+            log("STUB apk-heavy \(fileRel) \(Self.emptySwfForNewLoader.count)B nul9")
+            respond(conn, status: 200, mime: mime(fileRel), body: Self.emptySwfForNewLoader, headOnly: headOnly)
             return
         }
 

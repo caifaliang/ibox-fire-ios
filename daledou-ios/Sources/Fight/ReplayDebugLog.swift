@@ -25,7 +25,8 @@ final class ReplayDebugLog: ObservableObject {
         if m.contains("ui-v10") { return "ui-v10" }
         if m.contains("bg/") || m.contains("bg1") || m.contains("bg2") { return "bg" }
         if m.contains("xianxia") { return "xianxia" }
-        if m.contains("STUB apk-heavy") { return "stub" }
+        if m.contains("STUB wrong-gender") || m.contains("STUB apk-heavy") { return "stub" }
+        if m.contains("action_mm") { return "action_mm" }
         if m.contains("POST treated") && m.contains("/remote/") {
             if let r = m.range(of: "gres/") {
                 let rest = String(m[r.upperBound...])
