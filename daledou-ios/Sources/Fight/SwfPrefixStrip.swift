@@ -1,4 +1,5 @@
 import Foundation
+import zlib
 
 /// CDN 下发的 SWF 常带若干 NUL 前缀；未剥离时 Loader 立刻 IO_ERROR（对齐 Android `stripSwfPrefix`）。
 enum SwfPrefixStrip {
@@ -66,30 +67,73 @@ enum SwfPrefixStrip {
         return raw.subdata(in: skip..<raw.count)
     }
 
-    /// CWS(zlib) → FWS。嵌套 Loader 在 iOS 上对 CWS 易卡 COMPLETE。
+    /// CWS(zlib) → FWS。`NSData.decompressed(.zlib)` 对 SWF CWS 常失败；改用 zlib。
     static func cwsToFws(_ raw: Data) -> Data {
         let clean = stripData(raw)
         guard clean.count >= 8,
               clean[clean.startIndex] == 0x43,
               clean[clean.startIndex + 1] == 0x57,
               clean[clean.startIndex + 2] == 0x53 else { return clean }
+        let ulen = Int(clean.subdata(in: (clean.startIndex + 4)..<(clean.startIndex + 8)).withUnsafeBytes {
+            $0.load(as: UInt32.self)
+        })
         let body = clean.subdata(in: (clean.startIndex + 8)..<clean.endIndex)
-        guard let inflated = try? (body as NSData).decompressed(using: .zlib) as Data else {
-            return clean
-        }
-        var out = Data(capacity: 8 + inflated.count)
+        let expect = max(ulen - 8, 1)
+        guard let inflated = inflateZlib(body, expectedSize: expect) else { return clean }
+        let slice = inflated.count > expect ? inflated.prefix(expect) : inflated[...]
+        var out = Data(capacity: 8 + slice.count)
         out.append(0x46) // F
         out.append(0x57) // W
         out.append(0x53) // S
         out.append(clean[clean.startIndex + 3]) // version
-        out.append(clean.subdata(in: (clean.startIndex + 4)..<(clean.startIndex + 8)))
-        out.append(inflated)
+        var le = UInt32(ulen).littleEndian
+        withUnsafeBytes(of: &le) { out.append(contentsOf: $0) }
+        out.append(contentsOf: slice)
         return out
     }
 
+    private static func inflateZlib(_ input: Data, expectedSize: Int) -> Data? {
+        var stream = z_stream()
+        guard inflateInit_(&stream, ZLIB_VERSION, Int32(MemoryLayout<z_stream>.size)) == Z_OK else {
+            return nil
+        }
+        defer { inflateEnd(&stream) }
+
+        var output = [UInt8](repeating: 0, count: max(expectedSize, 64 * 1024))
+        var total = 0
+        var failed = false
+        input.withUnsafeBytes { srcBuf in
+            guard let src = srcBuf.bindMemory(to: Bytef.self).baseAddress else {
+                failed = true
+                return
+            }
+            stream.next_in = UnsafeMutablePointer(mutating: src)
+            stream.avail_in = uInt(input.count)
+            while true {
+                if total >= output.count {
+                    output.append(contentsOf: repeatElement(0, count: max(output.count, 64 * 1024)))
+                }
+                let room = output.count - total
+                let rc: Int32 = output.withUnsafeMutableBufferPointer { buf in
+                    stream.next_out = buf.baseAddress!.advanced(by: total)
+                    stream.avail_out = uInt(room)
+                    return inflate(&stream, Z_NO_FLUSH)
+                }
+                let wrote = room - Int(stream.avail_out)
+                total += wrote
+                if rc == Z_STREAM_END { break }
+                if rc != Z_OK {
+                    failed = true
+                    break
+                }
+                if wrote == 0 && stream.avail_in == 0 { break }
+            }
+        }
+        if failed || total <= 0 { return nil }
+        return Data(output.prefix(total))
+    }
+
     /// NewLoader(isEncode) 在 URLStream COMPLETE 后 `position=9` 再 loadBytes。
-    /// fd6 日志出现 POST name=angel → 走的是 stream 路径（非 native），必须带 CDN 式 9 NUL。
-    /// 饭店 Android intercept 后剥前缀是因为那边走 native；iOS 见 POST 则补回前缀。
     static func encodePrefixForNewLoader(_ raw: Data) -> Data {
         let body: Data
         if hasValidSig(raw) {
@@ -104,22 +148,30 @@ enum SwfPrefixStrip {
         return out
     }
 
-    /// gres 子 SWF：FWS + 9 NUL，供 NewLoader encode 路径一次 loadBytes 成功。
+    /// gres 子 SWF：尽量 FWS + 9 NUL（npc 等 CWS 在 iOS 上易卡「加载中」100%）。
     static func prepareGresSwfForNewLoader(_ raw: Data) -> Data {
-        encodePrefixForNewLoader(stripData(raw)) // CWS 即可；NewLoader 剥 9 后 loadBytes
+        encodePrefixForNewLoader(cwsToFws(raw))
     }
 
     /// 按路径分流（对齐 NewLoader.onStreamComplete）：
     /// - `xmls*` → URLLoader BINARY，必须干净
-    /// - URL 含 `bg` → isEncode 分支显式跳过 `position=9`，必须干净（fd12 给 bg 加 nul9 → 文件错误）
+    /// - URL 含 `bg` → 不剥 9，必须干净
     /// - `petfunfight*` → Ruffle 主 SWF，干净
-    /// - 其余 gres → NewLoader(isEncode) 会剥 9，补 CDN 式 NUL
+    /// - 其余 gres → NewLoader(isEncode) 补 9 NUL，并尽量 FWS
     static func prepareGresAsset(_ raw: Data, fileName: String) -> Data {
         let low = fileName.lowercased()
         if low.contains("xmls") || low.contains("bg") || low.hasPrefix("petfunfight") {
             return stripData(raw)
         }
         return prepareGresSwfForNewLoader(raw)
+    }
+
+    /// 大文件流式发送时是否需要额外加 9 NUL（文件本身已是干净签名）。
+    static func needsNewLoaderNul9Prefix(fileName: String) -> Bool {
+        let low = fileName.lowercased()
+        if low.contains("xmls") || low.contains("bg") || low.hasPrefix("petfunfight") { return false }
+        if !low.hasSuffix(".swf") { return false }
+        return true
     }
 
     private static func prefixSkip(in data: Data) -> Int? {

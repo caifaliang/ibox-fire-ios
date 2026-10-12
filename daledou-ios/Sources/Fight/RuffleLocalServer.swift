@@ -304,6 +304,23 @@ final class RuffleLocalServer {
                 respond(conn, status: 200, mime: mime(fileRel), body: Self.emptySwfForNewLoader, headOnly: headOnly)
                 return
             }
+            // 请求 v10.1900 但预拉是 v10.1300：用本地 FWS，避免再下 37MB CWS（fd14）
+            if !low.contains("gg2"), !low.contains("mm2") {
+                let disk = ActionPackPrefetch.localURL(
+                    for: preferMm ? ActionPackPrefetch.mmRel : ActionPackPrefetch.ggRel
+                )
+                let sz = (try? FileManager.default.attributesOfItem(atPath: disk.path)[.size] as? NSNumber)?.int64Value ?? 0
+                if sz > 1_000_000 {
+                    _ = SwfPrefixStrip.stripFileIfNeeded(disk)
+                    if SwfZwsInflate.signature(of: disk) == "ZWS" {
+                        _ = SwfZwsInflate.inflateFileIfNeeded(disk) { self.log($0) }
+                    }
+                    let sig = SwfZwsInflate.signature(of: disk)
+                    log("PACK alias \(fileRel) → \(disk.lastPathComponent) \(sz)B sig=\(sig)")
+                    respondFile(conn, fileURL: disk, mime: mime(fileRel), headOnly: headOnly)
+                    return
+                }
+            }
         }
 
         // 与 APK stubHeavy 一致（非半分辨率降配）
@@ -510,19 +527,42 @@ final class RuffleLocalServer {
             respond(conn, status: 200, mime: mime, body: payload, headOnly: false)
             return
         }
-        log("STREAM \(fileURL.lastPathComponent) \(size)B (too large for mem)")
+        // 大文件：若 NewLoader 需要 9NUL 且盘上是干净签名，流式时先发 9 个 NUL
+        let name = fileURL.lastPathComponent
+        var prefix = Data()
+        if SwfPrefixStrip.needsNewLoaderNul9Prefix(fileName: name),
+           let fhHead = try? FileHandle(forReadingFrom: fileURL) {
+            let head = fhHead.readData(ofLength: 16)
+            try? fhHead.close()
+            if SwfPrefixStrip.hasValidSig(head) {
+                prefix = Data(repeating: 0, count: 9)
+            }
+        }
+        let total = Int(size) + prefix.count
+        log("STREAM \(name) \(size)B+\(prefix.count)nul (too large for mem)")
         guard let fh = try? FileHandle(forReadingFrom: fileURL) else {
             respond(conn, status: 500, mime: "text/plain", body: Data("open fail".utf8))
             return
         }
-        let headerData = httpHeader(status: 200, mime: mime, length: Int(size))
+        let headerData = httpHeader(status: 200, mime: mime, length: total)
         conn.send(content: headerData, completion: .contentProcessed { [weak self] error in
             if error != nil {
                 try? fh.close()
                 conn.cancel()
                 return
             }
-            self?.sendFileBody(fh, on: conn)
+            if prefix.isEmpty {
+                self?.sendFileBody(fh, on: conn)
+            } else {
+                conn.send(content: prefix, completion: .contentProcessed { err in
+                    if err != nil {
+                        try? fh.close()
+                        conn.cancel()
+                        return
+                    }
+                    self?.sendFileBody(fh, on: conn)
+                })
+            }
         })
     }
 
