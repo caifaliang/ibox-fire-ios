@@ -23,7 +23,7 @@ struct ReplayWebView: UIViewRepresentable {
         ActionPackPrefetch.sessionPreferMm = preferMm
         // 饭店助手 flashreplay 在 iOS 上假注入/卡 loadingSWC；切回已验证能进 action_gg 的 ruffle_fight
         // 版本戳：若日志不是这一行，说明装的不是本提交 IPA
-        log.append("boot RUFFLE_FIGHT build=138-fd18 replayId=\(replayId) actLen=\(act.count) preferMm=\(preferMm)")
+        log.append("boot RUFFLE_FIGHT build=138-fd19 replayId=\(replayId) actLen=\(act.count) preferMm=\(preferMm)")
         WeaponSpeReplayCache.captureFromAct(act)
         log.append("weaponspe w1=\(WeaponSpeReplayCache.weaponspe1.count) w2=\(WeaponSpeReplayCache.weaponspe2.count) officialSpe=\(WeaponSpeReplayCache.hasOfficialSpecialize())")
         let packRel = preferMm ? ActionPackPrefetch.mmRel : ActionPackPrefetch.ggRel
@@ -137,7 +137,7 @@ struct ReplayWebView: UIViewRepresentable {
                 preferMm: preferMm,
                 vanilla: forceVanilla
             )
-            log.append("HTTP \(base.absoluteString) wasm=flashreplay-fd18")
+            log.append("HTTP \(base.absoluteString) wasm=flashreplay-fd19")
         } catch {
             log.append("HTTP start FAIL \(error.localizedDescription) → scheme fallback")
             pageURL = Self.fightPageURL(
@@ -164,10 +164,29 @@ struct ReplayWebView: UIViewRepresentable {
         box.addSubview(wv)
     }
 
+    /// 动作包 parse 完成后再激活，避免与 69MB FWS 叠峰 jetsam（fd18）
+    private static var audioSessionArmed = false
+    static func activateAudioSessionIfNeeded() {
+        guard !audioSessionArmed else { return }
+        audioSessionArmed = true
+        do {
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
+            try session.setActive(true)
+        } catch {
+            audioSessionArmed = false
+        }
+    }
+
+    static func deactivateAudioSession() {
+        audioSessionArmed = false
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+    }
+
     private static func fightPageURL(base: String, preferMm: Bool, vanilla: Bool, lowmem: Bool = false) -> URL {
         var s = base
         if !s.hasSuffix("/") { s += "/" }
-        // 138-fd18：声音 + CloseFlash 回游戏 + park 暖复用
+        // 138-fd19：parse 期 mute，PACK ready 后再开声（修 fd18 jetsam）
         return URL(string: "\(s)flashreplay/index.html")!
     }
 
@@ -252,9 +271,10 @@ struct ReplayWebView: UIViewRepresentable {
                 log.append(msg)
                 // 双保险：原生侧再踢一次退出 parse-safe（JS fetch 钩子也可能已退出）
                 webView?.evaluateJavaScript(
-                    "window.__setParseSafe && window.__setParseSafe(false,'native_pack_parsed')",
+                    "window.__setParseSafe && window.__setParseSafe(false,'native_pack_parsed');try{window.DaledouReplay&&window.DaledouReplay.allowSound()}catch(e){}",
                     completionHandler: nil
                 )
+                Self.activateAudioSessionIfNeeded()
                 if let (a, id) = RuffleWarmHolder.shared.takePendingAct(), let wv = webView {
                     log.append("WARM drain pending act=\(a.count)")
                     injectAct(a, id: id, into: wv)
@@ -287,6 +307,9 @@ struct ReplayWebView: UIViewRepresentable {
                     statusLine.wrappedValue = "关闭动画…"
                     log.append("CloseFlash → dismiss")
                     NotificationCenter.default.post(name: .daledouReplayClose, object: nil)
+                case "sound_on":
+                    statusLine.wrappedValue = "声音已开"
+                    Self.activateAudioSessionIfNeeded()
                 case "injected", "reinjected":
                     statusLine.wrappedValue = "已注入，等待动作包/开战…"
                 case "fight_ready":
@@ -308,6 +331,11 @@ struct ReplayWebView: UIViewRepresentable {
                         if tag == "6" || tag == "sal_base_ok" || tag == "ready_go" || tag == "ra_startRound" {
                             RuffleWarmHolder.shared.markActionPackReady()
                             RuffleMemPolicy.markFightHealthy()
+                            webView?.evaluateJavaScript(
+                                "try{window.DaledouReplay&&window.DaledouReplay.allowSound()}catch(e){}",
+                                completionHandler: nil
+                            )
+                            Self.activateAudioSessionIfNeeded()
                         }
                     }
                 case "ready_kick":
@@ -570,15 +598,7 @@ struct ReplaySheet: View {
         .statusBarHidden(true)
         .onAppear {
             log.append("=== replay open rid=\(replayId) act=\(act.count)B ===")
-            // iOS 静音键下仍播 SWF 音效
-            do {
-                let session = AVAudioSession.sharedInstance()
-                try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
-                try session.setActive(true)
-                log.append("AVAudioSession playback ok")
-            } catch {
-                log.append("AVAudioSession FAIL \(error.localizedDescription)")
-            }
+            // AVAudioSession 推迟到 PACK/velocimetry 后再开（见 activateAudioSessionIfNeeded）
         }
         .onReceive(NotificationCenter.default.publisher(for: .daledouReplayClose)) { _ in
             log.flushToDisk()
@@ -587,7 +607,7 @@ struct ReplaySheet: View {
         .onDisappear {
             log.append("=== replay close ===")
             log.flushToDisk()
-            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+            ReplayWebView.deactivateAudioSession()
         }
     }
 

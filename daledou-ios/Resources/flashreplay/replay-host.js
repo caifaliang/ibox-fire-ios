@@ -16,7 +16,19 @@
   window.addEventListener('resize', updatePixelRatio);
 
   var main, toolbar, payload, replayId, ready = false, sent = false, generation = 0;
-  var sound = false, failed = false, desiredPaused = false, playbackSpeed = 1, playbackState = 'hostReady';
+  // soundWanted：用户要声；sound：当前是否真正开 volume（动作包 parse 期间必须关，否则 jetsam）
+  var soundWanted = true, sound = false, failed = false, desiredPaused = false, playbackSpeed = 1, playbackState = 'hostReady';
+  function applyVolume() {
+    var v = sound ? 1 : 0;
+    try { if (main) main.ruffle().volume = v; } catch (_) {}
+    try { if (toolbar) toolbar.ruffle().volume = v; } catch (_) {}
+  }
+  function unmuteWhenSafe() {
+    if (!soundWanted || sound || failed || !main) return;
+    sound = true;
+    applyVolume();
+    notifyIOS('sound_on', {}, 'sound on');
+  }
   var active = false, loaded = false, mainUrl = null, toolbarUrl = null, sessionToken = '';
   var sampleFrame = null, sampleStarted = null, frameCount = 0, slowWindows = 0, measuredFps = null;
   var connectionName = 'daledou_replay_' + Math.random().toString(36).slice(2);
@@ -103,13 +115,21 @@
     setTimeout(function () {
       if (expected !== generation || !main) return;
       if (desiredPaused) { sent = false; return; }
-      try {
+        try {
         state('preparing', '正在准备战斗动画');
         call('setFightReplayData', payload, replayId);
         if (!desiredPaused) {
           main.ruffle().resume();
           if (toolbar) toolbar.ruffle().resume();
         }
+        // 动作包 parse 高峰后再开声，避免与 69MB FWS 叠峰
+        setTimeout(function () {
+          if (expected !== generation) return;
+          if (/^(preparing|playing|complete)$/.test(playbackState)) {
+            state('playing', '开战');
+            unmuteWhenSafe();
+          }
+        }, 8000);
       } catch (_) {
         fail('动画启动失败，请重试');
       }
@@ -120,16 +140,21 @@
     notifyIOS('fight_ready', {}, 'FightReady');
     dispatch();
   };
-  window.FightComplete = function () { if (active) state('complete', '播放结束'); };
+  window.FightComplete = function () {
+    if (active) {
+      unmuteWhenSafe();
+      state('complete', '播放结束');
+    }
+  };
   window.getCookie = function (name) {
     // Use the binary URLLoader path: all requests go through the native interceptor.
     if (name === 'chrometag') return '0';
-    // PetFunFight：voice=1 开声；与 Ruffle volume 一致
-    if (name === 'voice') return sound ? '1' : '0';
+    // 保持 voice=0：SWF 不走内嵌静音分支；音量只由 Ruffle volume 控（fd18 getVoice=1 会在 parse 期爆内存）
+    if (name === 'voice') return '0';
     return null;
   };
-  // SWF 内 getVoice：非 0 才播 BGM/音效（原先恒 0 → 无声）
-  window.getVoice = function () { return sound ? 1 : 0; };
+  // 饭店原逻辑：getVoice 恒 0，由宿主 volume 出声
+  window.getVoice = function () { return 0; };
   window.setCookie = function () {};
   window.isqzone = function () { return '16'; };
   window.pgvSendClick = window.pgvSendPV = window.game_fcm = function () {};
@@ -137,8 +162,9 @@
     weaponpanel: function () { return connectionName; },
     weaponshow: function () { document.getElementById('weapons').style.display = 'block'; },
     weaponhide: function () { document.getElementById('weapons').style.display = 'none'; },
-    // 播完点返回：park 暖机 + 通知原生关页（勿把游戏页Jetsam 成「回桌面」）
+    // 仅播完/对战中返回才关页；加载期误触会毁场
     CloseFlash: function () {
+      if (!/^(playing|complete|preparing)$/.test(playbackState)) return;
       try { window.DaledouReplay.park(); } catch (_) {}
       notifyIOS('close', {}, 'CloseFlash');
     },
@@ -209,8 +235,9 @@
       var reusable = main && ready && loaded && !failed && mainUrl === options.mainUrl && toolbarUrl === (options.toolbarUrl || null);
       if (reusable) { generation++; sent = false; payload = null; }
       else dispose();
-      // 原先漏读 options.sound，恒 false → volume 永远 0
-      sound = options.sound !== false;
+      // 记忆用户要声，但 parse 期强制 mute（fd18 一开 volume 就 jetsam）
+      soundWanted = options.sound !== false;
+      sound = false;
       quality = Object.prototype.hasOwnProperty.call(qualityScales, options.quality) ? options.quality : 'standard';
       renderScale = qualityScales[quality]; updatePixelRatio();
       failed = false;
@@ -227,12 +254,12 @@
         replayId = options.replayId;
         if (reusable) {
           state('preparing', '正在准备战斗动画');
-          main.ruffle().volume = sound ? 1 : 0;
+          applyVolume();
           main.ruffle().playbackRate = playbackSpeed;
           // Replace the scene before the first resumed frame can show/play the old one.
           main.ruffle().suspend();
           if (toolbar) {
-            toolbar.ruffle().volume = sound ? 1 : 0;
+            applyVolume();
             toolbar.ruffle().playbackRate = playbackSpeed;
             toolbar.ruffle().suspend();
           }
@@ -249,7 +276,7 @@
           panel.load().then(function () {
             if (expected !== generation) return;
             panel.player.ruffle().playbackRate = playbackSpeed;
-            panel.player.ruffle().volume = sound ? 1 : 0;
+            panel.player.ruffle().volume = 0;
             if (desiredPaused) panel.player.ruffle().suspend();
             else panel.player.ruffle().resume();
           }).catch(function () { /* Optional weapon details do not stop the battle. */ });
@@ -258,7 +285,7 @@
         if (expected !== generation) return;
         loaded = true;
         movie.player.ruffle().playbackRate = playbackSpeed;
-        movie.player.ruffle().volume = sound ? 1 : 0;
+        movie.player.ruffle().volume = 0;
         if (desiredPaused) movie.player.ruffle().suspend();
         else movie.player.ruffle().resume();
         if (expected === generation) dispatch();
@@ -283,9 +310,15 @@
     pause: function () { desiredPaused = true; resetFrameSampler(); if (main) main.ruffle().suspend(); if (toolbar) toolbar.ruffle().suspend(); },
     resume: function () { if (!active) return; desiredPaused = false; resetFrameSampler(); if (main) main.ruffle().resume(); if (toolbar) toolbar.ruffle().resume(); dispatch(); },
     setSound: function (enabled) {
-      sound = !!enabled;
-      if (main) main.ruffle().volume = sound ? 1 : 0;
-      if (toolbar) toolbar.ruffle().volume = sound ? 1 : 0;
+      soundWanted = !!enabled;
+      if (!enabled) { sound = false; applyVolume(); return; }
+      // 仍在 loading 则只记意向，等 unmuteWhenSafe
+      if (/^(loading|hostReady)$/.test(playbackState)) return;
+      unmuteWhenSafe();
+    },
+    /** 原生在 PACK parsed / velocimetry ready 后调用 */
+    allowSound: function () {
+      if (/^(preparing|playing|complete)$/.test(playbackState)) unmuteWhenSafe();
     },
     setSpeed: function (rate) {
       if (typeof rate !== 'number' || !Number.isInteger(rate) || rate < 1 || rate > 4) return false;
