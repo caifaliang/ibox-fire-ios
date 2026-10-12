@@ -153,25 +153,34 @@ enum SwfPrefixStrip {
         encodePrefixForNewLoader(cwsToFws(raw))
     }
 
-    /// 按路径分流（对齐 NewLoader.onStreamComplete）：
-    /// - `xmls*` → URLLoader BINARY，必须干净
-    /// - URL 含 `bg` → 不剥 9，必须干净
-    /// - `petfunfight*` → Ruffle 主 SWF，干净
-    /// - 其余 gres → NewLoader(isEncode) 补 9 NUL，并尽量 FWS
+    /// 按路径分流：
+    /// - `xmls*` → URLLoader，干净
+    /// - `bg*` → NewLoader 对含 bg 的 URL 不剥 9，干净
+    /// - `npc*` → GameingLoadingControl(decode_flag=false) 整包 loadBytes，干净（fd15 nul9 卡 100%）
+    /// - `petfunfight*` → 主 SWF，干净
+    /// - 其余（ui/leisure/action_*）→ NewLoader(isEncode=true) 补 9 NUL + FWS
     static func prepareGresAsset(_ raw: Data, fileName: String) -> Data {
         let low = fileName.lowercased()
-        if low.contains("xmls") || low.contains("bg") || low.hasPrefix("petfunfight") {
-            return stripData(raw)
+        if needsCleanSwf(fileName: low) {
+            // NPC 等也尽量 FWS，避免嵌套 CWS 卡死；但不加 NUL
+            return cwsToFws(raw)
         }
         return prepareGresSwfForNewLoader(raw)
     }
 
-    /// 大文件流式发送时是否需要额外加 9 NUL（文件本身已是干净签名）。
+    static func needsCleanSwf(fileName: String) -> Bool {
+        let low = fileName.lowercased()
+        return low.contains("xmls")
+            || low.contains("bg")
+            || low.contains("npc")
+            || low.hasPrefix("petfunfight")
+    }
+
+    /// 大文件流式发送时是否需要额外加 9 NUL。
     static func needsNewLoaderNul9Prefix(fileName: String) -> Bool {
         let low = fileName.lowercased()
-        if low.contains("xmls") || low.contains("bg") || low.hasPrefix("petfunfight") { return false }
         if !low.hasSuffix(".swf") { return false }
-        return true
+        return !needsCleanSwf(fileName: low)
     }
 
     private static func prefixSkip(in data: Data) -> Int? {
