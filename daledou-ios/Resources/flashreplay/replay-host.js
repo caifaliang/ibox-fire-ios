@@ -174,15 +174,22 @@
       // iOS 本机 http://127.0.0.1：upgradeToHttps 会把请求改成 https://127.0.0.1 → 失败
       upgradeToHttps: !isLocalIOS, splashScreen: false, contextMenu: 'off',
       showSwfDownload: false, openUrlMode: 'deny', logLevel: 'warn',
-      // 对齐饭店 APK：默认 canvas（wgpu-webgl 在部分 iOS 上 Loader 异常）
-      preferredRenderer: 'canvas', quality: 'low',
+      // 饭店对照 log：Used renderer: wgpu-webgl；Loading SWF https://fightimg…（无 /remote/）
+      preferredRenderer: 'wgpu-webgl', quality: 'low',
       frameRate: 30,
       deviceFontRenderer: 'canvas',
       maxExecutionDuration: 60,
       backgroundColor: '#181412', letterbox: 'on', scale: 'showAll',
-      urlRewriteRules: window.__daledouNativeReplay === true ? [] : [
-        [/^https?:\/\/(fightimg\.pet\.qq\.com|fight\.pet\.qq\.com|imgcache\.qq\.com|qzonestyle\.gtimg\.cn)(\/.*)$/, origin + '/remote/$1$2'],
-      ],
+      // 饭店：fightimg 保持真 CDN URL，WebView intercept 剥前缀。
+      // iOS 不能 intercept https host；若把 fightimg 改写成 127.0.0.1/remote/，
+      // loadingSWC 会 GET 成功却每 2s POST 死循环（fd6）。只 rewrite CGI stub。
+      urlRewriteRules: window.__daledouNativeReplay === true ? [] : (
+        isLocalIOS ? [
+          [/^https?:\/\/fight\.pet\.qq\.com(\/.*)$/, origin + '/remote/fight.pet.qq.com$1'],
+        ] : [
+          [/^https?:\/\/(fightimg\.pet\.qq\.com|fight\.pet\.qq\.com|imgcache\.qq\.com|qzonestyle\.gtimg\.cn)(\/.*)$/, origin + '/remote/$1$2'],
+        ]
+      ),
     };
     player.ruffle().playbackRate = playbackSpeed;
     return { player: player, load: function () { return player.ruffle().load(options); } };
