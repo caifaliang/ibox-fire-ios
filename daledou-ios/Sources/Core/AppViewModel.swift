@@ -212,14 +212,12 @@ final class AppViewModel: ObservableObject {
                 statusText = "动作包下载失败，仍尝试播放: \(error.localizedDescription)"
             }
             // 专精预取再给一点时间（与动作包并行）
-            if !WeaponSpeReplayCache.hasOfficialSpecialize() {
-                statusText = "同步武器专精…"
-                await WeaponSpeReplayCache.prefetchOfficial(replayId: rid, cookieHeader: cookieForSpe)
-            }
+            statusText = "同步武器专精…"
+            let speDiag = await WeaponSpeReplayCache.prefetchOfficial(replayId: rid, cookieHeader: cookieForSpe)
             viewFightLoading = false
             statusText = WeaponSpeReplayCache.hasOfficialSpecialize()
                 ? "已取到战斗数据+专精，打开官方动画"
-                : "已取到战斗数据，打开官方动画"
+                : "已取到战斗数据（专精\(speDiag)），打开官方动画"
             showReplay = true
         }
     }

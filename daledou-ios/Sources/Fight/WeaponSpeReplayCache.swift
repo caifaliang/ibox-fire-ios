@@ -42,9 +42,12 @@ enum WeaponSpeReplayCache {
         lock.unlock()
     }
 
-    /// 后台预取；失败则 CGI 走 minimal stub。
-    static func prefetchOfficial(replayId: String, cookieHeader: String) async {
-        if hasOfficialSpecialize() { return }
+    /// 后台预取；失败则 CGI 走 minimal stub。返回诊断串供日志。
+    @discardableResult
+    static func prefetchOfficial(replayId: String, cookieHeader: String) async -> String {
+        if hasOfficialSpecialize() {
+            return "cached \(lastOfficialJson.count)B"
+        }
         var q = "cmd=weapon_specialize&op=11&replayType=0"
         let w1 = weaponspe1
         let w2 = weaponspe2
@@ -57,7 +60,12 @@ enum WeaponSpeReplayCache {
         if !replayId.isEmpty, let e = replayId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) {
             q += "&replayId=\(e)"
         }
-        _ = await fetchAndCache(query: q, cookieHeader: cookieHeader)
+        let cookieLen = cookieHeader.count
+        guard cookieLen > 8 else { return "fail no-cookie" }
+        if let body = await fetchAndCache(query: q, cookieHeader: cookieHeader) {
+            return "ok \(body.count)B"
+        }
+        return "fail fetch cookie=\(cookieLen) w1=\(w1.count)"
     }
 
     @discardableResult

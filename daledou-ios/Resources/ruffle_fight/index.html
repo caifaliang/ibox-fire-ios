@@ -408,8 +408,8 @@
     (async function main() {
       try {
         const params = new URLSearchParams(location.search);
-        // 官方武器/专精面板依赖 BitmapData.draw → wgpu-webgl；失败再回退 canvas
-        const renderer = (params.get('renderer') || 'wgpu-webgl');
+        // iOS WKWebView：v10.19+wgpu 卡 loadingSWC；强制 canvas 先保证能进回放
+        const renderer = (params.get('renderer') || 'canvas');
         preferMm = params.get('preferMm') === '1';
         // 仅显式 ?wasm=vanilla 时强制；失败后也会自动跳一次。
         const forceVanilla = params.get('wasm') === 'vanilla';
