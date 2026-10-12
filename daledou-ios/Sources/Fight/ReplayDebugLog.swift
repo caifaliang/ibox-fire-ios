@@ -25,6 +25,7 @@ final class ReplayDebugLog: ObservableObject {
         if m.contains("ui-v10") { return "ui-v10" }
         if m.contains("bg/") || m.contains("bg1") || m.contains("bg2") { return "bg" }
         if m.contains("npc") { return "npc" }
+        if m.contains("mercenary") { return "mercenary" }
         if m.contains("xianxia") { return "xianxia" }
         if m.contains("STUB wrong-gender") || m.contains("STUB apk-heavy") { return "stub" }
         if m.contains("action_mm") { return "action_mm" }

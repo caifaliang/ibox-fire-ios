@@ -153,34 +153,37 @@ enum SwfPrefixStrip {
         encodePrefixForNewLoader(cwsToFws(raw))
     }
 
-    /// 按路径分流：
-    /// - `xmls*` → URLLoader，干净
-    /// - `bg*` → NewLoader 对含 bg 的 URL 不剥 9，干净
-    /// - `npc*` → GameingLoadingControl(decode_flag=false) 整包 loadBytes，干净（fd15 nul9 卡 100%）
-    /// - `petfunfight*` → 主 SWF，干净
-    /// - 其余（ui/leisure/action_*）→ NewLoader(isEncode=true) 补 9 NUL + FWS
+    /// 分流原则（对齐 AS3）：
+    /// - NewLoader(isEncode=true)：loadingSWC / leisure / ui / action_* / spchack / menpai → nul9+FWS
+    /// - GameingLoadingControl(decode_flag 默认 false)：npc / mercenary / 多数运行时资源 → clean FWS
+    /// - xmls(URLLoader) / bg(NewLoader 跳过剥 9) / 主 SWF → clean（xmls 不强制 FWS）
     static func prepareGresAsset(_ raw: Data, fileName: String) -> Data {
         let low = fileName.lowercased()
-        if needsCleanSwf(fileName: low) {
-            // NPC 等也尽量 FWS，避免嵌套 CWS 卡死；但不加 NUL
-            return cwsToFws(raw)
+        if low.contains("xmls") || low.hasPrefix("petfunfight") {
+            return stripData(raw)
         }
-        return prepareGresSwfForNewLoader(raw)
+        if needsNewLoaderNul9Prefix(fileName: low) {
+            return prepareGresSwfForNewLoader(raw)
+        }
+        // npc / mercenary / bg / …：整包 loadBytes，勿加 NUL
+        return cwsToFws(raw)
     }
 
     static func needsCleanSwf(fileName: String) -> Bool {
-        let low = fileName.lowercased()
-        return low.contains("xmls")
-            || low.contains("bg")
-            || low.contains("npc")
-            || low.hasPrefix("petfunfight")
+        !needsNewLoaderNul9Prefix(fileName: fileName)
     }
 
-    /// 大文件流式发送时是否需要额外加 9 NUL。
+    /// 仅 NewLoader(isEncode=true) 需要 9 NUL。
     static func needsNewLoaderNul9Prefix(fileName: String) -> Bool {
         let low = fileName.lowercased()
-        if !low.hasSuffix(".swf") { return false }
-        return !needsCleanSwf(fileName: low)
+        if !low.contains(".swf") && !low.hasSuffix("swf") { return false }
+        if low.contains("loadingswc") { return true }
+        if low.contains("leisure") { return true }
+        if low.contains("ui-v") || low.hasPrefix("ui-") { return true }
+        if low.contains("action_gg") || low.contains("action_mm") { return true }
+        if low.contains("spchack") { return true }
+        if low.contains("menpai") { return true }
+        return false
     }
 
     private static func prefixSkip(in data: Data) -> Int? {
