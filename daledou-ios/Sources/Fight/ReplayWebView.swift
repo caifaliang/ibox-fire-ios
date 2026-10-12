@@ -9,9 +9,10 @@ struct ReplayWebView: UIViewRepresentable {
     let replayId: String
     @ObservedObject var log: ReplayDebugLog
     @Binding var statusLine: String
+    @Binding var quality: String
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(act: act, replayId: replayId, log: log, statusLine: $statusLine)
+        Coordinator(act: act, replayId: replayId, log: log, statusLine: $statusLine, quality: quality)
     }
 
     func makeUIView(context: Context) -> UIView {
@@ -23,7 +24,7 @@ struct ReplayWebView: UIViewRepresentable {
         ActionPackPrefetch.sessionPreferMm = preferMm
         // 饭店助手 flashreplay 在 iOS 上假注入/卡 loadingSWC；切回已验证能进 action_gg 的 ruffle_fight
         // 版本戳：若日志不是这一行，说明装的不是本提交 IPA
-        log.append("boot RUFFLE_FIGHT build=138-fd25 replayId=\(replayId) actLen=\(act.count) preferMm=\(preferMm)")
+        log.append("boot RUFFLE_FIGHT build=138-fd26 replayId=\(replayId) actLen=\(act.count) preferMm=\(preferMm)")
         WeaponSpeReplayCache.captureFromAct(act)
         log.append("weaponspe w1=\(WeaponSpeReplayCache.weaponspe1.count) w2=\(WeaponSpeReplayCache.weaponspe2.count) officialSpe=\(WeaponSpeReplayCache.hasOfficialSpecialize())")
         let packRel = preferMm ? ActionPackPrefetch.mmRel : ActionPackPrefetch.ggRel
@@ -137,7 +138,7 @@ struct ReplayWebView: UIViewRepresentable {
                 preferMm: preferMm,
                 vanilla: forceVanilla
             )
-            log.append("HTTP \(base.absoluteString) wasm=flashreplay-fd25")
+            log.append("HTTP \(base.absoluteString) wasm=flashreplay-fd26")
         } catch {
             log.append("HTTP start FAIL \(error.localizedDescription) → scheme fallback")
             pageURL = Self.fightPageURL(
@@ -194,21 +195,19 @@ struct ReplayWebView: UIViewRepresentable {
         if let wv = uiView.subviews.first as? WKWebView {
             context.coordinator.webView = wv
             wv.frame = uiView.bounds
+            context.coordinator.applyQualityIfNeeded(quality, to: wv)
         }
     }
 
     static func dismantleUIView(_ uiView: UIView, coordinator: Coordinator) {
-        // 对齐 APK：park + detach，不 destroy——保留已 parse 的 action_gg。
-        // 必须卸掉 message handler，否则 coordinator 释放后 JS 回调会崩。
+        // fd26：关页 destroy，勿 park。暖挂 + 游戏 WebView 叠峰会 jetsam→回桌面。
         coordinator.handler?.onActionPackEvent = nil
         coordinator.handler?.onResourceLog = nil
         if let wv = RuffleWarmHolder.shared.webView ?? uiView.subviews.first as? WKWebView {
             wv.navigationDelegate = nil
         }
-        RuffleWarmHolder.shared.parkInPlace()
-        RuffleWarmHolder.shared.uninstallHandlersIfNeeded()
-        RuffleWarmHolder.shared.detachFromParent()
-        coordinator.log.append("WARM park+detach (keep parsed pack)")
+        RuffleWarmHolder.shared.destroy()
+        coordinator.log.append("WARM destroy on dismiss (avoid jetsam→桌面)")
         coordinator.log.flushToDisk()
     }
 
@@ -226,12 +225,48 @@ struct ReplayWebView: UIViewRepresentable {
         private var flashreplayStarted = false
         private var statusLine: Binding<String>
         private var isCold = true
+        private var appliedQuality: String
 
-        init(act: String, replayId: String, log: ReplayDebugLog, statusLine: Binding<String>) {
+        init(
+            act: String,
+            replayId: String,
+            log: ReplayDebugLog,
+            statusLine: Binding<String>,
+            quality: String
+        ) {
             self.act = act
             self.replayId = replayId
             self.log = log
             self.statusLine = statusLine
+            self.appliedQuality = quality
+        }
+
+        func applyQualityIfNeeded(_ quality: String, to webView: WKWebView) {
+            let q = ReplayQuality.order.contains(quality) ? quality : ReplayQuality.fallback
+            guard q != appliedQuality else { return }
+            appliedQuality = q
+            let js = """
+            (function(){
+              window.__daledouReplayQuality=\(Self.jsString(q));
+              try{
+                if(window.DaledouReplay&&window.DaledouReplay.setQuality){
+                  return !!window.DaledouReplay.setQuality(\(Self.jsString(q)));
+                }
+              }catch(e){}
+              return false;
+            })()
+            """
+            webView.evaluateJavaScript(js) { [weak self] result, _ in
+                let ok = (result as? Bool) == true
+                self?.log.append("quality → \(q) (\(ReplayQuality.label(for: q))) ok=\(ok)")
+            }
+        }
+
+        private static func jsString(_ s: String) -> String {
+            let esc = s
+                .replacingOccurrences(of: "\\", with: "\\\\")
+                .replacingOccurrences(of: "\"", with: "\\\"")
+            return "\"\(esc)\""
         }
 
         func bind(webView: WKWebView, cold: Bool) {
@@ -435,8 +470,9 @@ struct ReplayWebView: UIViewRepresentable {
             let idEsc = id
                 .replacingOccurrences(of: "\\", with: "\\\\")
                 .replacingOccurrences(of: "\"", with: "\\\"")
-            // 同步 bool，勿 return Promise
-            let js = "(function(){try{return !!(window.__startOfficialReplayB64&&window.__startOfficialReplayB64(\"\(b64)\",\"\(idEsc)\"));}catch(e){return false;}})()"
+            // 同步 bool，勿 return Promise；启动前写入清晰度
+            let q = Self.jsString(appliedQuality)
+            let js = "(function(){try{window.__daledouReplayQuality=\(q);return !!(window.__startOfficialReplayB64&&window.__startOfficialReplayB64(\"\(b64)\",\"\(idEsc)\"));}catch(e){return false;}})()"
             webView.evaluateJavaScript(js) { [weak self] result, error in
                 guard let self else { return }
                 if let error {
@@ -444,7 +480,7 @@ struct ReplayWebView: UIViewRepresentable {
                 }
                 let ok = (result as? Bool) == true
                 if ok { self.flashreplayStarted = true }
-                self.logLine(ok ? "flashreplay start ok (direct)" : "flashreplay start pending")
+                self.logLine(ok ? "flashreplay start ok (direct) q=\(self.appliedQuality)" : "flashreplay start pending")
             }
         }
 
@@ -458,7 +494,8 @@ struct ReplayWebView: UIViewRepresentable {
             let idEsc = replayId
                 .replacingOccurrences(of: "\\", with: "\\\\")
                 .replacingOccurrences(of: "\"", with: "\\\"")
-            let js = "(function(){try{return !!(window.__startOfficialReplayB64&&window.__startOfficialReplayB64(\"\(b64)\",\"\(idEsc)\"));}catch(e){return false;}})()"
+            let q = Self.jsString(appliedQuality)
+            let js = "(function(){try{window.__daledouReplayQuality=\(q);return !!(window.__startOfficialReplayB64&&window.__startOfficialReplayB64(\"\(b64)\",\"\(idEsc)\"));}catch(e){return false;}})()"
             webView.evaluateJavaScript(js) { [weak self] result, error in
                 guard let self else { return }
                 guard generation == self.injectGeneration else { return }
@@ -524,6 +561,7 @@ struct ReplaySheet: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var log = ReplayDebugLog()
     @State private var statusLine = "启动中…"
+    @State private var quality = ReplayQuality.current
     @State private var copiedHint = false
     @State private var shareURL: URL?
     @State private var showShare = false
@@ -532,7 +570,7 @@ struct ReplaySheet: View {
     var body: some View {
         ZStack(alignment: .top) {
             Color.black.ignoresSafeArea()
-            ReplayWebView(act: act, replayId: replayId, log: log, statusLine: $statusLine)
+            ReplayWebView(act: act, replayId: replayId, log: log, statusLine: $statusLine, quality: $quality)
                 .ignoresSafeArea()
 
             VStack(spacing: 0) {
@@ -542,6 +580,15 @@ struct ReplaySheet: View {
                         .foregroundStyle(.green)
                         .lineLimit(2)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                    Button(ReplayQuality.label(for: quality)) {
+                        let next = ReplayQuality.next(after: quality)
+                        quality = next
+                        ReplayQuality.current = next
+                        log.append("quality tap → \(next) (\(ReplayQuality.label(for: next)))")
+                    }
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.yellow)
+                    .accessibilityLabel("切换清晰度")
                     Button(log.showPanel ? "藏日志" : "日志") {
                         log.showPanel.toggle()
                     }

@@ -367,11 +367,13 @@
         ? (location.origin + '/ruffle_fight/PetFunFight-v10.19.swf')
         : 'https://fightimg.pet.qq.com/swf/gres/main/PetFunFight-v10.19.swf';
       Promise.resolve().then(function () {
+        var q = window.__daledouReplayQuality;
+        if (!q || !Object.prototype.hasOwnProperty.call(qualityScales, q)) q = 'medium';
         return window.DaledouReplay.start({
           mainUrl: mainSwf,
           replayId: String(replayId || 'app_replay'),
           replayJson: replayJson,
-          quality: 'standard',
+          quality: q,
           paused: false,
           sound: true,
           speed: 1

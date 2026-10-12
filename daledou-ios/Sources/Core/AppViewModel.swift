@@ -224,14 +224,21 @@ final class AppViewModel: ObservableObject {
 
     func onReplayDismissed() {
         showReplay = false
-        // 先 park 暖机 WebView，再隔一帧重建游戏页，避免双 WebContent 叠峰 jetsam→回桌面
-        RuffleWarmHolder.shared.parkInPlace()
+        // fd26：必须 destroy 动画 WebContent，再重建游戏页。
+        // 若只 park 暖挂，双 WebContent 叠峰 → jetsam → 直接回桌面。
+        statusText = "释放动画内存…"
+        RuffleWarmHolder.shared.destroy()
         let resume = resumeGameURL ?? (session.isLoggedIn ? URL(string: LoginURLs.ledouEntry) : nil)
         resumeGameURL = nil
         Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 350_000_000)
+            try? await Task.sleep(nanoseconds: 1_200_000_000)
+            statusText = "正在返回游戏…"
             pendingURL = resume
             suspendGameWebForReplay = false
+            try? await Task.sleep(nanoseconds: 800_000_000)
+            if statusText == "正在返回游戏…" {
+                statusText = ""
+            }
         }
     }
 
