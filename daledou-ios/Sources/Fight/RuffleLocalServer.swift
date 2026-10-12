@@ -234,7 +234,11 @@ final class RuffleLocalServer {
             || lowEarly == "main/petfunfight-v10.19.swf" {
             let alt = root.appendingPathComponent("ruffle_fight/PetFunFight-v10.19.swf")
             if FileManager.default.fileExists(atPath: alt.path) {
-                log("ALIAS \(fileRel) → ruffle_fight/PetFunFight-v10.19.swf")
+                if SwfPrefixStrip.stripFileIfNeeded(alt) {
+                    log("STRIP ALIAS PetFunFight-v10.19.swf")
+                }
+                let sz = (try? FileManager.default.attributesOfItem(atPath: alt.path)[.size] as? NSNumber)?.int64Value ?? 0
+                log("ALIAS \(fileRel) → PetFunFight-v10.19.swf \(sz)B")
                 respondFile(conn, fileURL: alt, mime: mime(fileRel), headOnly: headOnly)
                 return
             }
@@ -325,9 +329,12 @@ final class RuffleLocalServer {
         ]
         let local = localCandidates.first { FileManager.default.fileExists(atPath: $0.path) }
         if let local {
+            if low.hasSuffix(".swf"), SwfPrefixStrip.stripFileIfNeeded(local) {
+                log("STRIP bundle \(fileRel)")
+            }
             let size = (try? FileManager.default.attributesOfItem(atPath: local.path)[.size] as? NSNumber)?.int64Value ?? 0
-            if low.contains("action_") || low.hasSuffix(".wasm") || low.hasSuffix("petfunfight.swf") {
-                log("BUNDLE stream \(fileRel) \(size)B")
+            if low.contains("action_") || low.hasSuffix(".wasm") || low.contains("petfunfight") || low.contains("loadingswc") {
+                log("BUNDLE stream \(fileRel) \(size)B sig=\(SwfZwsInflate.signature(of: local))")
             }
             respondFile(conn, fileURL: local, mime: mime(fileRel), headOnly: headOnly)
             return

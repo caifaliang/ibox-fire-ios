@@ -168,7 +168,8 @@
       parameters: { a: 'replay' },
       autoplay: desiredPaused ? 'off' : 'on', unmuteOverlay: 'hidden', allowScriptAccess: true,
       publicPath: rufflePublic,
-      upgradeToHttps: true, splashScreen: false, contextMenu: 'off',
+      // iOS 本机 http://127.0.0.1：upgradeToHttps 会把后续 Loader 改成 https → 加载失败 → loadingSWC 重试
+      upgradeToHttps: !isLocalIOS, splashScreen: false, contextMenu: 'off',
       showSwfDownload: false, openUrlMode: 'deny', logLevel: 'error',
       // The original movie requires BitmapData.draw; only the wgpu renderer supports it.
       // Disable multisampling to reduce the mobile GPU's offscreen texture memory.
