@@ -1,0 +1,5 @@
+# 本机装机缓存 / 密钥（勿提交）
+_ipa_cache/
+daledou-ios/scripts/config.local.ps1
+.env
+.env.local

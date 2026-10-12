@@ -7,3 +7,5 @@ DerivedData/
 Payload/
 .DS_Store
 build.log
+scripts/config.local.ps1
+scripts/*.secrets.ps1
