@@ -26,17 +26,11 @@ final class RuffleLocalServer {
         0x00, 0x0C, 0x01, 0x00, 0x40, 0x00, 0x00, 0x00,
     ])
 
-    /// 大乐斗 APK stubHeavy 只有 worldmap/fenxiang/huangzuan/choujiang。
-    /// iOS 无 :ruffle：额外 stub Button/xianxia，减轻与 action_gg 叠峰。
-    /// 注意：不可 stub ui-v10——空壳会卡死流水线，不再请求 action_gg（黑屏日志已证实）。
-    /// 不可 stub leisure——EI 依赖。
+    /// 严格对齐饭店 APK stubHeavy。fd10：stub xianxia 空壳 →「文件错误，建议清理缓存！」卡 100%。
+    /// 不可 stub ui-v10 / leisure / xianxia。
     static func shouldStubReplayAsset(_ lowPath: String) -> Bool {
         let keys = [
             "worldmap", "fenxiang", "huangzuan", "choujiang",
-            "xianxia", "button/",
-            "yuanwuge", "worldtree", "dragonarea", "shikong", "huashan", "huanjin",
-            "rongyao", "haidao", "huodong", "limitbless", "xieshen", "horseyear",
-            "almanac", "weiduan", "todaymust",
         ]
         return keys.contains(where: { lowPath.contains($0) })
     }
@@ -431,24 +425,32 @@ final class RuffleLocalServer {
             var payload = data ?? Data()
             let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
             var mime = (resp as? HTTPURLResponse)?.mimeType ?? self.mime(remote.lastPathComponent)
+            let nameLow = remote.lastPathComponent.lowercased()
             if remote.pathExtension.lowercased() == "swf" {
                 let before = payload.count
-                payload = SwfPrefixStrip.stripData(payload)
-                if payload.count != before {
-                    self.log("STRIP CDN \(remote.lastPathComponent) -\(before - payload.count)B")
+                if nameLow.hasPrefix("petfunfight") {
+                    payload = SwfPrefixStrip.stripData(payload)
+                } else {
+                    // 与 respondFile 一致：9NUL+FWS，否则 ui-v10 等 CDN SWF POST 死循环（fd10 日志）
+                    payload = SwfPrefixStrip.prepareGresSwfForNewLoader(payload)
+                    self.log("SWF prep CDN \(remote.lastPathComponent) \(before)→\(payload.count)B")
                 }
                 mime = "application/x-shockwave-flash"
             }
             self.log("CDN OK \(code) \(remote.lastPathComponent) \(payload.count)B")
-            if let rel, payload.count > 1_000_000,
-               rel.contains("action_gg") || rel.contains("action_mm") {
+            // 缓存已 prep 的 gres，避免每次 POST 重下 7MB+ 并重复 inflate
+            if let rel, remote.pathExtension.lowercased() == "swf", payload.count > 10_000 {
                 let dest = ActionPackPrefetch.localURL(
-                    for: rel.hasPrefix("gres/") ? rel : "gres/\((rel as NSString).lastPathComponent)"
+                    for: rel.hasPrefix("gres/") ? rel : {
+                        if let r = rel.range(of: "gres/") { return String(rel[r.lowerBound...]) }
+                        return "gres/\((rel as NSString).lastPathComponent)"
+                    }()
                 )
                 try? FileManager.default.createDirectory(
                     at: dest.deletingLastPathComponent(), withIntermediateDirectories: true
                 )
                 try? payload.write(to: dest, options: .atomic)
+                self.log("CACHE write \(dest.lastPathComponent) \(payload.count)B")
             }
             self.respond(conn, status: (200..<300).contains(code) ? 200 : code, mime: mime, body: payload, headOnly: headOnly)
         }.resume()
@@ -486,8 +488,8 @@ final class RuffleLocalServer {
             })
             return
         }
-        // < 20MB 整包：含 wasm(~15MB)。fd9 卡在 BUNDLE stream wasm，流式半包导致 Ruffle 永不 load 主 SWF。
-        if size < 20_000_000, let data = try? Data(contentsOf: fileURL) {
+        // < 25MB 整包：wasm~15MB、ui-v10 FWS~12MB。流式半包会导致 NewLoader POST 环。
+        if size < 25_000_000, let data = try? Data(contentsOf: fileURL) {
             var payload = data
             let name = fileURL.lastPathComponent.lowercased()
             let isMainPff = name.hasPrefix("petfunfight")

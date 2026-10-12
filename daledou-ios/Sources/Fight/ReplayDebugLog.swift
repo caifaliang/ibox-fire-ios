@@ -20,10 +20,19 @@ final class ReplayDebugLog: ObservableObject {
     }
 
     private static func dedupeKey(_ message: String) -> String? {
-        if message.contains("loadingSWC") { return "loadingSWC" }
-        if message.contains("POST treated") && message.contains("loadingSWC") { return "loadingSWC" }
-        if message.hasPrefix("SEND ") && message.contains("loadingSWC") { return "loadingSWC" }
-        if message.contains("REMOTE gres/loadingSWC") { return "loadingSWC" }
+        let m = message
+        if m.contains("loadingSWC") { return "loadingSWC" }
+        if m.contains("ui-v10") { return "ui-v10" }
+        if m.contains("xianxia") { return "xianxia" }
+        if m.contains("STUB apk-heavy") { return "stub" }
+        if m.contains("POST treated") && m.contains("/remote/") {
+            if let r = m.range(of: "gres/") {
+                let rest = String(m[r.upperBound...])
+                let name = rest.split(separator: " ").first.map(String.init) ?? "remote"
+                return "POST-\(name)"
+            }
+            return "POST-remote"
+        }
         return nil
     }
 
