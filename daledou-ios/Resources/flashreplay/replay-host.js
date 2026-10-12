@@ -174,22 +174,16 @@
       // iOS 本机 http://127.0.0.1：upgradeToHttps 会把请求改成 https://127.0.0.1 → 失败
       upgradeToHttps: !isLocalIOS, splashScreen: false, contextMenu: 'off',
       showSwfDownload: false, openUrlMode: 'deny', logLevel: 'warn',
-      // 饭店对照 log：Used renderer: wgpu-webgl；Loading SWF https://fightimg…（无 /remote/）
+      // 饭店对照：wgpu-webgl。iOS 无 WebView intercept，不能直连 fightimg（CORS，见 fd8）。
       preferredRenderer: 'wgpu-webgl', quality: 'low',
       frameRate: 30,
       deviceFontRenderer: 'canvas',
       maxExecutionDuration: 60,
       backgroundColor: '#181412', letterbox: 'on', scale: 'showAll',
-      // 饭店：fightimg 保持真 CDN URL，WebView intercept 剥前缀。
-      // iOS 不能 intercept https host；若把 fightimg 改写成 127.0.0.1/remote/，
-      // loadingSWC 会 GET 成功却每 2s POST 死循环（fd6）。只 rewrite CGI stub。
-      urlRewriteRules: window.__daledouNativeReplay === true ? [] : (
-        isLocalIOS ? [
-          [/^https?:\/\/fight\.pet\.qq\.com(\/.*)$/, origin + '/remote/fight.pet.qq.com$1'],
-        ] : [
-          [/^https?:\/\/(fightimg\.pet\.qq\.com|fight\.pet\.qq\.com|imgcache\.qq\.com|qzonestyle\.gtimg\.cn)(\/.*)$/, origin + '/remote/$1$2'],
-        ]
-      ),
+      // iOS：fightimg/fight → 同源 /remote/（剥前缀 + CWS→FWS）。Android 用 intercept，无需 rewrite。
+      urlRewriteRules: window.__daledouNativeReplay === true ? [] : [
+        [/^https?:\/\/(fightimg\.pet\.qq\.com|fight\.pet\.qq\.com|imgcache\.qq\.com|qzonestyle\.gtimg\.cn)(\/.*)$/, origin + '/remote/$1$2'],
+      ],
     };
     player.ruffle().playbackRate = playbackSpeed;
     return { player: player, load: function () { return player.ruffle().load(options); } };
@@ -316,9 +310,14 @@
       officialStartOnce = true;
       notifyIOS('boot', { swf: 'v10.19', via: 'flashreplay' }, 'flashreplay start');
       // fire-and-forget：不要 return Promise，否则 WK 报错并反复 restart
+      // iOS：主 SWF 必须同源（fd8 直连 CDN → CORS Failed to fetch）。子资源靠 urlRewrite→/remote/。
+      var iosLocal = location.origin.indexOf('127.0.0.1') >= 0;
+      var mainSwf = iosLocal
+        ? (location.origin + '/ruffle_fight/PetFunFight-v10.19.swf')
+        : 'https://fightimg.pet.qq.com/swf/gres/main/PetFunFight-v10.19.swf';
       Promise.resolve().then(function () {
         return window.DaledouReplay.start({
-          mainUrl: 'https://fightimg.pet.qq.com/swf/gres/main/PetFunFight-v10.19.swf',
+          mainUrl: mainSwf,
           replayId: String(replayId || 'app_replay'),
           replayJson: replayJson,
           quality: 'standard',
