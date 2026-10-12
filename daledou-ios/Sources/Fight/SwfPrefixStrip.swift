@@ -66,8 +66,7 @@ enum SwfPrefixStrip {
         return raw.subdata(in: skip..<raw.count)
     }
 
-    /// CWS(zlib) → FWS。嵌套 Loader 在 iOS Ruffle 上对 CWS 偶发不 COMPLETE（fd6 POST×2s 环）；
-    /// 饭店 Android 同文件能过，先对齐为预解压再送，排除 zlib 路径差异。
+    /// CWS(zlib) → FWS。嵌套 Loader 在 iOS 上对 CWS 易卡 COMPLETE。
     static func cwsToFws(_ raw: Data) -> Data {
         let clean = stripData(raw)
         guard clean.count >= 8,
@@ -83,10 +82,31 @@ enum SwfPrefixStrip {
         out.append(0x57) // W
         out.append(0x53) // S
         out.append(clean[clean.startIndex + 3]) // version
-        // 保留原声明长度（与 zlib 解压结果应对齐）
         out.append(clean.subdata(in: (clean.startIndex + 4)..<(clean.startIndex + 8)))
         out.append(inflated)
         return out
+    }
+
+    /// NewLoader(isEncode) 在 URLStream COMPLETE 后 `position=9` 再 loadBytes。
+    /// fd6 日志出现 POST name=angel → 走的是 stream 路径（非 native），必须带 CDN 式 9 NUL。
+    /// 饭店 Android intercept 后剥前缀是因为那边走 native；iOS 见 POST 则补回前缀。
+    static func encodePrefixForNewLoader(_ raw: Data) -> Data {
+        let body: Data
+        if hasValidSig(raw) {
+            body = raw
+        } else if raw.count > 12, hasValidSig(raw.subdata(in: 9..<raw.count)) {
+            return raw // 已是 NUL×9 + sig
+        } else {
+            body = stripData(raw)
+        }
+        var out = Data(repeating: 0, count: 9)
+        out.append(body)
+        return out
+    }
+
+    /// gres 子 SWF：FWS + 9 NUL，供 NewLoader encode 路径一次 loadBytes 成功。
+    static func prepareGresSwfForNewLoader(_ raw: Data) -> Data {
+        encodePrefixForNewLoader(cwsToFws(raw))
     }
 
     private static func prefixSkip(in data: Data) -> Int? {

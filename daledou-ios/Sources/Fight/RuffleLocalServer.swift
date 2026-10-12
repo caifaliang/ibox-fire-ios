@@ -486,29 +486,35 @@ final class RuffleLocalServer {
             })
             return
         }
-        // < 8MB：整包。gres 子 SWF：剥前缀 + CWS→FWS（对齐饭店干净签名，避开 iOS CWS Loader 卡死）。
-        if size < 8_000_000, let data = try? Data(contentsOf: fileURL) {
+        // < 20MB 整包：含 wasm(~15MB)。fd9 卡在 BUNDLE stream wasm，流式半包导致 Ruffle 永不 load 主 SWF。
+        if size < 20_000_000, let data = try? Data(contentsOf: fileURL) {
             var payload = data
             let name = fileURL.lastPathComponent.lowercased()
             let isMainPff = name.hasPrefix("petfunfight")
-            if fileURL.pathExtension.lowercased() == "swf" {
+            let ext = fileURL.pathExtension.lowercased()
+            if ext == "swf" {
                 if isMainPff {
                     payload = SwfPrefixStrip.stripData(payload)
                 } else {
                     let before = payload.count
-                    payload = SwfPrefixStrip.cwsToFws(payload)
+                    payload = SwfPrefixStrip.prepareGresSwfForNewLoader(payload)
                     if name.contains("loadingswc") || payload.count != before {
-                        let sig = payload.count >= 3
-                            ? String(bytes: [payload[payload.startIndex], payload[payload.startIndex+1], payload[payload.startIndex+2]], encoding: .ascii) ?? "?"
-                            : "?"
-                        log("SWF prep \(fileURL.lastPathComponent) \(before)→\(payload.count)B sig=\(sig)")
+                        let head = payload.prefix(12)
+                        let sigOff = SwfPrefixStrip.hasValidSig(Data(head)) ? 0 : 9
+                        let sig: String = {
+                            guard payload.count > sigOff + 2 else { return "?" }
+                            let i = payload.startIndex
+                            return String(bytes: [payload[i+sigOff], payload[i+sigOff+1], payload[i+sigOff+2]], encoding: .ascii) ?? "?"
+                        }()
+                        log("SWF prep \(fileURL.lastPathComponent) \(before)→\(payload.count)B nul9+\(sig)")
                     }
                 }
             }
-            logSpam("SEND \(fileURL.lastPathComponent) \(payload.count)B mem")
+            log("SEND \(fileURL.lastPathComponent) \(payload.count)B mem")
             respond(conn, status: 200, mime: mime, body: payload, headOnly: false)
             return
         }
+        log("STREAM \(fileURL.lastPathComponent) \(size)B (too large for mem)")
         guard let fh = try? FileHandle(forReadingFrom: fileURL) else {
             respond(conn, status: 500, mime: "text/plain", body: Data("open fail".utf8))
             return
