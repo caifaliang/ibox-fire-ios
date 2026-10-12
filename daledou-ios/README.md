@@ -53,3 +53,13 @@ cd daledou-ios\scripts
 ```
 
 手机首次：设置 → 通用 → VPN 与设备管理 → 信任开发者。免费签名约 **7 天** 有效，可在 iPASide 开自动刷新。
+
+### 实时动画日志（免复制）
+
+```powershell
+cd daledou-ios\scripts
+.\LogReceiver.ps1          # 开着别关
+.\Deploy-DaLedou.ps1 -WaitCi
+```
+
+手机播官方动画时，日志会推到 `ibox-analytics\_ipa_cache\ruffle_live.log`，Cursor 可直接读，不必再转发。手机与电脑需同一局域网。

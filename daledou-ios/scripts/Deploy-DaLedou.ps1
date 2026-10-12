@@ -198,4 +198,15 @@ if ($rc -ne 0) {
 Write-Host ""
 Write-Host "[OK] Installed." -ForegroundColor Green
 Write-Host "On phone (first time): Settings -> General -> VPN & Device Management -> Trust"
+
+# Push PC log receiver URL into app Documents so replay logs stream here
+Write-Host ""
+Write-Host "=== Push debug_log_url (for live logs) ===" -ForegroundColor Cyan
+try {
+    & (Join-Path $ScriptDir "Push-DebugLogUrl.ps1")
+} catch {
+    Write-Host "[!] Push-DebugLogUrl failed: $_" -ForegroundColor Yellow
+}
+Write-Host "Start receiver (keep window open while testing): .\LogReceiver.ps1"
+Write-Host "Live file: ..\..\_ipa_cache\ruffle_live.log"
 Write-Host "Next time: git push ; then .\Deploy-DaLedou.ps1 -WaitCi"
