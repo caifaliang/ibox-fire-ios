@@ -392,7 +392,7 @@
     (async function main() {
       try {
         const params = new URLSearchParams(location.search);
-        const renderer = (params.get('renderer') || 'canvas');
+        const renderer = (params.get('renderer') || 'wgpu-webgl');
         preferMm = params.get('preferMm') === '1';
         // 仅显式 ?wasm=vanilla 时强制；失败后也会自动跳一次。
         const forceVanilla = params.get('wasm') === 'vanilla';
@@ -450,7 +450,7 @@
         };
         notifyAndroid('boot', {
           renderer: renderer,
-          wasm: forceVanilla ? 'vanilla' : 'lazy-shapes',
+          wasm: forceVanilla ? 'vanilla' : 'lazy-gpu',
           publicPath: rufflePublicPath,
           dpr: window.__replayDpr,
           quality: qName,
@@ -482,14 +482,15 @@
 
         setStatus('loading PetFunFight… origin=' + location.origin + ' dpr=' + (Math.round((window.__replayDpr || 0) * 100) / 100));
         // 饭店助手：FlashVars a=replay → 跳过大厅资源路径，少占内存
+        // 饭店助手 1.3.8 mainUrl：CDN PetFunFight-v10.19（非旧 bundled PetFunFight.swf）
         await player.load(Object.assign({
-          url: 'PetFunFight.swf',
+          url: 'PetFunFight-v10.19.swf',
           allowScriptAccess: true,
           allowNetworking: 'all',
           base: location.origin + '/ruffle_fight/gres/main/blank.xml',
           parameters: { a: 'replay' }
         }, baseCfg));
-        notifyAndroid('swf_ready', { attempt: 'url-120', wasm: forceVanilla ? 'vanilla' : 'auto', a: 'replay' });
+        notifyAndroid('swf_ready', { attempt: 'url-120', wasm: forceVanilla ? 'vanilla' : 'lazy-gpu', a: 'replay', swf: 'v10.19' });
         setStatus('swf ready · wait EI… dpr=' + (Math.round((window.__replayDpr || 0) * 100) / 100));
         if (window.__startReplayFpsSampler) window.__startReplayFpsSampler();
         let tries = 0;
@@ -502,12 +503,13 @@
       } catch (e) {
         setStatus('fail: ' + e);
         notifyAndroid('boot_fail', { err: String(e) });
-        // 扩展版 WASM 炸了：同页改走 vanilla 再试一次（避免本机/新 WebView 全挂）
         try {
           const p = new URLSearchParams(location.search);
-          if (p.get('wasm') !== 'vanilla' && String(e).indexOf('unreachable') >= 0) {
-            p.set('wasm', 'vanilla');
-            notifyAndroid('boot_fallback', { to: 'vanilla' });
+          const err = String(e);
+          // wgpu-webgl 在部分 iOS WebKit 上失败 → 回退 canvas（饭店助手本机走 wgpu）
+          if ((p.get('renderer') || 'wgpu-webgl') === 'wgpu-webgl' && /webgpu|wgpu|WebGL|context|renderer/i.test(err)) {
+            p.set('renderer', 'canvas');
+            notifyAndroid('boot_fallback', { to: 'canvas', err: err.slice(0, 120) });
             location.replace(location.pathname + '?' + p.toString());
             return;
           }

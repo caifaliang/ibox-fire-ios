@@ -3,8 +3,9 @@
   // Ruffle uses this document's DPR for both its backing canvas and pointer coordinates.
   // Cache the capped ratio so its per-frame reads do not force another layout.
   var nativeRatio = Object.getOwnPropertyDescriptor(window, 'devicePixelRatio');
-  var initialRatio = window.devicePixelRatio || 1, replayRatio = initialRatio, renderScale = 1.5, quality = 'standard';
-  var qualityScales = { standard: 1.5, medium: 2, mediumHigh: 2.5, high: 3 };
+  var standardScale = window.__daledouNativeReplay === true ? 1 : 1.5;
+  var initialRatio = window.devicePixelRatio || 1, replayRatio = initialRatio, renderScale = standardScale, quality = 'standard';
+  var qualityScales = { standard: standardScale, medium: 2, mediumHigh: 2.5, high: 3, ultraHigh: 4.5 };
   function updatePixelRatio() {
     var ratio = nativeRatio && nativeRatio.get ? nativeRatio.get.call(window) : initialRatio;
     var width = document.getElementById('canvas').clientWidth;
@@ -81,59 +82,27 @@
     var args = Array.prototype.slice.call(arguments, 1);
     return main.ruffle().callExternalInterface.apply(main.ruffle(), [name].concat(args));
   }
-  var injectTimer = null;
-  function tryInjectOnce() {
-    if (!active || !main || !payload || desiredPaused || failed || sent) return !!sent;
-    try {
-      state('preparing', '正在准备战斗动画');
-      // 优先 player 上的 JS 桥；否则走 ExternalInterface（饭店助手路径）
-      if (typeof main.setFightReplayData === 'function') {
-        main.setFightReplayData(payload, replayId);
-      } else {
-        call('setFightReplayData', payload, replayId);
-      }
-      if (!desiredPaused) {
-        main.ruffle().resume();
-        if (toolbar) toolbar.ruffle().resume();
-      }
-      sent = true;
-      state('preparing', 'setFightReplayData ok');
-      return true;
-    } catch (e) {
-      state('preparing', 'inject wait ' + String(e && e.message ? e.message : e));
-      return false;
-    }
-  }
-  function startInjectPoll(reason) {
-    ready = true;
-    if (sent || failed || !active || !payload) return;
-    state('preparing', 'poll inject (' + (reason || '') + ')');
-    if (injectTimer) clearInterval(injectTimer);
+  function dispatch() {
+    if (!active || !main || !ready || !payload || sent || desiredPaused) return;
+    sent = true;
     var expected = generation;
-    var n = 0;
-    // 立即试一次，再 250ms 轮询——EI 往往在 loadingSWC 之后才挂上
-    if (tryInjectOnce()) return;
-    injectTimer = setInterval(function () {
-      if (expected !== generation || failed || !active) {
-        clearInterval(injectTimer);
-        injectTimer = null;
-        return;
+    // ExternalInterface calls must unwind before invoking Flash again.
+    setTimeout(function () {
+      if (expected !== generation || !main) return;
+      if (desiredPaused) { sent = false; return; }
+      try {
+        state('preparing', '正在准备战斗动画');
+        call('setFightReplayData', payload, replayId);
+        if (!desiredPaused) {
+          main.ruffle().resume();
+          if (toolbar) toolbar.ruffle().resume();
+        }
+      } catch (_) {
+        fail('动画启动失败，请重试');
       }
-      n++;
-      if (tryInjectOnce() || n > 100) {
-        clearInterval(injectTimer);
-        injectTimer = null;
-        if (!sent) state('error', '无法注入战报（EI 未就绪）');
-      }
-    }, 250);
+    }, 0);
   }
-  function dispatch() { startInjectPoll('dispatch'); }
-  window.FightReady = function () { startInjectPoll('FightReady'); };
-  // iOS：无 WebGPU；loading 层常不回调 FightReady → 轮询 EI
-  window.__daledouKickReady = function () {
-    startInjectPoll('kick');
-    return true;
-  };
+  window.FightReady = function () { ready = true; dispatch(); };
   window.FightComplete = function () { if (active) state('complete', '播放结束'); };
   window.getCookie = function (name) {
     // Use the binary URLLoader path: all requests go through the native interceptor.
@@ -178,49 +147,30 @@
       url: url,
       parameters: { a: 'replay' },
       autoplay: desiredPaused ? 'off' : 'on', unmuteOverlay: 'hidden', allowScriptAccess: true,
-      // iOS 本机 http://127.0.0.1：绝不能 upgradeToHttps，否则子 SWF 全失败并 2s 重试
-      allowNetworking: 'all',
-      publicPath: origin + '/assets/flashreplay/ruffle/',
-      upgradeToHttps: false, splashScreen: false, contextMenu: 'off',
-      showSwfDownload: false, openUrlMode: 'deny', logLevel: 'warn',
-      // iOS 无 WebGPU：wgpu-webgl 不可用。嵌套 Loader 用 canvas 最稳（先前已验证能过 loadingSWC）。
-      preferredRenderer: (function () {
-        try {
-          var q = new URLSearchParams(location.search).get('renderer');
-          if (q === 'wgpu-webgl' || q === 'wgpu' || q === 'canvas' || q === 'webgl') return q === 'wgpu' ? 'wgpu-webgl' : q;
-        } catch (_) {}
-        return 'canvas';
-      })(),
-      quality: 'low',
+      publicPath: origin + (window.__daledouNativeReplay === true ? '/__daledou_pc__/' : '/assets/flashreplay/ruffle/'),
+      upgradeToHttps: true, splashScreen: false, contextMenu: 'off',
+      showSwfDownload: false, openUrlMode: 'deny', logLevel: 'error',
+      // The original movie requires BitmapData.draw; only the wgpu renderer supports it.
+      // Disable multisampling to reduce the mobile GPU's offscreen texture memory.
+      preferredRenderer: 'wgpu-webgl', quality: 'low',
+      // Keep the original 30fps timeline stable; our engine rate controls speed.
       frameRate: 30,
+      // Use browser device fonts for Chinese names; Ruffle's bundled fallback has no CJK glyphs.
       deviceFontRenderer: 'canvas',
+      // Body/weapon setup can exceed the default 15s in WASM; retain a bounded timeout.
       maxExecutionDuration: 60,
       backgroundColor: '#181412', letterbox: 'on', scale: 'showAll',
-      urlRewriteRules: [
+      urlRewriteRules: window.__daledouNativeReplay === true ? [] : [
         [/^https?:\/\/(fightimg\.pet\.qq\.com|fight\.pet\.qq\.com|imgcache\.qq\.com|qzonestyle\.gtimg\.cn)(\/.*)$/, origin + '/remote/$1$2'],
-        [/^\/\/(fightimg\.pet\.qq\.com|fight\.pet\.qq\.com|imgcache\.qq\.com|qzonestyle\.gtimg\.cn)(\/.*)$/, origin + '/remote/$1$2'],
       ],
     };
     player.ruffle().playbackRate = playbackSpeed;
-    player.addEventListener('loadeddata', function () {
-      if (window.FlashReplay) window.FlashReplay.onState('loadeddata', id, sessionToken);
-    });
-    player.addEventListener('error', function (ev) {
-      var msg = (ev && ev.detail && (ev.detail.message || ev.detail)) || 'player error';
-      if (window.FlashReplay) window.FlashReplay.onState('player_error', String(msg), sessionToken);
-    });
-    return { player: player, load: function () {
-      return player.ruffle().load(options).catch(function (err) {
-        if (window.FlashReplay) window.FlashReplay.onState('load_fail', String(err), sessionToken);
-        throw err;
-      });
-    } };
+    return { player: player, load: function () { return player.ruffle().load(options); } };
   }
   function dispose() {
     generation++;
     ready = false; sent = false; payload = null; active = false; loaded = false;
     replayId = null; mainUrl = toolbarUrl = null;
-    if (injectTimer) { clearInterval(injectTimer); injectTimer = null; }
     if (main) main.remove();
     if (toolbar) toolbar.remove();
     main = toolbar = null;
@@ -233,7 +183,7 @@
       var reusable = main && ready && loaded && !failed && mainUrl === options.mainUrl && toolbarUrl === (options.toolbarUrl || null);
       if (reusable) { generation++; sent = false; payload = null; }
       else dispose();
-      quality = options.quality === 'medium' || options.quality === 'mediumHigh' || options.quality === 'high' ? options.quality : 'standard';
+      quality = Object.prototype.hasOwnProperty.call(qualityScales, options.quality) ? options.quality : 'standard';
       renderScale = qualityScales[quality]; updatePixelRatio();
       failed = false;
       active = true;
@@ -284,11 +234,6 @@
         if (desiredPaused) movie.player.ruffle().suspend();
         else movie.player.ruffle().resume();
         if (expected === generation) dispatch();
-        // 2s 起开始轮询注入；不等 FightReady（iOS 常无此回调）
-        setTimeout(function () {
-          if (expected !== generation || sent || failed) return;
-          window.__daledouKickReady && window.__daledouKickReady();
-        }, 2000);
       } catch (_) {
         if (expected === generation) fail('动画播放器加载失败，请重试');
       }
@@ -319,7 +264,7 @@
     // Change backing resolution in place. The SWF owns Stage.quality and may override
     // the initial Ruffle setting, so a load-only quality flag cannot implement this.
     setQuality: function (value) {
-      if (value !== 'standard' && value !== 'medium' && value !== 'mediumHigh' && value !== 'high') return false;
+      if (!Object.prototype.hasOwnProperty.call(qualityScales, value)) return false;
       if (quality === value) return true;
       quality = value;
       renderScale = qualityScales[quality];

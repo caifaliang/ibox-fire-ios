@@ -171,20 +171,9 @@ final class RuffleSchemeHandler: NSObject, WKURLSchemeHandler {
         finish(task, url: url, data: Data(body.utf8), mime: "text/plain")
     }
 
-    /// nowTimer 必须是有效 unix 秒，否则随机背景空列表会炸
+    /// 对齐饭店助手 1.3.8：cmd=query → result=-5。
     private static func petpkQueryStub(root: URL) -> String {
-        let nowSec = String(Int(Date().timeIntervalSince1970))
-        let stubURL = root.appendingPathComponent("petpk_query.json")
-        if let data = try? Data(contentsOf: stubURL),
-           var s = String(data: data, encoding: .utf8) {
-            if let re = try? NSRegularExpression(pattern: #"("name"\s*:\s*"[^"]*\$)(\d+)(\$[^"]*")"#) {
-                let range = NSRange(s.startIndex..., in: s)
-                s = re.stringByReplacingMatches(in: s, range: range, withTemplate: "$1\(nowSec)$3")
-            }
-            return s
-        }
-        let name = "2$16$123$10001$\(nowSec)$app"
-        return "{\"result\":\"0\",\"msg\":\"\",\"name\":\"\(name)\",\"sn\":\"1\"}"
+        "{\"result\":\"-5\",\"msg\":\"正在加载战斗回放…\"}"
     }
 
     private static func weaponSpecializeStub(query: String) -> String {
