@@ -22,7 +22,7 @@ struct ReplayWebView: UIViewRepresentable {
         ActionPackPrefetch.sessionPreferMm = preferMm
         // 饭店助手 flashreplay 在 iOS 上假注入/卡 loadingSWC；切回已验证能进 action_gg 的 ruffle_fight
         // 版本戳：若日志不是这一行，说明装的不是本提交 IPA
-        log.append("boot RUFFLE_FIGHT build=138-v19c replayId=\(replayId) actLen=\(act.count) preferMm=\(preferMm)")
+        log.append("boot RUFFLE_FIGHT build=138-play replayId=\(replayId) actLen=\(act.count) preferMm=\(preferMm)")
         WeaponSpeReplayCache.captureFromAct(act)
         log.append("weaponspe w1=\(WeaponSpeReplayCache.weaponspe1.count) w2=\(WeaponSpeReplayCache.weaponspe2.count) officialSpe=\(WeaponSpeReplayCache.hasOfficialSpecialize())")
         let packRel = preferMm ? ActionPackPrefetch.mmRel : ActionPackPrefetch.ggRel
@@ -164,7 +164,7 @@ struct ReplayWebView: UIViewRepresentable {
     private static func fightPageURL(base: String, preferMm: Bool, vanilla: Bool, lowmem: Bool = false) -> URL {
         var s = base
         if !s.hasSuffix("/") { s += "/" }
-        // iOS：wgpu-webgl + v10.19 会卡 loadingSWC POST 环；canvas 能过加载。专精靠官方 JSON 预取。
+        // 138-v19c 实证：v10.19+canvas 仍卡 loadingSWC；回到已验证能播的 bundled SWF。
         var q = "renderer=canvas&preferMm=\(preferMm ? 1 : 0)&replay=1&lowmem=\(lowmem ? 1 : 0)"
         if vanilla { q += "&wasm=vanilla" }
         return URL(string: "\(s)ruffle_fight/index.html?\(q)")!
