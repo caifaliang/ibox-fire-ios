@@ -268,11 +268,13 @@
     let player = null;
     let pendingAct = null;
     let injected = false;
+    // 空 player 上 setFightReplayData/callEI 会假成功（138-fix 0.19s）。必须等 load() 完成或 FightReady。
+    let fightReady = false;
+    let movieLoaded = false;
 
     window.__injectFightAct = function(act, replayId) {
       pendingAct = { act: String(act || ''), id: String(replayId || 'app_replay') };
-      // Warm reuse: PetFunFight + action_gg already in memory — only push new act.
-      if (injected && player && typeof player.setFightReplayData === 'function') {
+      if (injected && fightReady && player && typeof player.setFightReplayData === 'function') {
         try {
           player.setFightReplayData(makeCgi(pendingAct.act), pendingAct.id);
           setStatus('replay reinjected act=' + pendingAct.act.length + ' (warm)');
@@ -285,12 +287,11 @@
         }
       }
       if (injected) return true;
-      // 必须返回 tryInject 真假：以前恒 true → 原生以为已注入、loadingSWC 阶段永远等不到 EI
       return tryInject();
     };
 
-    // 对齐饭店助手 1.3.8：Flash 回调 FightReady 后再 setFightReplayData
     window.FightReady = function () {
+      fightReady = true;
       setStatus('FightReady');
       notifyAndroid('fight_ready', {});
       tryInject();
@@ -382,20 +383,16 @@
 
     function tryInject() {
       if (injected || !pendingAct || !player) return false;
-      var cgi = makeCgi(pendingAct.act);
-      var rid = pendingAct.id;
+      if (!movieLoaded && !fightReady) {
+        setStatus('wait movie load…');
+        return false;
+      }
+      if (typeof player.setFightReplayData !== 'function') {
+        setStatus('swf ready · wait EI…');
+        return false;
+      }
       try {
-        // 优先 player 上的 EI 桥；否则 callExternalInterface（饭店助手 1.3.8）
-        if (typeof player.setFightReplayData === 'function') {
-          player.setFightReplayData(cgi, rid);
-        } else {
-          var r = player.ruffle && player.ruffle();
-          if (!r || typeof r.callExternalInterface !== 'function') {
-            setStatus('swf ready · wait EI…');
-            return false;
-          }
-          r.callExternalInterface('setFightReplayData', cgi, rid);
-        }
+        player.setFightReplayData(makeCgi(pendingAct.act), pendingAct.id);
         injected = true;
         setStatus('replay injected act=' + pendingAct.act.length);
         notifyAndroid('injected', { ok: true, actLen: pendingAct.act.length });
@@ -411,7 +408,8 @@
     (async function main() {
       try {
         const params = new URLSearchParams(location.search);
-        const renderer = (params.get('renderer') || 'wgpu-webgl');
+        // iOS WKWebView：wgpu-webgl 易卡 loadingSWC；canvas 已验证能过加载链
+        const renderer = (params.get('renderer') || 'canvas');
         preferMm = params.get('preferMm') === '1';
         // 仅显式 ?wasm=vanilla 时强制；失败后也会自动跳一次。
         const forceVanilla = params.get('wasm') === 'vanilla';
@@ -501,15 +499,17 @@
 
         setStatus('loading PetFunFight… origin=' + location.origin + ' dpr=' + (Math.round((window.__replayDpr || 0) * 100) / 100));
         // 饭店助手：FlashVars a=replay → 跳过大厅资源路径，少占内存
-        // 饭店助手 1.3.8 mainUrl：CDN PetFunFight-v10.19（非旧 bundled PetFunFight.swf）
+        fightReady = false;
+        injected = false;
+        // 回退已验证能过 loadingSWC→leisure 的 bundled SWF；v10.19+wgpu 在 iOS 上死循环 POST loadingSWC
         await player.load(Object.assign({
-          url: 'PetFunFight-v10.19.swf',
+          url: 'PetFunFight.swf',
           allowScriptAccess: true,
           allowNetworking: 'all',
           base: location.origin + '/ruffle_fight/gres/main/blank.xml',
           parameters: { a: 'replay' }
         }, baseCfg));
-        notifyAndroid('swf_ready', { attempt: 'url-120', wasm: forceVanilla ? 'vanilla' : 'lazy-gpu', a: 'replay', swf: 'v10.19' });
+        notifyAndroid('swf_ready', { attempt: 'url-120', wasm: forceVanilla ? 'vanilla' : 'lazy-gpu', a: 'replay', swf: 'bundled' });
         setStatus('swf ready · wait EI… dpr=' + (Math.round((window.__replayDpr || 0) * 100) / 100));
         if (window.__startReplayFpsSampler) window.__startReplayFpsSampler();
         let tries = 0;
