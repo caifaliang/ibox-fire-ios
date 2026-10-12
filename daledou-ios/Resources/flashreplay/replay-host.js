@@ -166,19 +166,17 @@
     var options = {
       url: url,
       parameters: { a: 'replay' },
+      // 饭店：movie URL 经 rewrite 后仍用 CDN 作 base。iOS 若 base=127.0.0.1/remote/…，
+      // `//fightimg…/loadingSWC` 会解析错并 POST 死循环（138-fd4 日志）。
+      base: 'https://fightimg.pet.qq.com/swf/gres/main/',
       autoplay: desiredPaused ? 'off' : 'on', unmuteOverlay: 'hidden', allowScriptAccess: true,
       publicPath: rufflePublic,
-      // iOS 本机 http://127.0.0.1：upgradeToHttps 会把后续 Loader 改成 https → 加载失败 → loadingSWC 重试
+      // iOS 本机 http://127.0.0.1：upgradeToHttps 会把请求改成 https://127.0.0.1 → 失败
       upgradeToHttps: !isLocalIOS, splashScreen: false, contextMenu: 'off',
-      showSwfDownload: false, openUrlMode: 'deny', logLevel: 'error',
-      // The original movie requires BitmapData.draw; only the wgpu renderer supports it.
-      // Disable multisampling to reduce the mobile GPU's offscreen texture memory.
+      showSwfDownload: false, openUrlMode: 'deny', logLevel: 'warn',
       preferredRenderer: 'wgpu-webgl', quality: 'low',
-      // Keep the original 30fps timeline stable; our engine rate controls speed.
       frameRate: 30,
-      // Use browser device fonts for Chinese names; Ruffle's bundled fallback has no CJK glyphs.
       deviceFontRenderer: 'canvas',
-      // Body/weapon setup can exceed the default 15s in WASM; retain a bounded timeout.
       maxExecutionDuration: 60,
       backgroundColor: '#181412', letterbox: 'on', scale: 'showAll',
       urlRewriteRules: window.__daledouNativeReplay === true ? [] : [

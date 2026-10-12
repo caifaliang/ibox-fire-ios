@@ -108,17 +108,62 @@ final class RuffleLocalServer {
             }
             var buf = buffer
             if let data { buf.append(data) }
-            if let range = buf.range(of: Data("\r\n\r\n".utf8)) {
-                let head = buf.subdata(in: buf.startIndex..<range.lowerBound)
-                self.handle(head: head, conn: conn)
+            guard let range = buf.range(of: Data("\r\n\r\n".utf8)) else {
+                if isComplete || buf.count > 1024 * 1024 {
+                    conn.cancel()
+                    return
+                }
+                self.receiveRequest(on: conn, buffer: buf)
                 return
             }
-            if isComplete || buf.count > 1024 * 1024 {
+            let head = buf.subdata(in: buf.startIndex..<range.lowerBound)
+            let afterHead = buf.subdata(in: range.upperBound..<buf.endIndex)
+            // POST 必须读完 body，否则 Ruffle Loader 会判失败并每 2s 重试（138-fd4）
+            let contentLength = Self.contentLength(from: head)
+            if contentLength > 0, afterHead.count < contentLength {
+                self.receiveBody(
+                    on: conn,
+                    head: head,
+                    body: afterHead,
+                    need: contentLength
+                )
+                return
+            }
+            self.handle(head: head, conn: conn)
+        }
+    }
+
+    private func receiveBody(on conn: NWConnection, head: Data, body: Data, need: Int) {
+        conn.receive(minimumIncompleteLength: 1, maximumLength: 64 * 1024) { [weak self] data, _, isComplete, error in
+            guard let self else {
                 conn.cancel()
                 return
             }
-            self.receiveRequest(on: conn, buffer: buf)
+            if let error {
+                self.log("recv body \(error.localizedDescription)")
+                conn.cancel()
+                return
+            }
+            var buf = body
+            if let data { buf.append(data) }
+            if buf.count >= need || isComplete {
+                self.handle(head: head, conn: conn)
+                return
+            }
+            self.receiveBody(on: conn, head: head, body: buf, need: need)
         }
+    }
+
+    private static func contentLength(from head: Data) -> Int {
+        guard let text = String(data: head, encoding: .utf8) else { return 0 }
+        for line in text.split(separator: "\r\n") {
+            let lower = line.lowercased()
+            if lower.hasPrefix("content-length:") {
+                let v = lower.dropFirst("content-length:".count).trimmingCharacters(in: .whitespaces)
+                return Int(v) ?? 0
+            }
+        }
+        return 0
     }
 
     private func handle(head: Data, conn: NWConnection) {
@@ -432,20 +477,30 @@ final class RuffleLocalServer {
         })
     }
 
-    /// 从磁盘流式发送（wasm / action_gg），App 侧不整包进堆
+    /// 从磁盘发送。小 SWF（loadingSWC 等）整包进内存，避免流式半包导致 Loader POST 重试。
     private func respondFile(_ conn: NWConnection, fileURL: URL, mime: String, headOnly: Bool) {
         let size = (try? FileManager.default.attributesOfItem(atPath: fileURL.path)[.size] as? NSNumber)?.int64Value ?? 0
-        let headerData = httpHeader(status: 200, mime: mime, length: Int(size))
         if headOnly || size <= 0 {
-            conn.send(content: headerData, completion: .contentProcessed { _ in
+            conn.send(content: httpHeader(status: 200, mime: mime, length: Int(size)), completion: .contentProcessed { _ in
                 conn.cancel()
             })
+            return
+        }
+        // < 2MB：整包（loadingSWC / leisure / config 依赖完整 body）
+        if size < 2_000_000, let data = try? Data(contentsOf: fileURL) {
+            var payload = data
+            if fileURL.pathExtension.lowercased() == "swf" {
+                payload = SwfPrefixStrip.stripData(payload)
+            }
+            log("SEND \(fileURL.lastPathComponent) \(payload.count)B mem")
+            respond(conn, status: 200, mime: mime, body: payload, headOnly: false)
             return
         }
         guard let fh = try? FileHandle(forReadingFrom: fileURL) else {
             respond(conn, status: 500, mime: "text/plain", body: Data("open fail".utf8))
             return
         }
+        let headerData = httpHeader(status: 200, mime: mime, length: Int(size))
         conn.send(content: headerData, completion: .contentProcessed { [weak self] error in
             if error != nil {
                 try? fh.close()
