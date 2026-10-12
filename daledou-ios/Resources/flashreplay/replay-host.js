@@ -59,12 +59,25 @@
       if (toolbar) toolbar.ruffle().suspend();
     }, 0);
   });
+  function notifyIOS(type, payload, status) {
+    try {
+      if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.ruffleEvent) {
+        window.webkit.messageHandlers.ruffleEvent.postMessage({ type: type, payload: payload || {} });
+      }
+    } catch (_) {}
+    try {
+      if (status && window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.ruffleStatus) {
+        window.webkit.messageHandlers.ruffleStatus.postMessage(String(status));
+      }
+    } catch (_) {}
+  }
   function state(name, message) {
     if (failed && name !== 'error') return;
     var changed = playbackState !== name;
     playbackState = name;
     if (changed) resetFrameSampler();
     if (window.FlashReplay) window.FlashReplay.onState(name, message || '', sessionToken);
+    notifyIOS('state', { name: name, message: message || '' }, message || name);
   }
   function fail(message) {
     if (failed) return;
@@ -102,7 +115,11 @@
       }
     }, 0);
   }
-  window.FightReady = function () { ready = true; dispatch(); };
+  window.FightReady = function () {
+    ready = true;
+    notifyIOS('fight_ready', {}, 'FightReady');
+    dispatch();
+  };
   window.FightComplete = function () { if (active) state('complete', '播放结束'); };
   window.getCookie = function (name) {
     // Use the binary URLLoader path: all requests go through the native interceptor.
@@ -143,11 +160,14 @@
       if (window.FlashReplay && window.FlashReplay.onUserResume) window.FlashReplay.onUserResume(sessionToken);
     });
     var origin = location.origin;
+    var isLocalIOS = origin.indexOf('127.0.0.1') >= 0;
+    var rufflePublic = origin + (window.__daledouNativeReplay === true ? '/__daledou_pc__/'
+      : (isLocalIOS ? '/flashreplay/ruffle/' : '/assets/flashreplay/ruffle/'));
     var options = {
       url: url,
       parameters: { a: 'replay' },
       autoplay: desiredPaused ? 'off' : 'on', unmuteOverlay: 'hidden', allowScriptAccess: true,
-      publicPath: origin + (window.__daledouNativeReplay === true ? '/__daledou_pc__/' : '/assets/flashreplay/ruffle/'),
+      publicPath: rufflePublic,
       upgradeToHttps: true, splashScreen: false, contextMenu: 'off',
       showSwfDownload: false, openUrlMode: 'deny', logLevel: 'error',
       // The original movie requires BitmapData.draw; only the wgpu renderer supports it.
@@ -273,6 +293,33 @@
     },
     dispose: dispose,
     abort: fail,
+  };
+  /** iOS 原生入口：Base64 UTF-8 act → DaledouReplay.start（对齐饭店助手） */
+  window.__startOfficialReplayB64 = function (b64, replayId) {
+    try {
+      var bin = atob(String(b64 || ''));
+      var bytes = new Uint8Array(bin.length);
+      for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      var act = new TextDecoder('utf-8').decode(bytes);
+      var replayJson = JSON.stringify({
+        result: '0', msg: '', string: act, sn: '1', replayType: '0'
+      });
+      notifyIOS('boot', { swf: 'v10.19', via: 'flashreplay' }, 'flashreplay start');
+      var p = window.DaledouReplay.start({
+        mainUrl: 'https://fightimg.pet.qq.com/swf/gres/main/PetFunFight-v10.19.swf',
+        replayId: String(replayId || 'app_replay'),
+        replayJson: replayJson,
+        quality: 'standard',
+        paused: false,
+        sound: true,
+        speed: 1
+      });
+      // WK evaluateJavaScript 等 Promise；显式 true 让原生判定启动成功
+      return Promise.resolve(p).then(function () { return true; });
+    } catch (e) {
+      notifyIOS('boot_fail', { err: String(e) }, 'start fail: ' + e);
+      return false;
+    }
   };
   state('hostReady', '');
 })();

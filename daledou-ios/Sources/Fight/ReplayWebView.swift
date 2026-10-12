@@ -22,7 +22,7 @@ struct ReplayWebView: UIViewRepresentable {
         ActionPackPrefetch.sessionPreferMm = preferMm
         // 饭店助手 flashreplay 在 iOS 上假注入/卡 loadingSWC；切回已验证能进 action_gg 的 ruffle_fight
         // 版本戳：若日志不是这一行，说明装的不是本提交 IPA
-        log.append("boot RUFFLE_FIGHT build=138-fd2 replayId=\(replayId) actLen=\(act.count) preferMm=\(preferMm)")
+        log.append("boot RUFFLE_FIGHT build=138-fd3 replayId=\(replayId) actLen=\(act.count) preferMm=\(preferMm)")
         WeaponSpeReplayCache.captureFromAct(act)
         log.append("weaponspe w1=\(WeaponSpeReplayCache.weaponspe1.count) w2=\(WeaponSpeReplayCache.weaponspe2.count) officialSpe=\(WeaponSpeReplayCache.hasOfficialSpecialize())")
         let packRel = preferMm ? ActionPackPrefetch.mmRel : ActionPackPrefetch.ggRel
@@ -128,13 +128,15 @@ struct ReplayWebView: UIViewRepresentable {
         context.coordinator.useVanilla = forceVanilla
         let pageURL: URL
         do {
-            let base = try server.start(root: URL(fileURLWithPath: handler.rootPath))
+            // bundle 根：同时托管 flashreplay/ + ruffle_fight/
+            let bundleRoot = URL(fileURLWithPath: handler.rootPath).deletingLastPathComponent()
+            let base = try server.start(root: bundleRoot)
             pageURL = Self.fightPageURL(
                 base: base.absoluteString,
                 preferMm: preferMm,
                 vanilla: forceVanilla
             )
-            log.append("HTTP \(base.absoluteString) wasm=\(forceVanilla ? "vanilla(safe)" : "lazy-gpu-138")")
+            log.append("HTTP \(base.absoluteString) wasm=flashreplay-fd3")
         } catch {
             log.append("HTTP start FAIL \(error.localizedDescription) → scheme fallback")
             pageURL = Self.fightPageURL(
@@ -164,10 +166,8 @@ struct ReplayWebView: UIViewRepresentable {
     private static func fightPageURL(base: String, preferMm: Bool, vanilla: Bool, lowmem: Bool = false) -> URL {
         var s = base
         if !s.hasSuffix("/") { s += "/" }
-        // 138-fd2：v10.19 对齐饭店 + 仅 FightReady 后注入（fd 假注入卡 loadingSWC）
-        var q = "renderer=wgpu-webgl&preferMm=\(preferMm ? 1 : 0)&replay=1&lowmem=\(lowmem ? 1 : 0)"
-        if vanilla { q += "&wasm=vanilla" }
-        return URL(string: "\(s)ruffle_fight/index.html?\(q)")!
+        // 138-fd3：饭店同款 flashreplay 栈（urlRewriteRules + CDN mainUrl + 标准 ruffle WASM）
+        return URL(string: "\(s)flashreplay/index.html")!
     }
 
     func updateUIView(_ uiView: UIView, context: Context) {
@@ -277,10 +277,7 @@ struct ReplayWebView: UIViewRepresentable {
                 case "injected", "reinjected":
                     statusLine.wrappedValue = "已注入，等待动作包/开战…"
                 case "fight_ready":
-                    statusLine.wrappedValue = "Flash Ready，注入战报…"
-                    if let wv = webView {
-                        injectNow(into: wv)
-                    }
+                    statusLine.wrappedValue = "FightReady（flashreplay 自动注入）"
                 case "swf_ready":
                     statusLine.wrappedValue = "SWF 就绪…"
                     RuffleWarmHolder.shared.markPageReady()
@@ -388,14 +385,14 @@ struct ReplayWebView: UIViewRepresentable {
             let idEsc = id
                 .replacingOccurrences(of: "\\", with: "\\\\")
                 .replacingOccurrences(of: "\"", with: "\\\"")
-            let js = "window.__injectFightActB64 && window.__injectFightActB64(\"\(b64)\",\"\(idEsc)\")"
+            let js = "window.__startOfficialReplayB64 && window.__startOfficialReplayB64(\"\(b64)\",\"\(idEsc)\")"
             webView.evaluateJavaScript(js) { [weak self] result, error in
                 guard let self else { return }
                 if let error {
                     self.logLine("注入异常: \(error.localizedDescription)")
                 }
                 let ok = (result as? Bool) == true
-                self.logLine(ok ? "inject queued/ok (direct)" : "inject pending")
+                self.logLine(ok ? "flashreplay start ok (direct)" : "flashreplay start pending")
             }
         }
 
@@ -405,7 +402,7 @@ struct ReplayWebView: UIViewRepresentable {
             let idEsc = replayId
                 .replacingOccurrences(of: "\\", with: "\\\\")
                 .replacingOccurrences(of: "\"", with: "\\\"")
-            let js = "window.__injectFightActB64 && window.__injectFightActB64(\"\(b64)\",\"\(idEsc)\")"
+            let js = "window.__startOfficialReplayB64 && window.__startOfficialReplayB64(\"\(b64)\",\"\(idEsc)\")"
             webView.evaluateJavaScript(js) { [weak self] result, error in
                 guard let self else { return }
                 guard generation == self.injectGeneration else { return }
@@ -421,9 +418,9 @@ struct ReplayWebView: UIViewRepresentable {
                         self.inject(into: webView, attempt: attempt + 1, generation: generation)
                     }
                 } else if ok {
-                    self.logLine("inject queued/ok attempt=\(attempt)")
+                    self.logLine("flashreplay start ok attempt=\(attempt)")
                 } else {
-                    self.logLine("inject GIVE UP after \(attempt)")
+                    self.logLine("flashreplay GIVE UP after \(attempt)")
                 }
             }
         }

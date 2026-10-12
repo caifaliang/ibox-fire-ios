@@ -171,6 +171,36 @@ final class RuffleLocalServer {
             return
         }
 
+        // 饭店 flashreplay urlRewriteRules → /remote/fightimg.pet.qq.com/swf/gres/…
+        if path.hasPrefix("/remote/") {
+            let remotePart = String(path.dropFirst("/remote/".count))
+            if remotePart.hasPrefix("fight.pet.qq.com/cgi-bin/petpk") {
+                let body = Self.stubCGI(query: query, root: root?.appendingPathComponent("ruffle_fight"))
+                if query.lowercased().contains("cmd=query") {
+                    log("CGI query(remote) → \(body.prefix(48))…")
+                }
+                respond(conn, status: 200, mime: "text/plain", body: Data(body.utf8), headOnly: isHead)
+                return
+            }
+            if remotePart.hasPrefix("fight.pet.qq.com/config.xml") {
+                serveFile(path: "/ruffle_fight/gres/config/config.xml", conn: conn, headOnly: isHead)
+                return
+            }
+            if remotePart.hasPrefix("fightimg.pet.qq.com/swf/gres/") {
+                let gresName = String(remotePart.dropFirst("fightimg.pet.qq.com/swf/gres/".count))
+                log("REMOTE gres/\(gresName)")
+                serveFile(path: "/ruffle_fight/gres/\(gresName)", conn: conn, headOnly: isHead)
+                return
+            }
+            if remotePart.hasPrefix("fightimg.pet.qq.com/") {
+                let tail = String(remotePart.dropFirst("fightimg.pet.qq.com/".count))
+                log("REMOTE img \(tail)")
+                serveFile(path: "/ruffle_fight/gres/\(tail)", conn: conn, headOnly: isHead)
+                return
+            }
+            log("REMOTE MISS \(remotePart)")
+        }
+
         serveFile(path: path, conn: conn, headOnly: isHead)
     }
 
@@ -195,22 +225,23 @@ final class RuffleLocalServer {
         var rel = rawPath
         if let decoded = rel.removingPercentEncoding { rel = decoded }
         if rel.hasPrefix("/") { rel = String(rel.dropFirst()) }
-        if rel.isEmpty { rel = "ruffle_fight/index.html" }
+        if rel.isEmpty { rel = "flashreplay/index.html" }
 
-        // /ruffle_fight/foo → bundle/foo；/gres/foo → gres/foo
         var fileRel = rel
-        if fileRel.hasPrefix("ruffle_fight/") {
-            fileRel = String(fileRel.dropFirst("ruffle_fight/".count))
-        }
-        // 饭店 mainUrl 形态：…/swf/gres/main/PetFunFight-v10.19.swf → 包内根目录同名文件
         let lowEarly = fileRel.lowercased()
-        if lowEarly == "gres/main/petfunfight-v10.19.swf" || lowEarly == "main/petfunfight-v10.19.swf" {
-            let alt = root.appendingPathComponent("PetFunFight-v10.19.swf")
+        if lowEarly == "ruffle_fight/gres/main/petfunfight-v10.19.swf"
+            || lowEarly == "gres/main/petfunfight-v10.19.swf"
+            || lowEarly == "main/petfunfight-v10.19.swf" {
+            let alt = root.appendingPathComponent("ruffle_fight/PetFunFight-v10.19.swf")
             if FileManager.default.fileExists(atPath: alt.path) {
-                log("ALIAS \(fileRel) → PetFunFight-v10.19.swf")
+                log("ALIAS \(fileRel) → ruffle_fight/PetFunFight-v10.19.swf")
                 respondFile(conn, fileURL: alt, mime: mime(fileRel), headOnly: headOnly)
                 return
             }
+        }
+        // 兼容旧路径 gres/* → ruffle_fight/gres/*
+        if fileRel.hasPrefix("gres/") && !fileRel.hasPrefix("ruffle_fight/") {
+            fileRel = "ruffle_fight/" + fileRel
         }
         let low = fileRel.lowercased()
         if low.contains("action_") || low.hasSuffix(".swf") || low.hasSuffix(".wasm") {
@@ -238,12 +269,20 @@ final class RuffleLocalServer {
         }
 
         let cacheCandidates: [URL] = {
-            if fileRel.hasPrefix("gres/") {
-                return [ActionPackPrefetch.localURL(for: fileRel)]
-            }
-            if rawPath.contains("/gres/") {
-                let name = (fileRel as NSString).lastPathComponent
-                return [ActionPackPrefetch.localURL(for: "gres/\(name)"), ActionPackPrefetch.localURL(for: fileRel)]
+            // flashreplay REMOTE 路径会变成 ruffle_fight/gres/…
+            let gresRel: String? = {
+                if fileRel.hasPrefix("gres/") { return fileRel }
+                if let r = fileRel.range(of: "gres/") {
+                    return String(fileRel[r.lowerBound...])
+                }
+                return nil
+            }()
+            if let gresRel {
+                let name = (gresRel as NSString).lastPathComponent
+                return [
+                    ActionPackPrefetch.localURL(for: gresRel),
+                    ActionPackPrefetch.localURL(for: "gres/\(name)"),
+                ]
             }
             return [ActionPackPrefetch.localURL(for: fileRel)]
         }()
@@ -278,8 +317,14 @@ final class RuffleLocalServer {
             }
         }
 
-        let local = root.appendingPathComponent(fileRel)
-        if FileManager.default.fileExists(atPath: local.path) {
+        let localCandidates = [
+            root.appendingPathComponent(fileRel),
+            root.appendingPathComponent("ruffle_fight").appendingPathComponent(
+                fileRel.hasPrefix("ruffle_fight/") ? String(fileRel.dropFirst("ruffle_fight/".count)) : fileRel
+            ),
+        ]
+        let local = localCandidates.first { FileManager.default.fileExists(atPath: $0.path) }
+        if let local {
             let size = (try? FileManager.default.attributesOfItem(atPath: local.path)[.size] as? NSNumber)?.int64Value ?? 0
             if low.contains("action_") || low.hasSuffix(".wasm") || low.hasSuffix("petfunfight.swf") {
                 log("BUNDLE stream \(fileRel) \(size)B")
@@ -301,12 +346,15 @@ final class RuffleLocalServer {
 
     private func cdnURL(for rel: String) -> URL? {
         let low = rel.lowercased()
-        if low.hasPrefix("gres/") {
-            let name = String(rel.dropFirst(5))
-            return URL(string: "https://fightimg.pet.qq.com/swf/gres/\(name)")
+        if let range = rel.range(of: "gres/", options: .caseInsensitive) {
+            let after = String(rel[range.upperBound...])
+            return URL(string: "https://fightimg.pet.qq.com/swf/gres/\(after)")
         }
         if low.hasPrefix("img/") || low.hasPrefix("images/") {
             return URL(string: "https://fightimg.pet.qq.com/\(rel)")
+        }
+        if low.hasPrefix("ruffle_fight/img/") {
+            return URL(string: "https://fightimg.pet.qq.com/\(String(rel.dropFirst("ruffle_fight/".count)))")
         }
         if low.hasSuffix(".swf"), !low.contains("/") {
             return URL(string: "https://fightimg.pet.qq.com/swf/gres/\(rel)")
