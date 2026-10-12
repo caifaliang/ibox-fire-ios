@@ -285,8 +285,19 @@
         }
       }
       if (injected) return true;
+      // 必须返回 tryInject 真假：以前恒 true → 原生以为已注入、loadingSWC 阶段永远等不到 EI
+      return tryInject();
+    };
+
+    // 对齐饭店助手 1.3.8：Flash 回调 FightReady 后再 setFightReplayData
+    window.FightReady = function () {
+      setStatus('FightReady');
+      notifyAndroid('fight_ready', {});
       tryInject();
-      return true;
+    };
+    window.FightComplete = function () {
+      setStatus('FightComplete');
+      notifyAndroid('fight_complete', {});
     };
 
     /** UTF-8 safe inject — Android passes Base64 to avoid CJK → '?' in evaluateJavascript. */
@@ -371,12 +382,20 @@
 
     function tryInject() {
       if (injected || !pendingAct || !player) return false;
-      if (typeof player.setFightReplayData !== 'function') {
-        setStatus('swf ready · wait EI…');
-        return false;
-      }
+      var cgi = makeCgi(pendingAct.act);
+      var rid = pendingAct.id;
       try {
-        player.setFightReplayData(makeCgi(pendingAct.act), pendingAct.id);
+        // 优先 player 上的 EI 桥；否则 callExternalInterface（饭店助手 1.3.8）
+        if (typeof player.setFightReplayData === 'function') {
+          player.setFightReplayData(cgi, rid);
+        } else {
+          var r = player.ruffle && player.ruffle();
+          if (!r || typeof r.callExternalInterface !== 'function') {
+            setStatus('swf ready · wait EI…');
+            return false;
+          }
+          r.callExternalInterface('setFightReplayData', cgi, rid);
+        }
         injected = true;
         setStatus('replay injected act=' + pendingAct.act.length);
         notifyAndroid('injected', { ok: true, actLen: pendingAct.act.length });

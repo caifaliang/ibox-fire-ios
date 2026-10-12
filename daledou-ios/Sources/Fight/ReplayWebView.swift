@@ -22,7 +22,7 @@ struct ReplayWebView: UIViewRepresentable {
         ActionPackPrefetch.sessionPreferMm = preferMm
         // 饭店助手 flashreplay 在 iOS 上假注入/卡 loadingSWC；切回已验证能进 action_gg 的 ruffle_fight
         // 版本戳：若日志不是这一行，说明装的不是本提交 IPA
-        log.append("boot RUFFLE_FIGHT build=138-align replayId=\(replayId) actLen=\(act.count) preferMm=\(preferMm)")
+        log.append("boot RUFFLE_FIGHT build=138-fix replayId=\(replayId) actLen=\(act.count) preferMm=\(preferMm)")
         let packRel = preferMm ? ActionPackPrefetch.mmRel : ActionPackPrefetch.ggRel
         let packFile = ActionPackPrefetch.localURL(for: packRel)
         if FileManager.default.fileExists(atPath: packFile.path) {
@@ -274,14 +274,18 @@ struct ReplayWebView: UIViewRepresentable {
                     statusLine.wrappedValue = "\(type): \(stringify(payload))"
                 case "injected", "reinjected":
                     statusLine.wrappedValue = "已注入，等待动作包/开战…"
+                case "fight_ready":
+                    statusLine.wrappedValue = "Flash Ready，注入战报…"
+                    if let wv = webView {
+                        injectNow(into: wv)
+                    }
                 case "swf_ready":
                     statusLine.wrappedValue = "SWF 就绪…"
                     RuffleWarmHolder.shared.markPageReady()
                     // 开战前仍保持 parse-safe；勿在此恢复舞台
                 case "boot_fallback":
-                    RuffleMemPolicy.markWasmCrashed()
-                    useVanilla = true
-                    statusLine.wrappedValue = "改用兼容 wasm…"
+                    // canvas 回退不是 wasm crash；仅记录
+                    statusLine.wrappedValue = "渲染回退…"
                 case "velocimetry":
                     if let p = payload as? [String: Any] {
                         let tag = p["tag"] as? String ?? ""

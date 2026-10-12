@@ -128,11 +128,26 @@ final class RuffleLocalServer {
             return
         }
         let parts = first.split(separator: " ")
-        guard parts.count >= 2, parts[0] == "GET" || parts[0] == "HEAD" else {
+        guard parts.count >= 2 else {
+            respond(conn, status: 400, mime: "text/plain", body: Data("bad request".utf8))
+            return
+        }
+        // Ruffle/WKWebView 偶发 OPTIONS / POST / 小写 method；405 会让 loadingSWC 死循环（见 138-align 日志）
+        let method = String(parts[0]).uppercased()
+        if method == "OPTIONS" {
+            respondOptions(conn)
+            return
+        }
+        let isHead = method == "HEAD"
+        let allowBody = method == "GET" || method == "HEAD" || method == "POST"
+        guard allowBody else {
+            log("HTTP \(method) rejected → 405 \(parts[1])")
             respond(conn, status: 405, mime: "text/plain", body: Data("method".utf8))
             return
         }
-        let isHead = parts[0] == "HEAD"
+        if method == "POST" {
+            log("HTTP POST treated as GET \(parts[1])")
+        }
         let rawTarget = String(parts[1])
         let pathPart = rawTarget.split(separator: "?", maxSplits: 1)
         let path = String(pathPart[0])
@@ -152,6 +167,19 @@ final class RuffleLocalServer {
         }
 
         serveFile(path: path, conn: conn, headOnly: isHead)
+    }
+
+    private func respondOptions(_ conn: NWConnection) {
+        var head = "HTTP/1.1 204 No Content\r\n"
+        head += "Access-Control-Allow-Origin: *\r\n"
+        head += "Access-Control-Allow-Methods: GET, HEAD, POST, OPTIONS\r\n"
+        head += "Access-Control-Allow-Headers: *\r\n"
+        head += "Access-Control-Max-Age: 86400\r\n"
+        head += "Content-Length: 0\r\n"
+        head += "Connection: close\r\n\r\n"
+        conn.send(content: Data(head.utf8), completion: .contentProcessed { _ in
+            conn.cancel()
+        })
     }
 
     private func serveFile(path rawPath: String, conn: NWConnection, headOnly: Bool) {
