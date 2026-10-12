@@ -22,7 +22,7 @@ struct ReplayWebView: UIViewRepresentable {
         ActionPackPrefetch.sessionPreferMm = preferMm
         // 饭店助手 flashreplay 在 iOS 上假注入/卡 loadingSWC；切回已验证能进 action_gg 的 ruffle_fight
         // 版本戳：若日志不是这一行，说明装的不是本提交 IPA
-        log.append("boot RUFFLE_FIGHT build=138-fd3 replayId=\(replayId) actLen=\(act.count) preferMm=\(preferMm)")
+        log.append("boot RUFFLE_FIGHT build=138-fd4 replayId=\(replayId) actLen=\(act.count) preferMm=\(preferMm)")
         WeaponSpeReplayCache.captureFromAct(act)
         log.append("weaponspe w1=\(WeaponSpeReplayCache.weaponspe1.count) w2=\(WeaponSpeReplayCache.weaponspe2.count) officialSpe=\(WeaponSpeReplayCache.hasOfficialSpecialize())")
         let packRel = preferMm ? ActionPackPrefetch.mmRel : ActionPackPrefetch.ggRel
@@ -136,7 +136,7 @@ struct ReplayWebView: UIViewRepresentable {
                 preferMm: preferMm,
                 vanilla: forceVanilla
             )
-            log.append("HTTP \(base.absoluteString) wasm=flashreplay-fd3")
+            log.append("HTTP \(base.absoluteString) wasm=flashreplay-fd4")
         } catch {
             log.append("HTTP start FAIL \(error.localizedDescription) → scheme fallback")
             pageURL = Self.fightPageURL(
@@ -166,7 +166,7 @@ struct ReplayWebView: UIViewRepresentable {
     private static func fightPageURL(base: String, preferMm: Bool, vanilla: Bool, lowmem: Bool = false) -> URL {
         var s = base
         if !s.hasSuffix("/") { s += "/" }
-        // 138-fd3：饭店同款 flashreplay 栈（urlRewriteRules + CDN mainUrl + 标准 ruffle WASM）
+        // 138-fd4：flashreplay + 只 start 一次（fd3 Promise 返回导致 WK 重试死循环）
         return URL(string: "\(s)flashreplay/index.html")!
     }
 
@@ -202,6 +202,7 @@ struct ReplayWebView: UIViewRepresentable {
         private var injectGeneration = 0
         private var recoveringFromOOM = false
         private var oomCount = 0
+        private var flashreplayStarted = false
         private var statusLine: Binding<String>
         private var isCold = true
 
@@ -224,6 +225,7 @@ struct ReplayWebView: UIViewRepresentable {
             self.isCold = cold
             oomCount = 0
             recoveringFromOOM = false
+            flashreplayStarted = false
         }
 
         func logLine(_ msg: String) {
@@ -274,9 +276,14 @@ struct ReplayWebView: UIViewRepresentable {
                 switch type {
                 case "boot_fail", "inject_fail":
                     statusLine.wrappedValue = "\(type): \(stringify(payload))"
+                    flashreplayStarted = false
+                case "boot":
+                    flashreplayStarted = true
+                    statusLine.wrappedValue = "flashreplay 已启动…"
                 case "injected", "reinjected":
                     statusLine.wrappedValue = "已注入，等待动作包/开战…"
                 case "fight_ready":
+                    flashreplayStarted = true
                     statusLine.wrappedValue = "FightReady（flashreplay 自动注入）"
                 case "swf_ready":
                     statusLine.wrappedValue = "SWF 就绪…"
@@ -381,44 +388,57 @@ struct ReplayWebView: UIViewRepresentable {
         }
 
         private func injectAct(_ act: String, id: String, into webView: WKWebView) {
+            guard !flashreplayStarted else {
+                logLine("flashreplay already started (skip direct)")
+                return
+            }
             let b64 = Data(act.utf8).base64EncodedString()
             let idEsc = id
                 .replacingOccurrences(of: "\\", with: "\\\\")
                 .replacingOccurrences(of: "\"", with: "\\\"")
-            let js = "window.__startOfficialReplayB64 && window.__startOfficialReplayB64(\"\(b64)\",\"\(idEsc)\")"
+            // 同步 bool，勿 return Promise
+            let js = "(function(){try{return !!(window.__startOfficialReplayB64&&window.__startOfficialReplayB64(\"\(b64)\",\"\(idEsc)\"));}catch(e){return false;}})()"
             webView.evaluateJavaScript(js) { [weak self] result, error in
                 guard let self else { return }
                 if let error {
                     self.logLine("注入异常: \(error.localizedDescription)")
                 }
                 let ok = (result as? Bool) == true
+                if ok { self.flashreplayStarted = true }
                 self.logLine(ok ? "flashreplay start ok (direct)" : "flashreplay start pending")
             }
         }
 
         private func inject(into webView: WKWebView, attempt: Int, generation: Int) {
             guard generation == injectGeneration else { return }
+            if flashreplayStarted {
+                logLine("flashreplay already started attempt=\(attempt)")
+                return
+            }
             let b64 = Data(act.utf8).base64EncodedString()
             let idEsc = replayId
                 .replacingOccurrences(of: "\\", with: "\\\\")
                 .replacingOccurrences(of: "\"", with: "\\\"")
-            let js = "window.__startOfficialReplayB64 && window.__startOfficialReplayB64(\"\(b64)\",\"\(idEsc)\")"
+            let js = "(function(){try{return !!(window.__startOfficialReplayB64&&window.__startOfficialReplayB64(\"\(b64)\",\"\(idEsc)\"));}catch(e){return false;}})()"
             webView.evaluateJavaScript(js) { [weak self] result, error in
                 guard let self else { return }
                 guard generation == self.injectGeneration else { return }
                 if let error {
                     self.logLine("注入异常: \(error.localizedDescription)")
                 }
-                let ok = (result as? Bool) == true
-                if !ok, attempt < 40 {
+                let ok = (result as? Bool) == true || self.flashreplayStarted
+                if ok {
+                    self.flashreplayStarted = true
+                    self.logLine("flashreplay start ok attempt=\(attempt)")
+                    return
+                }
+                if attempt < 40 {
                     if attempt % 5 == 0 {
                         self.log.append("inject wait attempt=\(attempt)")
                     }
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                         self.inject(into: webView, attempt: attempt + 1, generation: generation)
                     }
-                } else if ok {
-                    self.logLine("flashreplay start ok attempt=\(attempt)")
                 } else {
                     self.logLine("flashreplay GIVE UP after \(attempt)")
                 }

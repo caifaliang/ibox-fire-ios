@@ -294,8 +294,10 @@
     dispose: dispose,
     abort: fail,
   };
-  /** iOS 原生入口：Base64 UTF-8 act → DaledouReplay.start（对齐饭店助手） */
+  /** iOS 原生入口：必须同步返回 bool。返回 Promise 会触发 WK「结果类型不受支持」→ 原生重试 → dispose 死循环（138-fd3）。 */
+  var officialStartOnce = false;
   window.__startOfficialReplayB64 = function (b64, replayId) {
+    if (officialStartOnce) return true;
     try {
       var bin = atob(String(b64 || ''));
       var bytes = new Uint8Array(bin.length);
@@ -304,19 +306,26 @@
       var replayJson = JSON.stringify({
         result: '0', msg: '', string: act, sn: '1', replayType: '0'
       });
+      officialStartOnce = true;
       notifyIOS('boot', { swf: 'v10.19', via: 'flashreplay' }, 'flashreplay start');
-      var p = window.DaledouReplay.start({
-        mainUrl: 'https://fightimg.pet.qq.com/swf/gres/main/PetFunFight-v10.19.swf',
-        replayId: String(replayId || 'app_replay'),
-        replayJson: replayJson,
-        quality: 'standard',
-        paused: false,
-        sound: true,
-        speed: 1
+      // fire-and-forget：不要 return Promise，否则 WK 报错并反复 restart
+      Promise.resolve().then(function () {
+        return window.DaledouReplay.start({
+          mainUrl: 'https://fightimg.pet.qq.com/swf/gres/main/PetFunFight-v10.19.swf',
+          replayId: String(replayId || 'app_replay'),
+          replayJson: replayJson,
+          quality: 'standard',
+          paused: false,
+          sound: true,
+          speed: 1
+        });
+      }).catch(function (e) {
+        officialStartOnce = false;
+        notifyIOS('boot_fail', { err: String(e) }, 'start fail: ' + e);
       });
-      // WK evaluateJavaScript 等 Promise；显式 true 让原生判定启动成功
-      return Promise.resolve(p).then(function () { return true; });
+      return true;
     } catch (e) {
+      officialStartOnce = false;
       notifyIOS('boot_fail', { err: String(e) }, 'start fail: ' + e);
       return false;
     }
