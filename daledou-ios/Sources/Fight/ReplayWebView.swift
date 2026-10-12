@@ -1,6 +1,7 @@
 import SwiftUI
 import WebKit
 import UIKit
+import AVFoundation
 
 /// 容器承载 Ruffle WKWebView，便于 Warm detach（对齐 APK detachFromParent）。
 struct ReplayWebView: UIViewRepresentable {
@@ -22,7 +23,7 @@ struct ReplayWebView: UIViewRepresentable {
         ActionPackPrefetch.sessionPreferMm = preferMm
         // 饭店助手 flashreplay 在 iOS 上假注入/卡 loadingSWC；切回已验证能进 action_gg 的 ruffle_fight
         // 版本戳：若日志不是这一行，说明装的不是本提交 IPA
-        log.append("boot RUFFLE_FIGHT build=138-fd17 replayId=\(replayId) actLen=\(act.count) preferMm=\(preferMm)")
+        log.append("boot RUFFLE_FIGHT build=138-fd18 replayId=\(replayId) actLen=\(act.count) preferMm=\(preferMm)")
         WeaponSpeReplayCache.captureFromAct(act)
         log.append("weaponspe w1=\(WeaponSpeReplayCache.weaponspe1.count) w2=\(WeaponSpeReplayCache.weaponspe2.count) officialSpe=\(WeaponSpeReplayCache.hasOfficialSpecialize())")
         let packRel = preferMm ? ActionPackPrefetch.mmRel : ActionPackPrefetch.ggRel
@@ -136,7 +137,7 @@ struct ReplayWebView: UIViewRepresentable {
                 preferMm: preferMm,
                 vanilla: forceVanilla
             )
-            log.append("HTTP \(base.absoluteString) wasm=flashreplay-fd17")
+            log.append("HTTP \(base.absoluteString) wasm=flashreplay-fd18")
         } catch {
             log.append("HTTP start FAIL \(error.localizedDescription) → scheme fallback")
             pageURL = Self.fightPageURL(
@@ -166,7 +167,7 @@ struct ReplayWebView: UIViewRepresentable {
     private static func fightPageURL(base: String, preferMm: Bool, vanilla: Bool, lowmem: Bool = false) -> URL {
         var s = base
         if !s.hasSuffix("/") { s += "/" }
-        // 138-fd17：nul9 仅 allowlist；mercenary/npc 等 GameingLoading 默认 clean
+        // 138-fd18：声音 + CloseFlash 回游戏 + park 暖复用
         return URL(string: "\(s)flashreplay/index.html")!
     }
 
@@ -178,16 +179,17 @@ struct ReplayWebView: UIViewRepresentable {
     }
 
     static func dismantleUIView(_ uiView: UIView, coordinator: Coordinator) {
-        // 对齐 APK：只 detach，不 destroy——保留已 parse 的 action_gg。
+        // 对齐 APK：park + detach，不 destroy——保留已 parse 的 action_gg。
         // 必须卸掉 message handler，否则 coordinator 释放后 JS 回调会崩。
         coordinator.handler?.onActionPackEvent = nil
         coordinator.handler?.onResourceLog = nil
         if let wv = RuffleWarmHolder.shared.webView ?? uiView.subviews.first as? WKWebView {
             wv.navigationDelegate = nil
         }
+        RuffleWarmHolder.shared.parkInPlace()
         RuffleWarmHolder.shared.uninstallHandlersIfNeeded()
         RuffleWarmHolder.shared.detachFromParent()
-        coordinator.log.append("WARM detach (keep parsed pack)")
+        coordinator.log.append("WARM park+detach (keep parsed pack)")
         coordinator.log.flushToDisk()
     }
 
@@ -280,6 +282,11 @@ struct ReplayWebView: UIViewRepresentable {
                 case "boot":
                     flashreplayStarted = true
                     statusLine.wrappedValue = "flashreplay 已启动…"
+                case "close":
+                    // SWF CloseFlash（播完返回）→ 关全屏，回游戏页
+                    statusLine.wrappedValue = "关闭动画…"
+                    log.append("CloseFlash → dismiss")
+                    NotificationCenter.default.post(name: .daledouReplayClose, object: nil)
                 case "injected", "reinjected":
                     statusLine.wrappedValue = "已注入，等待动作包/开战…"
                 case "fight_ready":
@@ -475,6 +482,10 @@ enum RuffleMemPolicy {
     }
 }
 
+extension Notification.Name {
+    static let daledouReplayClose = Notification.Name("daledou.replay.close")
+}
+
 struct ReplaySheet: View {
     let act: String
     let replayId: String
@@ -559,10 +570,24 @@ struct ReplaySheet: View {
         .statusBarHidden(true)
         .onAppear {
             log.append("=== replay open rid=\(replayId) act=\(act.count)B ===")
+            // iOS 静音键下仍播 SWF 音效
+            do {
+                let session = AVAudioSession.sharedInstance()
+                try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
+                try session.setActive(true)
+                log.append("AVAudioSession playback ok")
+            } catch {
+                log.append("AVAudioSession FAIL \(error.localizedDescription)")
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .daledouReplayClose)) { _ in
+            log.flushToDisk()
+            dismiss()
         }
         .onDisappear {
             log.append("=== replay close ===")
             log.flushToDisk()
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         }
     }
 

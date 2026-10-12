@@ -54,6 +54,15 @@ final class RuffleWarmHolder {
         webView?.removeFromSuperview()
     }
 
+    /// 关页前 suspend + 清 volume，保留已 parse 的 SWF（对齐 APK warm park）
+    func parkInPlace() {
+        guard let wv = webView else { return }
+        wv.evaluateJavaScript(
+            "try{window.DaledouReplay&&window.DaledouReplay.park()}catch(e){}",
+            completionHandler: nil
+        )
+    }
+
     /// 卸掉 script handlers（dismantle / destroy 共用，保证只 remove 一次）
     func uninstallHandlersIfNeeded() {
         guard handlersInstalled, let wv = webView else { return }

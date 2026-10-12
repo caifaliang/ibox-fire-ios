@@ -124,11 +124,12 @@
   window.getCookie = function (name) {
     // Use the binary URLLoader path: all requests go through the native interceptor.
     if (name === 'chrometag') return '0';
-    if (name === 'voice') return '0';
+    // PetFunFight：voice=1 开声；与 Ruffle volume 一致
+    if (name === 'voice') return sound ? '1' : '0';
     return null;
   };
-  // Keep the movie's audio engine enabled; the app controls output volume.
-  window.getVoice = function () { return 0; };
+  // SWF 内 getVoice：非 0 才播 BGM/音效（原先恒 0 → 无声）
+  window.getVoice = function () { return sound ? 1 : 0; };
   window.setCookie = function () {};
   window.isqzone = function () { return '16'; };
   window.pgvSendClick = window.pgvSendPV = window.game_fcm = function () {};
@@ -136,7 +137,11 @@
     weaponpanel: function () { return connectionName; },
     weaponshow: function () { document.getElementById('weapons').style.display = 'block'; },
     weaponhide: function () { document.getElementById('weapons').style.display = 'none'; },
-    CloseFlash: function () { if (active) state('playing', ''); },
+    // 播完点返回：park 暖机 + 通知原生关页（勿把游戏页Jetsam 成「回桌面」）
+    CloseFlash: function () {
+      try { window.DaledouReplay.park(); } catch (_) {}
+      notifyIOS('close', {}, 'CloseFlash');
+    },
     // The original initCompleteScreen invokes this before displaying the result.
     OpenFlash: window.FightComplete,
   };
@@ -204,6 +209,8 @@
       var reusable = main && ready && loaded && !failed && mainUrl === options.mainUrl && toolbarUrl === (options.toolbarUrl || null);
       if (reusable) { generation++; sent = false; payload = null; }
       else dispose();
+      // 原先漏读 options.sound，恒 false → volume 永远 0
+      sound = options.sound !== false;
       quality = Object.prototype.hasOwnProperty.call(qualityScales, options.quality) ? options.quality : 'standard';
       renderScale = qualityScales[quality]; updatePixelRatio();
       failed = false;
@@ -260,11 +267,16 @@
       }
     },
     park: function () {
-      if (!main || !ready || !loaded || failed || !/^(playing|complete)$/.test(playbackState)) { dispose(); return false; }
+      // 关页暖挂起：保留已 parse 的 PetFunFight；失败态才 dispose
+      officialStartOnce = false;
+      if (!main || failed) {
+        if (failed) dispose();
+        return false;
+      }
       generation++; active = false; sent = false; payload = null; replayId = null; sessionToken = '';
       desiredPaused = true; playbackState = 'parked'; resetFrameSampler();
-      main.ruffle().volume = 0; main.ruffle().suspend();
-      if (toolbar) { toolbar.ruffle().volume = 0; toolbar.ruffle().suspend(); }
+      try { main.ruffle().volume = 0; main.ruffle().suspend(); } catch (_) {}
+      if (toolbar) { try { toolbar.ruffle().volume = 0; toolbar.ruffle().suspend(); } catch (_) {} }
       return true;
     },
     replay: function () { sent = false; resetFrameSampler(); dispatch(); },
@@ -298,7 +310,8 @@
   /** iOS 原生入口：必须同步返回 bool。返回 Promise 会触发 WK「结果类型不受支持」→ 原生重试 → dispose 死循环（138-fd3）。 */
   var officialStartOnce = false;
   window.__startOfficialReplayB64 = function (b64, replayId) {
-    if (officialStartOnce) return true;
+    // parked / 暖复用：允许再次 start；仅「正在播」时短路
+    if (officialStartOnce && playbackState !== 'parked' && active) return true;
     try {
       var bin = atob(String(b64 || ''));
       var bytes = new Uint8Array(bin.length);
@@ -308,7 +321,7 @@
         result: '0', msg: '', string: act, sn: '1', replayType: '0'
       });
       officialStartOnce = true;
-      notifyIOS('boot', { swf: 'v10.19', via: 'flashreplay' }, 'flashreplay start');
+      notifyIOS('boot', { swf: 'v10.19', via: 'flashreplay', warm: playbackState === 'parked' }, 'flashreplay start');
       // fire-and-forget：不要 return Promise，否则 WK 报错并反复 restart
       // iOS：主 SWF 必须同源（fd8 直连 CDN → CORS Failed to fetch）。子资源靠 urlRewrite→/remote/。
       var iosLocal = location.origin.indexOf('127.0.0.1') >= 0;

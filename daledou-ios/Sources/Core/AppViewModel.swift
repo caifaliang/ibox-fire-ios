@@ -224,13 +224,14 @@ final class AppViewModel: ObservableObject {
 
     func onReplayDismissed() {
         showReplay = false
-        // Warm：Ruffle WKWebView 仍由 RuffleWarmHolder 持有，不在这里 destroy
-        suspendGameWebForReplay = false
-        if let u = resumeGameURL {
-            pendingURL = u
-            resumeGameURL = nil
-        } else if session.isLoggedIn {
-            pendingURL = URL(string: LoginURLs.ledouEntry)
+        // 先 park 暖机 WebView，再隔一帧重建游戏页，避免双 WebContent 叠峰 jetsam→回桌面
+        RuffleWarmHolder.shared.parkInPlace()
+        let resume = resumeGameURL ?? (session.isLoggedIn ? URL(string: LoginURLs.ledouEntry) : nil)
+        resumeGameURL = nil
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 350_000_000)
+            pendingURL = resume
+            suspendGameWebForReplay = false
         }
     }
 

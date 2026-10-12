@@ -31,11 +31,19 @@ struct GameWebView: UIViewRepresentable {
 
         Task { @MainActor in
             let cookie = SessionStore.shared.cookieHeader
+            // 开战归来：优先 pendingURL（战报页），勿一律进首页/等待页（用户体感「回桌面」）
+            let resume = vm.pendingURL
+            vm.pendingURL = nil
             if !cookie.isEmpty {
                 await CookieBridge.inject(cookieHeader: cookie, into: wv)
-                if let u = URL(string: LoginURLs.ledouEntry) {
-                    wv.load(URLRequest(url: u))
+                let dest = resume ?? URL(string: LoginURLs.ledouEntry)
+                if let dest {
+                    context.coordinator.applyUA(wv, desktop: false)
+                    wv.load(URLRequest(url: dest))
                 }
+            } else if let resume {
+                context.coordinator.applyUA(wv, desktop: vm.preferDesktopUA)
+                wv.load(URLRequest(url: resume))
             } else {
                 wv.loadHTMLString(LoginURLs.waitingHTML, baseURL: URL(string: "https://dld.qzapp.z.qq.com/"))
             }
