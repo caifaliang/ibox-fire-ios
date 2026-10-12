@@ -109,13 +109,14 @@ enum SwfPrefixStrip {
         encodePrefixForNewLoader(stripData(raw)) // CWS 即可；NewLoader 剥 9 后 loadBytes
     }
 
-    /// 按文件名分流（BeginLoading）：
-    /// - `xmls*` → URLLoader BINARY，必须干净签名（加 9NUL 会卡「配置文件 80%」，见 fd11）
-    /// - `petfunfight*` → Ruffle 主 SWF，干净签名
-    /// - 其余 gres → NewLoader(isEncode)，补 9 NUL
+    /// 按路径分流（对齐 NewLoader.onStreamComplete）：
+    /// - `xmls*` → URLLoader BINARY，必须干净
+    /// - URL 含 `bg` → isEncode 分支显式跳过 `position=9`，必须干净（fd12 给 bg 加 nul9 → 文件错误）
+    /// - `petfunfight*` → Ruffle 主 SWF，干净
+    /// - 其余 gres → NewLoader(isEncode) 会剥 9，补 CDN 式 NUL
     static func prepareGresAsset(_ raw: Data, fileName: String) -> Data {
         let low = fileName.lowercased()
-        if low.contains("xmls") || low.hasPrefix("petfunfight") {
+        if low.contains("xmls") || low.contains("bg") || low.hasPrefix("petfunfight") {
             return stripData(raw)
         }
         return prepareGresSwfForNewLoader(raw)

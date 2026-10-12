@@ -429,7 +429,7 @@ final class RuffleLocalServer {
             if remote.pathExtension.lowercased() == "swf" {
                 let before = payload.count
                 payload = SwfPrefixStrip.prepareGresAsset(payload, fileName: nameLow)
-                let mode = nameLow.contains("xmls") || nameLow.hasPrefix("petfunfight") ? "clean" : "nul9"
+                let mode = (nameLow.contains("xmls") || nameLow.contains("bg") || nameLow.hasPrefix("petfunfight")) ? "clean" : "nul9"
                 self.log("SWF prep CDN \(remote.lastPathComponent) \(before)→\(payload.count)B \(mode)")
                 mime = "application/x-shockwave-flash"
             }
@@ -493,14 +493,14 @@ final class RuffleLocalServer {
             if ext == "swf" {
                 let before = payload.count
                 payload = SwfPrefixStrip.prepareGresAsset(payload, fileName: name)
-                if name.contains("loadingswc") || name.contains("xmls") || payload.count != before {
+                if name.contains("loadingswc") || name.contains("xmls") || name.contains("bg") || payload.count != before {
                     let sigOff = SwfPrefixStrip.hasValidSig(payload) ? 0 : (payload.count > 12 ? 9 : 0)
                     let sig: String = {
                         guard payload.count > sigOff + 2 else { return "?" }
                         let i = payload.startIndex
                         return String(bytes: [payload[i+sigOff], payload[i+sigOff+1], payload[i+sigOff+2]], encoding: .ascii) ?? "?"
                     }()
-                    let mode = name.contains("xmls") || isMainPff ? "clean" : "nul9"
+                    let mode = (name.contains("xmls") || name.contains("bg") || isMainPff) ? "clean" : "nul9"
                     log("SWF prep \(fileURL.lastPathComponent) \(before)→\(payload.count)B \(mode)+\(sig)")
                 }
             }

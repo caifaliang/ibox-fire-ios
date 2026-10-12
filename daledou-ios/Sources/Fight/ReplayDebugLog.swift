@@ -23,6 +23,7 @@ final class ReplayDebugLog: ObservableObject {
         let m = message
         if m.contains("loadingSWC") { return "loadingSWC" }
         if m.contains("ui-v10") { return "ui-v10" }
+        if m.contains("bg/") || m.contains("bg1") || m.contains("bg2") { return "bg" }
         if m.contains("xianxia") { return "xianxia" }
         if m.contains("STUB apk-heavy") { return "stub" }
         if m.contains("POST treated") && m.contains("/remote/") {
