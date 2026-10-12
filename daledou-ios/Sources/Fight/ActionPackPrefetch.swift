@@ -5,7 +5,7 @@ enum ActionPackPrefetch {
     static let ggRel = "gres/action_gg-v10.1300.swf"
     static let mmRel = "gres/action_mm-v10.1300.swf"
 
-    /// 当前会话偏好（scheme handler stub 另一性别）
+    /// 当前会话主视角性别（预拉用；对面性别包按需 CDN，不再 stub）
     static var sessionPreferMm = false
 
     /// `&Player1:1;` = 女号 → action_mm；否则 action_gg

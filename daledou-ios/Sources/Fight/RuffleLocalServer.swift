@@ -305,20 +305,12 @@ final class RuffleLocalServer {
         }
 
         if low.contains("action_gg") || low.contains("action_mm") {
-            if low.contains("gg2") || low.contains("mm2") {
-                // parsed signal — JS/native may listen via logs
-            }
-            let preferMm = ActionPackPrefetch.sessionPreferMm
-            let wrong = preferMm ? low.contains("action_gg") : low.contains("action_mm")
-            if wrong {
-                log("STUB wrong-gender \(fileRel) \(Self.emptySwfForNewLoader.count)B nul9")
-                respond(conn, status: 200, mime: mime(fileRel), body: Self.emptySwfForNewLoader, headOnly: headOnly)
-                return
-            }
-            // 请求 v10.1900 但预拉是 v10.1300：用本地 FWS，避免再下 37MB CWS（fd14）
+            // fd24：错性别空 stub → Flash「正在加载ＱＭＭ动画 0%」死卡。
+            // 双方角色都可能要 gg/mm，必须实发对应包（磁盘别名或 CDN）。
             if !low.contains("gg2"), !low.contains("mm2") {
+                let wantMm = low.contains("action_mm")
                 let disk = ActionPackPrefetch.localURL(
-                    for: preferMm ? ActionPackPrefetch.mmRel : ActionPackPrefetch.ggRel
+                    for: wantMm ? ActionPackPrefetch.mmRel : ActionPackPrefetch.ggRel
                 )
                 let sz = (try? FileManager.default.attributesOfItem(atPath: disk.path)[.size] as? NSNumber)?.int64Value ?? 0
                 if sz > 1_000_000 {
@@ -327,10 +319,12 @@ final class RuffleLocalServer {
                         _ = SwfZwsInflate.inflateFileIfNeeded(disk) { self.log($0) }
                     }
                     let sig = SwfZwsInflate.signature(of: disk)
-                    log("PACK alias \(fileRel) → \(disk.lastPathComponent) \(sz)B sig=\(sig)")
+                    let tag = wantMm == ActionPackPrefetch.sessionPreferMm ? "PACK alias" : "PACK other-gender"
+                    log("\(tag) \(fileRel) → \(disk.lastPathComponent) \(sz)B sig=\(sig)")
                     respondFile(conn, fileURL: disk, mime: mime(fileRel), headOnly: headOnly)
                     return
                 }
+                log("PACK miss \(wantMm ? "mm" : "gg") on disk → CDN \(fileRel)")
             }
         }
 
@@ -409,6 +403,18 @@ final class RuffleLocalServer {
             return
         }
 
+        // 主动作包未缓存：download→磁盘→STREAM（勿 dataTask 整包进内存，易 OOM）
+        if (low.contains("action_gg") || low.contains("action_mm")),
+           !low.contains("gg2"), !low.contains("mm2"),
+           let cdn = cdnURL(for: fileRel) {
+            let wantMm = low.contains("action_mm")
+            let dest = ActionPackPrefetch.localURL(
+                for: wantMm ? ActionPackPrefetch.mmRel : ActionPackPrefetch.ggRel
+            )
+            downloadActionPack(cdn: cdn, dest: dest, fileRel: fileRel, conn: conn, headOnly: headOnly)
+            return
+        }
+
         // gres 未缓存 → CDN
         if let cdn = cdnURL(for: fileRel) {
             log("CDN \(fileRel) → \(cdn.lastPathComponent)")
@@ -420,10 +426,66 @@ final class RuffleLocalServer {
         respond(conn, status: 404, mime: "text/plain", body: Data("missing".utf8))
     }
 
+    /// 对面性别 / 未预拉的主动作包：落盘后再 HTTP 流式发出。
+    private func downloadActionPack(
+        cdn: URL,
+        dest: URL,
+        fileRel: String,
+        conn: NWConnection,
+        headOnly: Bool
+    ) {
+        log("PACK CDN begin \(cdn.lastPathComponent) → \(dest.lastPathComponent)")
+        try? FileManager.default.createDirectory(
+            at: dest.deletingLastPathComponent(), withIntermediateDirectories: true
+        )
+        var req = URLRequest(url: cdn)
+        req.timeoutInterval = 300
+        session.downloadTask(with: req) { [weak self] tmp, resp, err in
+            guard let self else { return }
+            if let err {
+                self.log("PACK CDN FAIL \(cdn.lastPathComponent) \(err.localizedDescription)")
+                self.respond(conn, status: 502, mime: "text/plain", body: Data("pack cdn fail".utf8))
+                return
+            }
+            let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+            guard let tmp, (200..<300).contains(code) else {
+                self.log("PACK CDN BAD \(code) \(cdn.lastPathComponent)")
+                self.respond(conn, status: code == 0 ? 502 : code, mime: "text/plain", body: Data("pack cdn bad".utf8))
+                return
+            }
+            try? FileManager.default.removeItem(at: dest)
+            do {
+                try FileManager.default.moveItem(at: tmp, to: dest)
+            } catch {
+                // tmp 可能跨卷：copy
+                try? FileManager.default.copyItem(at: tmp, to: dest)
+                try? FileManager.default.removeItem(at: tmp)
+            }
+            _ = SwfPrefixStrip.stripFileIfNeeded(dest)
+            if SwfZwsInflate.signature(of: dest) == "ZWS" {
+                self.log("PACK CDN inflate \(dest.lastPathComponent)…")
+                _ = SwfZwsInflate.inflateFileIfNeeded(dest) { self.log($0) }
+            }
+            let sz = (try? FileManager.default.attributesOfItem(atPath: dest.path)[.size] as? NSNumber)?.int64Value ?? 0
+            let sig = SwfZwsInflate.signature(of: dest)
+            self.log("PACK CDN OK \(dest.lastPathComponent) \(sz)B sig=\(sig)")
+            guard sz > 1_000_000 else {
+                self.respond(conn, status: 502, mime: "text/plain", body: Data("pack too small".utf8))
+                return
+            }
+            self.respondFile(conn, fileURL: dest, mime: self.mime(fileRel), headOnly: headOnly)
+        }.resume()
+    }
+
     private func cdnURL(for rel: String) -> URL? {
         let low = rel.lowercased()
         if let range = rel.range(of: "gres/", options: .caseInsensitive) {
             let after = String(rel[range.upperBound...])
+            let afterLow = after.lowercased()
+            // gres/img/npc/*.jpg 实际在 /img/npc/，不在 /swf/gres/img/（fd24 404）
+            if afterLow.hasPrefix("img/") || afterLow.hasPrefix("images/") {
+                return URL(string: "https://fightimg.pet.qq.com/\(after)")
+            }
             return URL(string: "https://fightimg.pet.qq.com/swf/gres/\(after)")
         }
         if low.hasPrefix("img/") || low.hasPrefix("images/") {

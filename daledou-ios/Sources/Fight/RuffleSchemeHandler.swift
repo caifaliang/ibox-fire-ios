@@ -69,16 +69,7 @@ final class RuffleSchemeHandler: NSObject, WKURLSchemeHandler {
             notifyPack("parsed")
         }
 
-        // 对齐 Android：错性别主动作包回空 SWF，避免双包抢 Loader
-        if lowRel.contains("action_gg") || lowRel.contains("action_mm") {
-            let preferMm = ActionPackPrefetch.sessionPreferMm
-            let wrong = preferMm ? lowRel.contains("action_gg") : lowRel.contains("action_mm")
-            if wrong {
-                logRes("STUB wrong-gender \(rel)")
-                finish(urlSchemeTask, url: url, data: Self.emptySwf, mime: mime(for: rel))
-                return
-            }
-        }
+        // fd25：不再 stub 错性别——空包会卡「正在加载ＱＭＭ动画 0%」。走下方 CACHE/CDN。
         if RuffleLocalServer.shouldStubReplayAsset(lowRel) {
             logRes("STUB heavy \(rel)")
             finish(urlSchemeTask, url: url, data: Self.emptySwf, mime: mime(for: rel))
