@@ -273,12 +273,25 @@ enum QqOneKeyLogin {
         return nil
     }
 
-    /// 饭点 `isAuthorizationQR`：拒 HTML/空白；票据可能含 URL 安全字符
+    /// 饭点 `isAuthorizationQR`：仅字母数字（拒 https/p= 垃圾串，否则 QQ 会进「APP网页申请」失败页）
     static func isAuthorizationQR(_ raw: String) -> Bool {
         let s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard s.count >= 8 else { return false }
-        if s.contains("<") || s.contains(">") || s.contains(" ") || s.contains("\n") { return false }
-        return true
+        guard s.count >= 16 else { return false }
+        return s.unicodeScalars.allSatisfy { CharacterSet.alphanumerics.contains($0) }
+    }
+
+    /// 从 wtlogin URL 提取合法 qrcode；带 `p=` 或无票据 → nil（禁止打开）
+    static func qrcodeTicket(fromWtlogin url: URL) -> String? {
+        guard isWtloginScheme(url.scheme) else { return nil }
+        guard let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems else {
+            return nil
+        }
+        if items.contains(where: { $0.name == "p" && !($0.value ?? "").isEmpty }) {
+            return nil
+        }
+        guard let raw = items.first(where: { $0.name == "qrcode" })?.value else { return nil }
+        let ticket = raw.removingPercentEncoding ?? raw
+        return isAuthorizationQR(ticket) ? ticket : nil
     }
 
     /// 跳转前记住 xlogin URL + Cookie
@@ -289,13 +302,16 @@ enum QqOneKeyLogin {
 
     @discardableResult
     static func openWithQrAuthorization(_ qr: String, force: Bool = false) -> Bool {
-        let ticket = qr.removingPercentEncoding ?? qr
+        let ticket = (qr.removingPercentEncoding ?? qr).trimmingCharacters(in: .whitespacesAndNewlines)
         guard isAuthorizationQR(ticket), let launch = launchURL(qrAuthorization: ticket) else { return false }
+        // 双保险：最终 URL 不得含 p=
+        if launch.absoluteString.contains("?p=") || launch.absoluteString.contains("&p=") {
+            return false
+        }
         if !force, launchedQrcode == ticket { return true }
         launchedQrcode = ticket
         launchedAt = Date()
-        // 回壳后应留在原 xlogin；丢页时重走开 graph authorize（不是死 h5sig）
-        pendingJumpURL = savedLoginURL ?? URL(string: LoginURLs.oneKeyLogin)
+        pendingJumpURL = savedLoginURL
         awaitingReturn = true
         var candidates = [launch]
         if var c = URLComponents(url: launch, resolvingAgainstBaseURL: false) {
@@ -310,15 +326,11 @@ enum QqOneKeyLogin {
         return true
     }
 
+    /// 仅当 URL 含合法 qrcode 时打开 QQ；`p=` / 网页授权一律拒绝（否则「登录授权失败」且无切号）
     @discardableResult
     static func openInQQ(_ raw: URL) -> Bool {
-        if isBrokenPageOneClick(raw) { return false }
-        if let rebuilt = buildLaunchURL(from: raw) {
-            let qr = URLComponents(url: rebuilt, resolvingAgainstBaseURL: false)?
-                .queryItems?.first(where: { $0.name == "qrcode" })?.value ?? ""
-            return openWithQrAuthorization(qr.removingPercentEncoding ?? qr, force: true)
-        }
-        return false
+        guard let ticket = qrcodeTicket(fromWtlogin: raw) else { return false }
+        return openWithQrAuthorization(ticket, force: true)
     }
 
     static func markReturned() { awaitingReturn = false }

@@ -2,8 +2,8 @@ import Foundation
 import UIKit
 import WebKit
 
-/// 一键辅助：在**已有** WKWebView（主壳）上等到 pt 就绪后取票并跳 QQ。
-/// 主壳需已打开 graph authorize → 新鲜 xlogin（用户可在页内点「切换账号」）。
+/// 一键辅助：主壳已加载**新鲜 xlogin** 后，等 pt 就绪 → ptqrshow → 仅 qrcode 跳 QQ。
+/// 禁止点页内「一键登录」（会走 p= →「APP网页申请」授权失败、无切号）。
 @MainActor
 final class OneKeyTicketFetcher: NSObject {
     enum Event {
@@ -52,36 +52,26 @@ final class OneKeyTicketFetcher: NSObject {
 
     private func run() async {
         guard let wv = webView else { return }
-        onEvent(.status("一键登录：等待登录页就绪（可先点「切换账号」）…"))
+        onEvent(.status("一键登录：等待登录脚本（可先点页内「切换账号」）…"))
 
-        for round in 0..<100 {
+        for round in 0..<120 {
             guard !Task.isCancelled, !stopped else { return }
 
-            // 等 pt 真正初始化（饭点严格条件）
             let diag = await eval(QqOneKeyLogin.jsPtDiag, in: wv) as? String ?? ""
             if diag != "ready" {
-                if round % 4 == 0 {
-                    onEvent(.status("一键登录：等待脚本 \(diag.isEmpty ? "…" : diag)（可切号）"))
-                }
-                // graph 页尝试点进 xlogin / 一键
-                if QqOneKeyLogin.isGraphOAuthPage(wv.url) {
-                    if let target = await eval(QqOneKeyLogin.jsFindLoginTarget, in: wv) as? String,
-                       let u = URL(string: target), u.host?.contains("ptlogin") == true {
-                        wv.load(URLRequest(url: u))
-                    } else {
-                        _ = await eval(QqOneKeyLogin.jsClickOneKeyButton, in: wv)
-                    }
+                if round % 5 == 0 {
+                    onEvent(.status("一键登录：脚本未就绪 \(diag)（请用页内切号）"))
                 }
                 try? await Task.sleep(nanoseconds: 400_000_000)
                 continue
             }
 
-            onEvent(.status("一键登录：生成授权并跳转 QQ…"))
             if lastOpenedQr.isEmpty || QqOneKeyLogin.qrLikelyExpired {
                 if QqOneKeyLogin.qrLikelyExpired {
                     _ = await eval(QqOneKeyLogin.jsResetQr, in: wv)
                     lastOpenedQr = ""
                 }
+                onEvent(.status("一键登录：取票中…"))
                 _ = await eval(QqOneKeyLogin.jsRequestQr, in: wv)
             }
 
@@ -95,11 +85,17 @@ final class OneKeyTicketFetcher: NSObject {
             if status == "failed" {
                 _ = await eval(QqOneKeyLogin.jsResetQr, in: wv)
                 lastOpenedQr = ""
-                onEvent(.status("取票失败，重试中（仍可页内切号）…"))
+                onEvent(.status("取票失败，重试…（仍可用页内切换账号）"))
                 continue
             }
 
             if status == "ready", let qr = obj["url"] as? String, !qr.isEmpty {
+                guard QqOneKeyLogin.isAuthorizationQR(qr.removingPercentEncoding ?? qr) else {
+                    _ = await eval(QqOneKeyLogin.jsResetQr, in: wv)
+                    lastOpenedQr = ""
+                    onEvent(.status("票据无效，已丢弃（避免网页授权失败页）"))
+                    continue
+                }
                 if qr == lastOpenedQr, !QqOneKeyLogin.qrLikelyExpired {
                     _ = await eval(QqOneKeyLogin.jsKeepPolling, in: wv)
                     continue
@@ -110,15 +106,14 @@ final class OneKeyTicketFetcher: NSObject {
                 let ok = QqOneKeyLogin.openWithQrAuthorization(qr, force: true)
                 if ok {
                     onEvent(.openedQQ)
-                    onEvent(.status("已跳转 QQ；若 QQ 提示失败，请回本页用「切换账号」"))
-                    // 跳转成功后继续 keep-alive，等回壳
+                    onEvent(.status("已用 qrcode 跳转 QQ，请确认（可切号）…"))
                 } else {
-                    onEvent(.status("未能打开 QQ，请在本页切换账号或扫码"))
+                    onEvent(.status("无法打开 QQ；请在本页点「切换账号」后扫码/继续"))
                 }
             }
         }
         if !stopped {
-            onEvent(.failed("未自动跳转 QQ。请在本页点「切换账号」完成登录，或用扫码/Cookie"))
+            onEvent(.failed("未跳转 QQ。请在登录页点「切换账号」，或改用扫码/Cookie"))
         }
     }
 

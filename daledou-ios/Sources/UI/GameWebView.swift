@@ -145,7 +145,6 @@ struct GameWebView: UIViewRepresentable {
         var lastCookieInject = 0
         var defaultUA: String?
         private var captureTask: Task<Void, Never>?
-        private var oneKeyQrTask: Task<Void, Never>?
         private var lastContinueURL = ""
         private var lastHandledCode = ""
         private var lastStuckRecoverAt: TimeInterval = 0
@@ -157,7 +156,11 @@ struct GameWebView: UIViewRepresentable {
           window.open=function(u){
             try{
               var s=String(u||'');
-              if(/^(wtlogin|mqq)/i.test(s)){ location.href=s; return null; }
+              // 带 p= 的 wtlogin 会进「APP网页申请」失败页：打回 location 让原生拦截丢弃
+              if(/^(wtlogin|mqq)/i.test(s)){
+                if(/[?&]p=/i.test(s) && !/[?&]qrcode=/i.test(s)){ return null; }
+                location.href=s; return null;
+              }
               if(/^https?:/i.test(s)){ location.href=s; return null; }
             }catch(e){}
             return null;
@@ -184,8 +187,8 @@ struct GameWebView: UIViewRepresentable {
             scheduleCookieCapture(webView)
             if vm.loginMode == .oneKey {
                 webView.evaluateJavaScript(QqOneKeyLogin.jsOneKeyPageHint, completionHandler: nil)
-                // 落到 graph / xlogin 后挂取票器（页内可切号；就绪后跳 QQ）
-                if QqOneKeyLogin.isGraphOAuthPage(webView.url) || QqOneKeyLogin.isXloginPage(webView.url) {
+                // 只在新鲜 xlogin 上取票；勿开 graph（易唤起网页授权失败页）
+                if QqOneKeyLogin.isXloginPage(webView.url) {
                     vm.attachOneKeyFetcher(to: webView)
                 }
             }
@@ -199,118 +202,6 @@ struct GameWebView: UIViewRepresentable {
                     guard now - self.lastStuckRecoverAt > 2.5 else { return }
                     self.lastStuckRecoverAt = now
                     self.vm.recoverIfStuckOnQqLoginPage()
-                }
-            }
-        }
-
-        /// graph/oauth 落地 → 顶层打开 xlogin → pipeline 跳 QQ
-        private func driveOneKey(from webView: WKWebView) async {
-            guard vm.loginMode == .oneKey, !vm.session.isLoggedIn else { return }
-            let url = webView.url
-
-            // 误入无 Cookie 的 index.php：别报「缺 skey」，拉回 authorize
-            if let url, LoginURLs.isOauthLanding(url), LoginURLs.oauthCode(from: url) == nil {
-                vm.statusText = "一键登录：重新进入授权…"
-                vm.pendingURL = URL(string: LoginURLs.oneKeyLogin)
-                return
-            }
-
-            if QqOneKeyLogin.isXloginPage(url) {
-                vm.statusText = "一键登录：生成授权并跳转 QQ…"
-                startOneKeyQrPipeline(webView, forceRefresh: QqOneKeyLogin.qrLikelyExpired)
-                return
-            }
-
-            if QqOneKeyLogin.isGraphOAuthPage(url) {
-                vm.statusText = "一键登录：定位登录框…"
-                if let target = await evalJS(QqOneKeyLogin.jsFindLoginTarget, in: webView) as? String,
-                   !target.isEmpty {
-                    if QqOneKeyLogin.isWtloginScheme(URL(string: target)?.scheme) {
-                        if let u = URL(string: target) {
-                            let cookies = await CookieBridge.snapshotQQCookies(from: webView)
-                            QqOneKeyLogin.rememberAuthorization(loginURL: webView.url, cookies: cookies)
-                            _ = QqOneKeyLogin.openInQQ(u)
-                            vm.statusText = "已跳转 QQ，可在 QQ 内切换账号后确认…"
-                        }
-                        return
-                    }
-                    if let u = URL(string: target), u.host?.contains("ptlogin") == true {
-                        vm.statusText = "一键登录：打开登录页并跳转 QQ…"
-                        webView.load(URLRequest(url: u))
-                        return
-                    }
-                }
-                _ = await evalJS(QqOneKeyLogin.jsClickOneKeyButton, in: webView)
-                // 仍停在 graph：继续 pipeline（等跳到 xlogin）；同时稍后重试找 iframe
-                startOneKeyQrPipeline(webView, forceRefresh: false)
-                try? await Task.sleep(nanoseconds: 1_200_000_000)
-                guard vm.loginMode == .oneKey, !vm.session.isLoggedIn else { return }
-                if QqOneKeyLogin.isGraphOAuthPage(webView.url),
-                   let target = await evalJS(QqOneKeyLogin.jsFindLoginTarget, in: webView) as? String,
-                   let u = URL(string: target), u.host?.contains("ptlogin") == true {
-                    webView.load(URLRequest(url: u))
-                }
-                return
-            }
-
-            // 其它页也跑 pipeline，万一已是隐藏 xlogin
-            startOneKeyQrPipeline(webView, forceRefresh: false)
-        }
-
-        /// ptqrshow → wtloginmqq3?qrcode=… → 跳转 QQ（确认前不 submit，到期换新码）
-        private func startOneKeyQrPipeline(_ webView: WKWebView, forceRefresh: Bool = false) {
-            oneKeyQrTask?.cancel()
-            oneKeyQrTask = Task { @MainActor [weak self, weak webView] in
-                guard let self, let webView else { return }
-                if forceRefresh {
-                    QqOneKeyLogin.clearLaunchStamp()
-                    _ = await self.evalJS(QqOneKeyLogin.jsResetQr, in: webView)
-                }
-                self.vm.statusText = "一键登录：正在生成授权并跳转 QQ…"
-                var lastOpenedQr = ""
-                for round in 0..<90 {
-                    guard !Task.isCancelled, self.vm.loginMode == .oneKey, !self.vm.session.isLoggedIn else { return }
-
-                    let needNew = lastOpenedQr.isEmpty || QqOneKeyLogin.qrLikelyExpired
-                    if needNew && (round == 0 || round % 3 == 0 || QqOneKeyLogin.qrLikelyExpired) {
-                        if QqOneKeyLogin.qrLikelyExpired {
-                            _ = await self.evalJS(QqOneKeyLogin.jsResetQr, in: webView)
-                            QqOneKeyLogin.clearLaunchStamp()
-                            lastOpenedQr = ""
-                            self.vm.statusText = "授权将过期，换新码并重新跳转 QQ…"
-                        }
-                        _ = await self.evalJS(QqOneKeyLogin.jsRequestQr, in: webView) as? String
-                    }
-
-                    try? await Task.sleep(nanoseconds: 350_000_000)
-
-                    guard let raw = await self.evalJS(QqOneKeyLogin.jsPollStatus, in: webView) as? String,
-                          let data = raw.data(using: .utf8),
-                          let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                          let status = obj["status"] as? String else { continue }
-
-                    if status == "failed" {
-                        _ = await self.evalJS(QqOneKeyLogin.jsResetQr, in: webView)
-                        QqOneKeyLogin.clearLaunchStamp()
-                        lastOpenedQr = ""
-                        self.vm.statusText = "授权准备失败，重试中…"
-                        continue
-                    }
-
-                    if status == "ready", let qr = obj["url"] as? String, !qr.isEmpty {
-                        // 同一授权串未过期：只 polling（含已在 QQ / 已回壳），勿反复 open、勿开 p= jump
-                        if qr == lastOpenedQr, !QqOneKeyLogin.qrLikelyExpired {
-                            _ = await self.evalJS(QqOneKeyLogin.jsKeepPolling, in: webView)
-                            continue
-                        }
-                        lastOpenedQr = qr
-                        let cookies = await CookieBridge.snapshotQQCookies(from: webView)
-                        QqOneKeyLogin.rememberAuthorization(loginURL: webView.url, cookies: cookies)
-                        let ok = QqOneKeyLogin.openWithQrAuthorization(qr, force: true)
-                        self.vm.statusText = ok
-                            ? "已跳转 QQ，可在 QQ 内切换账号后确认…"
-                            : "无法打开 QQ，请确认已安装手机 QQ"
-                    }
                 }
             }
         }
@@ -356,27 +247,29 @@ struct GameWebView: UIViewRepresentable {
                 return
             }
 
-            // ② wtlogin / mqq：页内 p= 会授权失败 → 改走 qrcode 跳转 QQ；其它放行唤起
+            // ② wtlogin / mqq：只允许合法 qrcode；p= / 网页授权一律不打开（否则「登录授权失败」）
             if QqOneKeyLogin.isWtloginScheme(scheme) {
                 decisionHandler(.cancel)
-                if QqOneKeyLogin.isBrokenPageOneClick(url) {
+                if let ticket = QqOneKeyLogin.qrcodeTicket(fromWtlogin: url) {
                     Task { @MainActor in
-                        self.vm.loginMode = .oneKey
-                        self.vm.statusText = "正在跳转 QQ…"
                         if let wv = self.webView {
-                            self.startOneKeyQrPipeline(wv, forceRefresh: true)
+                            let cookies = await CookieBridge.snapshotQQCookies(from: wv)
+                            QqOneKeyLogin.rememberAuthorization(loginURL: wv.url, cookies: cookies)
+                        }
+                        let ok = QqOneKeyLogin.openWithQrAuthorization(ticket, force: true)
+                        self.vm.loginMode = .oneKey
+                        self.vm.statusText = ok
+                            ? "已用 qrcode 打开 QQ，请确认…"
+                            : "票据无效，已拦截（请用页内切换账号）"
+                    }
+                } else {
+                    Task { @MainActor in
+                        self.vm.statusText = "已拦截网页授权跳转（会失败无切号），改走安全取票…"
+                        self.vm.loginMode = .oneKey
+                        if let wv = self.webView {
+                            self.vm.attachOneKeyFetcher(to: wv)
                         }
                     }
-                    return
-                }
-                Task { @MainActor in
-                    if let wv = self.webView {
-                        let cookies = await CookieBridge.snapshotQQCookies(from: wv)
-                        QqOneKeyLogin.rememberAuthorization(loginURL: wv.url, cookies: cookies)
-                    }
-                    let ok = QqOneKeyLogin.openInQQ(url)
-                    self.vm.loginMode = .oneKey
-                    self.vm.statusText = ok ? "已打开 QQ，可在 QQ 内切换账号后确认…" : "无法打开 QQ，请确认已安装"
                 }
                 return
             }
@@ -395,8 +288,8 @@ struct GameWebView: UIViewRepresentable {
                             self.vm.statusText = "已拦下失败授权页，留在登录页完成确认…"
                             if let wv = self.webView, QqOneKeyLogin.isXloginPage(wv.url) {
                                 wv.evaluateJavaScript(QqOneKeyLogin.jsResumeAfterQQ, completionHandler: nil)
-                            } else {
-                                self.vm.pendingURL = URL(string: LoginURLs.oneKeyLogin)
+                            } else if let live = await LoginURLs.resolveLiveXloginURL() {
+                                self.vm.pendingURL = live
                             }
                         }
                         return
@@ -435,18 +328,17 @@ struct GameWebView: UIViewRepresentable {
             guard let url = navigationAction.request.url else { return nil }
             let scheme = (url.scheme ?? "").lowercased()
             if QqOneKeyLogin.isWtloginScheme(scheme) {
-                if QqOneKeyLogin.isBrokenPageOneClick(url) {
+                if let ticket = QqOneKeyLogin.qrcodeTicket(fromWtlogin: url) {
+                    _ = QqOneKeyLogin.openWithQrAuthorization(ticket, force: true)
                     Task { @MainActor in
                         self.vm.loginMode = .oneKey
-                        if let wv = self.webView {
-                            self.startOneKeyQrPipeline(wv, forceRefresh: true)
-                        }
+                        self.vm.statusText = "已用 qrcode 打开 QQ，请确认…"
                     }
                 } else {
-                    _ = QqOneKeyLogin.openInQQ(url)
                     Task { @MainActor in
+                        self.vm.statusText = "已拦截网页授权（p=），改安全取票…"
                         self.vm.loginMode = .oneKey
-                        self.vm.statusText = "已打开 QQ，请确认登录…"
+                        if let wv = self.webView { self.vm.attachOneKeyFetcher(to: wv) }
                     }
                 }
                 return nil

@@ -12,18 +12,40 @@ enum LoginURLs {
     /// 已在腾讯侧登记的回调（与安卓扫码/一键同源），用于落地写 Cookie
     static let oauthRedirect = "https://dld.qzapp.z.qq.com/index.php"
 
-    /// 饭点 `AppURLs.oneKeyLogin`：壳内开 graph authorize → 腾讯跳转新鲜 xlogin（禁止写死 h5sig）
+    /// 饭点 `AppURLs.oneKeyLogin`：仅用于 URLSession 跟跳拿新鲜 xlogin（勿直接在 WK 打开，易唤起「APP网页申请」失败页）
     static let oneKeyLogin =
         "https://graph.qq.com/oauth2.0/authorize?response_type=code"
             + "&client_id=\(qqAppId)"
             + "&redirect_uri=https%3A%2F%2Fdld.qzapp.z.qq.com%2Findex.php"
             + "&scope=all"
 
-    /// 壳内一键入口
+    /// 壳内一键入口（运行时解析后的 xlogin；解析前勿当最终 URL）
     static var oneClickAuthorize: String { oneKeyLogin }
 
-    /// 已废弃：写死 h5sig/time 的 xlogin（会「授权失败」）；仅兼容旧引用
+    /// 兼容旧名
     static var xloginHome: String { oneKeyLogin }
+
+    /// 用桌面 UA 跟随 authorize 重定向，得到带新鲜 h5sig 的 xlogin（不经过 WK，避免自动唤起 QQ 网页授权）
+    static func resolveLiveXloginURL() async -> URL? {
+        guard let start = URL(string: oneKeyLogin) else { return nil }
+        var req = URLRequest(url: start)
+        req.setValue(desktopUA, forHTTPHeaderField: "User-Agent")
+        req.setValue("text/html,application/xhtml+xml", forHTTPHeaderField: "Accept")
+        req.httpMethod = "GET"
+        do {
+            let (_, resp) = try await URLSession.shared.data(for: req)
+            guard let final = resp.url else { return nil }
+            let host = (final.host ?? "").lowercased()
+            let path = final.path.lowercased()
+            if host.contains("ptlogin2.qq.com"), path.contains("xlogin") {
+                return final
+            }
+            // 有的链路停在 graph：再试一次带 display 的变体无意义；返回 nil 让调用方回退
+            return nil
+        } catch {
+            return nil
+        }
+    }
 
     /// Android 直唤 `wtlogin?p=`（iOS 一键 **禁止** 用此路径，会「授权失败」；仅作对照保留）
     static let oneClickWtLaunch =

@@ -61,7 +61,8 @@ final class AppViewModel: ObservableObject {
         }
     }
 
-    /// 一键登录：主壳打开新鲜 authorize→xlogin（页内可「切换账号」），就绪后取票跳 QQ。
+    /// 一键登录：URLSession 解析新鲜 xlogin → 主壳打开（可切号）→ pt 就绪后仅 qrcode 跳 QQ。
+    /// 禁止直接打开 graph authorize（会唤起「APP网页申请」授权失败页）。
     func openOneKeyLogin() {
         loginMode = .oneKey
         preferDesktopUA = true
@@ -70,9 +71,19 @@ final class AppViewModel: ObservableObject {
         session.clear()
         oneKeyFetcher?.cancel()
         oneKeyFetcher = nil
-        statusText = "一键登录：打开登录页，请先切换账号…"
-        pendingURL = URL(string: LoginURLs.oneKeyLogin)
+        statusText = "一键登录：解析登录地址…"
         clearWebEpoch &+= 1
+        Task { @MainActor in
+            let live = await LoginURLs.resolveLiveXloginURL()
+            guard loginMode == .oneKey else { return }
+            if let live {
+                statusText = "一键登录：请先点「切换账号」，随后自动跳 QQ…"
+                pendingURL = live
+            } else {
+                statusText = "解析失败，请用扫码登陆或 Cookie"
+                loginMode = .idle
+            }
+        }
     }
 
     /// 主壳已落到登录页后由 GameWebView 调用（同一轮一键只挂一次）
