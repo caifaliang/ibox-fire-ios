@@ -199,36 +199,65 @@ struct GameWebView: UIViewRepresentable {
             }
         }
 
-        /// 竞品流程：ptqrshow → qrcode 授权串 → 唤 QQ；WebView 同时 polling 写 Cookie
-        private func startOneKeyQrPipeline(_ webView: WKWebView) {
+        /// 竞品流程：ptqrshow → 立刻唤 QQ；确认前只 keep-alive polling，禁止 qlogin_submit（会过期）
+        private func startOneKeyQrPipeline(_ webView: WKWebView, forceRefresh: Bool = false) {
             oneKeyQrTask?.cancel()
             oneKeyQrTask = Task { @MainActor [weak self, weak webView] in
                 guard let self, let webView else { return }
-                self.vm.statusText = "一键登录：正在生成 QQ 授权…"
-                var opened = false
-                for round in 0..<50 {
-                    guard !Task.isCancelled, self.vm.loginMode == .oneKey else { return }
-                    if round == 0 || round % 8 == 0 {
+                if forceRefresh {
+                    QqOneKeyLogin.clearLaunchStamp()
+                    _ = await self.evalJS(QqOneKeyLogin.jsResetQr, in: webView)
+                }
+                self.vm.statusText = "一键登录：正在生成授权，请在 QQ 内切换账号后尽快点同意…"
+                var lastOpenedQr = ""
+                // 约 2 分钟：到期自动换新码再开 QQ
+                for round in 0..<90 {
+                    guard !Task.isCancelled, self.vm.loginMode == .oneKey, !self.vm.session.isLoggedIn else { return }
+
+                    let needRequest = round == 0
+                        || lastOpenedQr.isEmpty
+                        || QqOneKeyLogin.qrLikelyExpired
+                    if needRequest && (round == 0 || round % 3 == 0 || QqOneKeyLogin.qrLikelyExpired) {
+                        if QqOneKeyLogin.qrLikelyExpired || forceRefresh {
+                            _ = await self.evalJS(QqOneKeyLogin.jsResetQr, in: webView)
+                            QqOneKeyLogin.clearLaunchStamp()
+                            lastOpenedQr = ""
+                            self.vm.statusText = "授权码将过期，正在换新码…"
+                        }
                         _ = await self.evalJS(QqOneKeyLogin.jsRequestQr, in: webView) as? String
                     }
-                    try? await Task.sleep(nanoseconds: 400_000_000)
+
+                    try? await Task.sleep(nanoseconds: 350_000_000)
+
                     guard let raw = await self.evalJS(QqOneKeyLogin.jsPollStatus, in: webView) as? String,
                           let data = raw.data(using: .utf8),
                           let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                           let status = obj["status"] as? String else { continue }
-                    if status == "ready", let qr = obj["url"] as? String, !qr.isEmpty, !opened {
-                        opened = true
-                        let ok = QqOneKeyLogin.openWithQrAuthorization(qr)
-                        self.vm.statusText = ok
-                            ? "已打开 QQ，请确认登录（可切换账号）；完成后自动回壳…"
-                            : "无法唤起 QQ，请安装手机 QQ 或改用扫码"
-                    } else if status == "failed" {
+
+                    if status == "failed" {
                         _ = await self.evalJS(QqOneKeyLogin.jsResetQr, in: webView)
+                        QqOneKeyLogin.clearLaunchStamp()
+                        lastOpenedQr = ""
                         self.vm.statusText = "授权准备失败，重试中…"
+                        continue
                     }
-                    if opened {
-                        _ = await self.evalJS(QqOneKeyLogin.jsResumeAfterQQ, in: webView)
+
+                    if status == "ready", let qr = obj["url"] as? String, !qr.isEmpty {
+                        let force = (qr != lastOpenedQr) || QqOneKeyLogin.qrLikelyExpired
+                        if force {
+                            lastOpenedQr = qr
+                            let ok = QqOneKeyLogin.openWithQrAuthorization(qr, force: true)
+                            self.vm.statusText = ok
+                                ? "已打开 QQ：请先切换账号，再点同意（约 30 秒内有效）…"
+                                : "无法唤起 QQ，请安装手机 QQ 或改用扫码"
+                        } else {
+                            // 确认前只 polling，不要 submit
+                            _ = await self.evalJS(QqOneKeyLogin.jsKeepPolling, in: webView)
+                        }
                     }
+                }
+                if self.vm.loginMode == .oneKey, !self.vm.session.isLoggedIn {
+                    self.vm.statusText = "授权超时。请再点一次「一键登录」，或改用扫码"
                 }
             }
         }
@@ -280,8 +309,8 @@ struct GameWebView: UIViewRepresentable {
                 if QqOneKeyLogin.isBrokenPageOneClick(url) {
                     Task { @MainActor in
                         self.vm.loginMode = .oneKey
-                        self.vm.statusText = "请稍候，正在用 QQ 扫码确认登录…"
-                        if let wv = self.webView { self.startOneKeyQrPipeline(wv) }
+                        self.vm.statusText = "请稍候，正在准备 QQ 授权…"
+                        if let wv = self.webView { self.startOneKeyQrPipeline(wv, forceRefresh: true) }
                     }
                     return
                 }
@@ -332,7 +361,7 @@ struct GameWebView: UIViewRepresentable {
                 if QqOneKeyLogin.isBrokenPageOneClick(url) {
                     Task { @MainActor in
                         self.vm.loginMode = .oneKey
-                        if let wv = self.webView { self.startOneKeyQrPipeline(wv) }
+                        if let wv = self.webView { self.startOneKeyQrPipeline(wv, forceRefresh: true) }
                     }
                 } else {
                     _ = QqOneKeyLogin.openInQQ(url)

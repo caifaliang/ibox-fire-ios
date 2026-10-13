@@ -142,17 +142,29 @@ final class AppViewModel: ObservableObject {
         }
     }
 
-    /// QQ 确认后用户切回 App：在 xlogin 上 resume，等 Cookie（不必依赖 Safari jump）
+    /// QQ 确认后回 App：先 resume/submit；若仍未登录（码过期）则换新码再开 QQ
     func onAppBecameActive() {
-        guard loginMode == .oneKey, QqOneKeyLogin.awaitingReturn || session.isLoggedIn == false else { return }
+        guard loginMode == .oneKey, !session.isLoggedIn else { return }
         Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 500_000_000)
+            try? await Task.sleep(nanoseconds: 400_000_000)
             guard loginMode == .oneKey, !session.isLoggedIn else { return }
-            if let wv = gameWebView, QqOneKeyLogin.isXloginPage(wv.url) {
-                wv.evaluateJavaScript(QqOneKeyLogin.jsResumeAfterQQ, completionHandler: nil)
-                statusText = "已回到 App，正在完成登录…"
+            guard let wv = gameWebView, QqOneKeyLogin.isXloginPage(wv.url) else { return }
+            wv.evaluateJavaScript(QqOneKeyLogin.jsResumeAfterQQ) { [weak self] result, _ in
+                Task { @MainActor in
+                    guard let self, self.loginMode == .oneKey, !self.session.isLoggedIn else { return }
+                    let flag = (result as? String) ?? ""
+                    // 仍无会话：多半是二维码过期 / 未同意 → 换新码
+                    if flag == "missing-session" || flag == "waiting" || QqOneKeyLogin.qrLikelyExpired
+                        || QqOneKeyLogin.awaitingReturn {
+                        self.statusText = "未登录成功（可能码已过期），正在换新码…"
+                        // 由 WebView Coordinator 的 pipeline 负责；触发一次 reload 级刷新
+                        self.webReloadToken &+= 1
+                    } else {
+                        self.statusText = "已回到 App，正在完成登录…"
+                    }
+                    QqOneKeyLogin.markReturned()
+                }
             }
-            QqOneKeyLogin.markReturned()
         }
     }
 

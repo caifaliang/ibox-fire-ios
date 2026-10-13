@@ -1,19 +1,20 @@
 import Foundation
 import UIKit
 
-/// QQ 一键登录（对齐竞品 FandianAssistant `QqOneKeyLoginBridge`）。
-/// iOS 正确路径：xlogin 页 → `ptqrshow` 取授权串 →
-/// `wtloginmqq3://ptlogin/qlogin?qrcode=<授权串>&schemacallback=daledoulogin://`。
-/// 页内「一键」产生的 `p=` 在 iOS QQ 上会变成「网页申请使用 / 授权失败」。
+/// QQ 一键登录（对齐竞品：ptqrshow 授权串 + wtloginmqq3?qrcode=）。
+/// 注意：确认前不要调 `qlogin_submit`，否则 QQ 里会「二维码已过期」。
 enum QqOneKeyLogin {
     static let callbackScheme = "daledoulogin"
     static let callbackURLString = "daledoulogin://"
     static let callbackSchemeAlt = "com.daledou.ioslogin"
 
+    /// QR 约 60s 过期；到点前主动换新并重开 QQ
+    static let qrRefreshSeconds: TimeInterval = 40
+
     private(set) static var pendingJumpURL: URL?
     private(set) static var awaitingReturn = false
-    /// 已对当前授权串唤过 QQ，避免重复弹
     private(set) static var launchedQrcode: String?
+    private(set) static var launchedAt: Date?
 
     static func isWtloginScheme(_ scheme: String?) -> Bool {
         guard let s = scheme?.lowercased(), !s.isEmpty else { return false }
@@ -34,7 +35,6 @@ enum QqOneKeyLogin {
         return host.contains("xui.ptlogin2.qq.com") && u.path.contains("xlogin")
     }
 
-    /// 页内 `p=` 的 wtlogin（安卓一键）—— iOS 上不要打开，会授权失败。
     static func isBrokenPageOneClick(_ url: URL) -> Bool {
         guard isWtloginScheme(url.scheme) else { return false }
         guard let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems else {
@@ -45,56 +45,82 @@ enum QqOneKeyLogin {
         return hasP && !hasQr
     }
 
-    // MARK: - 竞品注入脚本
+    static var qrLikelyExpired: Bool {
+        guard let t = launchedAt else { return false }
+        return Date().timeIntervalSince(t) >= qrRefreshSeconds
+    }
 
-    /// 向 xlogin 申请 QR 授权串（ptui_qrcode_CB）
+    // MARK: - 注入脚本
+
+    /// 申请 QR 授权串。onload 勿立刻判 failed（CB 可能晚于 onload）。
     static let jsRequestQr = """
     (() => {
         if (location.protocol !== 'https:' || location.hostname !== 'xui.ptlogin2.qq.com' ||
             location.pathname !== '/cgi-bin/xlogin') return 'waiting';
         if (typeof pt === 'undefined' || !pt.hasInit || !pt.qrcode ||
             pt.loginUrl !== 'https://ssl.ptlogin2.qq.com/' || typeof pt.qrcode.polling !== 'function') return 'waiting';
-        if (window.__dldQrRequested) return 'requested';
+        if (window.__dldQrRequested) return window.__dldQrStatus === 'ready' ? 'ready' : 'requested';
         window.__dldQrRequested = true;
         window.__dldQrStatus = 'waiting';
+        window.__dldQrAuthorization = '';
         window.ptui_qrcode_CB = response => {
-            if (response && response.ec === 0 && typeof response.qrcode === 'string') {
+            if (response && response.ec === 0 && typeof response.qrcode === 'string' && response.qrcode.length > 8) {
                 window.__dldQrAuthorization = response.qrcode;
                 window.__dldQrStatus = 'ready';
-                pt.qrcode.used = true;
-                pt.qrcode.polling();
+                try {
+                    pt.qrcode.used = true;
+                    pt.qrcode.done = false;
+                    pt.qrcode.polling();
+                } catch (e) {}
             } else {
                 window.__dldQrStatus = 'failed';
             }
         };
-        pt.qrcode.used = true;
-        pt.qrcode.done = false;
+        try {
+            pt.qrcode.used = true;
+            pt.qrcode.done = false;
+        } catch (e) {}
         const request = document.createElement('script');
         request.src = 'https://xui.ptlogin2.qq.com/ssl/ptqrshow?s=8&e=0&appid=716027609&type=1' +
             '&u1=https%3A%2F%2Fconnect.qq.com&daid=383&pt_3rd_aid=102067279&t=' + Math.random();
-        request.onerror = () => { window.__dldQrStatus = 'failed'; request.remove(); };
+        request.onerror = () => { window.__dldQrStatus = 'failed'; try { request.remove(); } catch (e) {} };
         request.onload = () => {
-            if (window.__dldQrStatus !== 'ready') window.__dldQrStatus = 'failed';
-            request.remove();
+            try { request.remove(); } catch (e) {}
+            // CB 偶发晚于 onload：再等 1.5s 才判失败
+            setTimeout(() => {
+                if (window.__dldQrStatus === 'waiting') window.__dldQrStatus = 'failed';
+            }, 1500);
         };
         document.head.appendChild(request);
         return 'requested';
     })();
     """
 
-    /// 轮询授权串状态 → JSON `{status,url}`
     static let jsPollStatus = """
     (() => {
         if (location.protocol !== 'https:' || location.hostname !== 'xui.ptlogin2.qq.com' ||
-            location.pathname !== '/cgi-bin/xlogin') return JSON.stringify({status:'waiting',url:''});
+            location.pathname !== '/cgi-bin/xlogin') {
+            return JSON.stringify({status:'waiting',url:'',qrsig:false});
+        }
+        var hasSig = document.cookie.split(';').some(function(v){ return v.trim().indexOf('qrsig=')===0; });
         return JSON.stringify({
             status: window.__dldQrStatus || 'waiting',
-            url: window.__dldQrAuthorization || ''
+            url: window.__dldQrAuthorization || '',
+            qrsig: hasSig
         });
     })();
     """
 
-    /// QQ 确认后：若已有 qrsig，继续 polling + submit
+    /// 仅 keep-alive polling，不要 qlogin_submit（submit 会弄死未确认的码）
+    static let jsKeepPolling = """
+    (() => {
+        if (typeof pt === 'undefined' || !pt.qrcode || typeof pt.qrcode.polling !== 'function') return 'no';
+        try { pt.qrcode.used = true; pt.qrcode.polling(); } catch (e) { return 'err'; }
+        return 'ok';
+    })();
+    """
+
+    /// QQ 已确认 / 回壳之后再 submit
     static let jsResumeAfterQQ = """
     (() => {
         if (location.protocol !== 'https:' || location.hostname !== 'xui.ptlogin2.qq.com' ||
@@ -109,44 +135,36 @@ enum QqOneKeyLogin {
     })();
     """
 
-    /// 重置页内 QR 状态以便重试
     static let jsResetQr = """
     (() => {
         window.__dldQrRequested = false;
         window.__dldQrStatus = 'waiting';
         window.__dldQrAuthorization = '';
+        try { if (pt && pt.qrcode) { pt.qrcode.done = false; pt.qrcode.used = false; } } catch (e) {}
         return 'ok';
     })();
     """
 
     static func launchURL(qrAuthorization: String) -> URL? {
-        var comps = URLComponents()
-        comps.scheme = "wtloginmqq3"
-        comps.host = "ptlogin"
-        comps.path = "/qlogin"
-        comps.queryItems = [
-            URLQueryItem(name: "qrcode", value: qrAuthorization),
-            URLQueryItem(name: "schemacallback", value: callbackURLString),
-        ]
-        return comps.url
+        // 手工拼 query，避免 URLQueryItem 对已编码票据二次编码
+        let cb = callbackURLString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? callbackURLString
+        let qrEnc: String
+        if qrAuthorization.removingPercentEncoding != qrAuthorization {
+            // 已是百分号编码，原样使用
+            qrEnc = qrAuthorization.replacingOccurrences(of: "&", with: "%26")
+        } else {
+            qrEnc = qrAuthorization.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)
+                ?? qrAuthorization
+        }
+        let s = "wtloginmqq3://ptlogin/qlogin?qrcode=\(qrEnc)&schemacallback=\(cb)"
+        return URL(string: s)
     }
 
-    /// 仅用于「已是 qrcode=授权串」的链接：补 schemacallback，不改 qrcode。
     static func buildLaunchURL(from raw: URL) -> URL? {
         guard let comps = URLComponents(url: raw, resolvingAgainstBaseURL: false),
               let qr = comps.queryItems?.first(where: { $0.name == "qrcode" })?.value,
               !qr.isEmpty else { return nil }
-        return launchURL(qrAuthorization: qr.removingPercentEncoding ?? qr)
-    }
-
-    static func extractContinueURL(from wtlogin: URL) -> URL? {
-        guard let comps = URLComponents(url: wtlogin, resolvingAgainstBaseURL: false) else { return nil }
-        for name in ["p", "qrcode", "url"] {
-            guard let raw = comps.queryItems?.first(where: { $0.name == name })?.value else { continue }
-            let decoded = raw.removingPercentEncoding ?? raw
-            if decoded.hasPrefix("http"), let u = URL(string: decoded) { return u }
-        }
-        return nil
+        return launchURL(qrAuthorization: qr)
     }
 
     static func continueURL(fromCallback url: URL) -> URL? {
@@ -170,35 +188,20 @@ enum QqOneKeyLogin {
         }
         if body.hasPrefix("(null)") { body = String(body.dropFirst(6)) }
         if body.hasPrefix("?") || body.isEmpty {
-            return mergeClientParams(into: pendingJumpURL ?? LoginURLs.oneClickJumpURL, from: url)
+            return pendingJumpURL ?? LoginURLs.oneClickJumpURL
         }
         if body.contains(".") {
             return URL(string: "https://" + body)
         }
-        return mergeClientParams(into: pendingJumpURL ?? LoginURLs.oneClickJumpURL, from: url)
-    }
-
-    private static func mergeClientParams(into base: URL?, from callback: URL) -> URL? {
-        guard var comps = base.flatMap({ URLComponents(url: $0, resolvingAgainstBaseURL: false) }) else {
-            return base
-        }
-        var items = comps.queryItems ?? []
-        let cbItems = URLComponents(url: callback, resolvingAgainstBaseURL: false)?.queryItems ?? []
-        for name in ["clientuin", "clientkey", "keyindex"] {
-            if let v = cbItems.first(where: { $0.name == name })?.value, !v.isEmpty {
-                items.removeAll { $0.name == name }
-                items.append(URLQueryItem(name: name, value: v))
-            }
-        }
-        comps.queryItems = items
-        return comps.url ?? base
+        return pendingJumpURL ?? LoginURLs.oneClickJumpURL
     }
 
     @discardableResult
-    static func openWithQrAuthorization(_ qr: String) -> Bool {
+    static func openWithQrAuthorization(_ qr: String, force: Bool = false) -> Bool {
         guard !qr.isEmpty, let launch = launchURL(qrAuthorization: qr) else { return false }
-        if launchedQrcode == qr { return true }
+        if !force, launchedQrcode == qr { return true }
         launchedQrcode = qr
+        launchedAt = Date()
         pendingJumpURL = LoginURLs.oneClickJumpURL
         awaitingReturn = true
         var candidates = [launch]
@@ -214,19 +217,23 @@ enum QqOneKeyLogin {
         return true
     }
 
-    /// 兼容旧调用：仅当 URL 自带 qrcode 时打开；`p=` 一律拒绝。
     @discardableResult
     static func openInQQ(_ raw: URL) -> Bool {
         if isBrokenPageOneClick(raw) { return false }
         if let rebuilt = buildLaunchURL(from: raw) {
             let qr = URLComponents(url: rebuilt, resolvingAgainstBaseURL: false)?
                 .queryItems?.first(where: { $0.name == "qrcode" })?.value ?? ""
-            return openWithQrAuthorization(qr.removingPercentEncoding ?? qr)
+            return openWithQrAuthorization(qr.removingPercentEncoding ?? qr, force: true)
         }
         return false
     }
 
     static func markReturned() { awaitingReturn = false }
+
+    static func clearLaunchStamp() {
+        launchedQrcode = nil
+        launchedAt = nil
+    }
 
     static func takePendingJump() -> URL? {
         let u = pendingJumpURL
@@ -238,5 +245,6 @@ enum QqOneKeyLogin {
         pendingJumpURL = nil
         awaitingReturn = false
         launchedQrcode = nil
+        launchedAt = nil
     }
 }
