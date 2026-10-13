@@ -54,15 +54,28 @@ final class AppViewModel: ObservableObject {
             statusText = "已登录 QQ \(q)"
             titleHint = "大乐斗"
         } else {
-            statusText = "未登录 · 扫码登陆 / Cookie 登陆"
+            statusText = "未登录 · 一键登录 / 扫码 / Cookie"
             titleHint = "大乐斗 · 登录"
         }
     }
 
-    /// 扫码登陆（主路径）
+    /// QQ App 一键登录：跳转 QQ → schemacallback 回壳（对齐安卓 / 竞品）
+    func openOneKeyLogin() {
+        loginMode = .oneKey
+        preferDesktopUA = false
+        didEnterGameFromCapture = false
+        QqOneKeyLogin.clearPending()
+        session.clear()
+        clearWebEpoch &+= 1
+        statusText = "一键登录：打开授权页，将跳转手机 QQ…"
+        pendingURL = URL(string: LoginURLs.oneClickAuthorize)
+    }
+
+    /// 扫码登陆
     func openScanLogin() {
         loginMode = .scan
         preferDesktopUA = true
+        QqOneKeyLogin.clearPending()
         session.clear()
         clearWebEpoch &+= 1
         statusText = "扫码登陆中…用手机 QQ 扫页面二维码"
@@ -103,13 +116,43 @@ final class AppViewModel: ObservableObject {
     }
 
     func handleOpenURL(_ url: URL) {
-        // 扫码流程可能走到自定义 scheme；尽量进游戏
-        if url.scheme?.lowercased() == "daledouapp" || LoginURLs.isCallbackScheme(url.scheme) {
-            if session.isLoggedIn {
-                openGameHome()
-            } else {
-                statusText = "收到回调但无会话，请扫码或粘贴 Cookie"
-            }
+        guard QqOneKeyLogin.isOurCallback(url) || LoginURLs.isCallbackScheme(url.scheme) else { return }
+        if let code = LoginURLs.oauthCode(from: url),
+           let finish = LoginURLs.finishWithCode(code) {
+            QqOneKeyLogin.markReturned()
+            loginMode = .oneKey
+            preferDesktopUA = false
+            statusText = "已从 QQ 返回（code），正在写入会话…"
+            pendingURL = finish
+            return
+        }
+        resumeAfterOneKeyReturn(reason: "scheme")
+    }
+
+    /// QQ 回跳，或用户从 QQ 手动切回 App（schemacallback 偶发不触发）
+    func onAppBecameActive() {
+        guard loginMode == .oneKey, QqOneKeyLogin.awaitingReturn else { return }
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 600_000_000)
+            guard loginMode == .oneKey, QqOneKeyLogin.awaitingReturn else { return }
+            resumeAfterOneKeyReturn(reason: "active")
+        }
+    }
+
+    private func resumeAfterOneKeyReturn(reason: String) {
+        preferDesktopUA = false
+        loginMode = .oneKey
+        QqOneKeyLogin.markReturned()
+        if session.isLoggedIn {
+            statusText = "已登录，进入游戏…"
+            openGameHome()
+            return
+        }
+        statusText = "已从 QQ 返回（\(reason)），正在写入会话…"
+        if let jump = QqOneKeyLogin.takePendingJump() {
+            pendingURL = jump
+        } else {
+            pendingURL = URL(string: LoginURLs.oneClickAuthorize)
         }
     }
 

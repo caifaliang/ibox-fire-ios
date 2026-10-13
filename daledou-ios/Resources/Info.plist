@@ -51,6 +51,9 @@
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>daledouapp</string>
+				<!-- 对齐竞品 / 安卓 schemacallback 回壳 -->
+				<string>daledoulogin</string>
+				<string>com.daledou.ioslogin</string>
 			</array>
 		</dict>
 		<dict>
@@ -65,10 +68,11 @@
 	<key>LSApplicationQueriesSchemes</key>
 	<array>
 		<string>wtloginmqq</string>
+		<string>wtloginmqq2</string>
+		<string>wtloginmqq3</string>
 		<string>mqq</string>
 		<string>mqqapi</string>
 		<string>mqqopensdkapi</string>
-		<string>wtloginmqq2</string>
 	</array>
 	<key>NSAppTransportSecurity</key>
 	<dict>

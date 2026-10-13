@@ -228,11 +228,15 @@ struct GameWebView: UIViewRepresentable {
                 return
             }
 
-            // ② wtlogin / mqq：禁止唤起 QQ / 外跳（上一版失败根因）
-            if scheme.hasPrefix("wtlogin") || scheme.hasPrefix("mqq") || scheme == "tencent" {
+            // ② wtlogin / mqq：唤起 QQ App，schemacallback 回壳（对齐竞品一键登录）
+            if QqOneKeyLogin.isWtloginScheme(scheme) {
                 decisionHandler(.cancel)
+                let ok = QqOneKeyLogin.openInQQ(url)
                 Task { @MainActor in
-                    vm.statusText = "已阻止跳转 QQ/浏览器，请在当前页完成授权或改用扫码"
+                    self.vm.loginMode = .oneKey
+                    self.vm.statusText = ok
+                        ? "已打开手机 QQ，请确认登录；完成后自动回壳…"
+                        : "无法唤起 QQ，请安装手机 QQ 或改用扫码"
                 }
                 return
             }
@@ -270,9 +274,11 @@ struct GameWebView: UIViewRepresentable {
         ) -> WKWebView? {
             guard let url = navigationAction.request.url else { return nil }
             let scheme = (url.scheme ?? "").lowercased()
-            if scheme.hasPrefix("wtlogin") || scheme.hasPrefix("mqq") {
+            if QqOneKeyLogin.isWtloginScheme(scheme) {
+                _ = QqOneKeyLogin.openInQQ(url)
                 Task { @MainActor in
-                    vm.statusText = "已阻止新窗口唤起 QQ"
+                    self.vm.loginMode = .oneKey
+                    self.vm.statusText = "已打开手机 QQ，请确认登录…"
                 }
                 return nil
             }

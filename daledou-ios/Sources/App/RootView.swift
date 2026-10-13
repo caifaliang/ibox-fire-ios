@@ -61,7 +61,8 @@ struct RootView: View {
         }
         .onAppear { vm.bootstrap() }
         .confirmationDialog("菜单", isPresented: $vm.showMenu, titleVisibility: .visible) {
-            Button("扫码登陆（推荐）") { vm.openScanLogin() }
+            Button("一键登录（跳转 QQ）") { vm.openOneKeyLogin() }
+            Button("扫码登陆") { vm.openScanLogin() }
             Button("Cookie 登陆") { vm.openCookieLoginSheet() }
             Button("进入游戏首页") { vm.openGameHome() }
             Button("刷新") { vm.reload() }
