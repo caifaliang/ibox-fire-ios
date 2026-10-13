@@ -4,12 +4,21 @@
   // Cache the capped ratio so its per-frame reads do not force another layout.
   var nativeRatio = Object.getOwnPropertyDescriptor(window, 'devicePixelRatio');
   var standardScale = window.__daledouNativeReplay === true ? 1 : 1.5;
-  var initialRatio = window.devicePixelRatio || 1, replayRatio = initialRatio, renderScale = standardScale, quality = 'standard';
+  var initialRatio = window.devicePixelRatio || 1, replayRatio = initialRatio, renderScale = standardScale, quality = 'medium';
   var qualityScales = { standard: standardScale, medium: 2, mediumHigh: 2.5, high: 3, ultraHigh: 4.5 };
+  // 画质越高放宽像素预算，否则宽屏上 dpr 被 640 封顶，选「高清」也无感
+  var qualityBudgets = { standard: 640, medium: 960, mediumHigh: 1280, high: 1600, ultraHigh: 1920 };
+  function stageQualityName(q) {
+    if (q === 'high' || q === 'ultraHigh' || q === 'mediumHigh') return 'high';
+    if (q === 'medium') return 'medium';
+    return 'low';
+  }
   function updatePixelRatio() {
     var ratio = nativeRatio && nativeRatio.get ? nativeRatio.get.call(window) : initialRatio;
-    var width = document.getElementById('canvas').clientWidth;
-    replayRatio = Math.min(ratio || 1, renderScale, (640 * renderScale / 1.5) / Math.max(1, width));
+    var canvas = document.getElementById('canvas');
+    var width = (canvas && canvas.clientWidth) || window.innerWidth || 390;
+    var budget = qualityBudgets[quality] || 960;
+    replayRatio = Math.min(ratio || 1, renderScale, (budget * renderScale / 1.5) / Math.max(1, width));
   }
   updatePixelRatio();
   Object.defineProperty(window, 'devicePixelRatio', { configurable: true, get: function () { return replayRatio; } });
@@ -211,7 +220,7 @@
       upgradeToHttps: !isLocalIOS, splashScreen: false, contextMenu: 'off',
       showSwfDownload: false, openUrlMode: 'deny', logLevel: 'warn',
       // 饭店对照：wgpu-webgl。iOS 无 WebView intercept，不能直连 fightimg（CORS，见 fd8）。
-      preferredRenderer: 'wgpu-webgl', quality: 'low',
+      preferredRenderer: 'wgpu-webgl', quality: stageQualityName(quality),
       frameRate: 30,
       deviceFontRenderer: 'canvas',
       maxExecutionDuration: 60,
@@ -243,7 +252,7 @@
       // 记忆用户要声，但 parse 期强制 mute（fd18 一开 volume 就 jetsam）
       soundWanted = options.sound !== false;
       sound = false;
-      quality = Object.prototype.hasOwnProperty.call(qualityScales, options.quality) ? options.quality : 'standard';
+      quality = Object.prototype.hasOwnProperty.call(qualityScales, options.quality) ? options.quality : 'medium';
       renderScale = qualityScales[quality]; updatePixelRatio();
       failed = false;
       active = true;
@@ -353,7 +362,16 @@
           });
         }
       } catch (_) {}
-      notifyIOS('quality', { quality: quality, dpr: replayRatio },
+      // 运行时尽量抬 Stage.quality（SWF 可能再改回去）
+      try {
+        var sq = stageQualityName(quality);
+        [main, toolbar].forEach(function (p) {
+          if (!p || !p.ruffle) return;
+          var r = p.ruffle();
+          if (r && r.config) r.config.quality = sq;
+        });
+      } catch (_) {}
+      notifyIOS('quality', { quality: quality, dpr: replayRatio, stage: stageQualityName(quality) },
         '画质 ' + quality + ' dpr=' + (Math.round(replayRatio * 100) / 100));
       return true;
     },
