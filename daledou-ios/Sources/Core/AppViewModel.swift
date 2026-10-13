@@ -458,14 +458,19 @@ final class AppViewModel: ObservableObject {
 
     /// 回壳：页内 resume + 读 skey（竞品需手动刷新，这里自动化）
     func onAppBecameActive() {
-        guard loginMode == .oneKey, !session.isLoggedIn else { return }
-        guard oneKeyPhase == .waitingQQConfirm || QqOneKeyLogin.awaitingReturn || QqOneKeyLogin.launchedQrcode != nil else {
-            return
-        }
+        guard !session.isLoggedIn else { return }
+        let oneKeyPending = loginMode == .oneKey
+            || oneKeyPhase == .waitingQQConfirm
+            || oneKeyPhase == .loadingGame
+            || QqOneKeyLogin.awaitingReturn
+            || QqOneKeyLogin.launchedQrcode != nil
+        guard oneKeyPending else { return }
+        // 回到前台时确保仍按一键收尾
+        if loginMode != .oneKey { loginMode = .oneKey }
         oneKeyFetcher?.resumeAfterQQ()
         Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 300_000_000)
-            guard loginMode == .oneKey, !session.isLoggedIn else { return }
+            try? await Task.sleep(nanoseconds: 200_000_000)
+            guard !session.isLoggedIn else { return }
             finishOneKeyAfterQQReturn()
         }
     }
@@ -475,33 +480,41 @@ final class AppViewModel: ObservableObject {
         if oneKeyPhase == .succeeded, session.isLoggedIn { return }
         oneKeyReturnBusy = true
         QqOneKeyLogin.markReturned()
-        statusText = "已回 App，正在确认授权…（QQ 若提示过期可忽略）"
+        oneKeyPhase = .loadingGame
+        statusText = "已回 App，正在写入登录…（过期提示可忽略）"
         Self.logOneKey("recover", "webview_resume phase=\(oneKeyPhase.rawValue)")
         oneKeyFetcher?.resumeAfterQQ()
         Task { @MainActor in
             defer { oneKeyReturnBusy = false }
-            try? await Task.sleep(nanoseconds: 1_500_000_000)
-            if session.isLoggedIn { return }
-            await syncSessionFromWebView(reason: "return_immediate")
-            if session.isLoggedIn { return }
 
+            // 立刻 resume + 并行推 phonepk（用户手动返回能进游戏，这里自动化）
             if let wv = gameWebView {
                 _ = await evalJS(QqOneKeyLogin.jsFreezeQr, in: wv)
                 _ = await evalJS(QqOneKeyLogin.jsResumeAfterQQ, in: wv)
                 _ = await evalJS(QqOneKeyLogin.jsKeepPolling, in: wv)
             }
-            try? await Task.sleep(nanoseconds: 2_000_000_000)
-            await syncSessionFromWebView(reason: "return_after_resume")
-            if session.isLoggedIn { return }
-
-            // 再推一次 phonepk
+            preferDesktopUA = false
             pendingURL = URL(string: LoginURLs.ledouEntry)
-            try? await Task.sleep(nanoseconds: 2_500_000_000)
-            await syncSessionFromWebView(reason: "return_phonepk")
-            if session.isLoggedIn { return }
+
+            for (i, gapMs) in [800, 1200, 1500, 2000].enumerated() {
+                try? await Task.sleep(nanoseconds: UInt64(gapMs) * 1_000_000)
+                if session.isLoggedIn { return }
+                await syncSessionFromWebView(reason: "return_poll_\(i)")
+                if session.isLoggedIn { return }
+                if let wv = gameWebView {
+                    _ = await evalJS(QqOneKeyLogin.jsKeepPolling, in: wv)
+                    _ = await evalJS(QqOneKeyLogin.jsResumeAfterQQ, in: wv)
+                }
+            }
 
             if !session.isLoggedIn {
-                statusText = "未读到会话：可下拉刷新游戏页，或改用扫码/Cookie"
+                // 最后再推一次游戏首页
+                pendingURL = URL(string: LoginURLs.ledouEntry)
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                await syncSessionFromWebView(reason: "return_final")
+            }
+            if !session.isLoggedIn {
+                statusText = "未读到会话：请下拉刷新，或改用扫码/Cookie"
             }
         }
     }

@@ -61,23 +61,23 @@ Extract from screenshots: color, type size, spacing, radius, animation ms → to
 
 目标是 **游戏站点 skey 会话**，不是 QQ OAuth access_token。
 
-**主路径：原生取票**（`NativeQqLogin`，不经 WKWebView 拉 QQ）
+**主路径：WebView xlogin 取票**（对齐 Fandian；fd59+）
 
 | Phase | Behavior |
 |-------|----------|
-| preflight | `canOpenURL(wtloginmqq3://)` |
-| fetchingTicket | ephemeral URLSession：authorize→xlogin→`ptqrshow` type=1 |
-| waitingQQConfirm | `wtloginmqq3?qrcode=&schemacallback=`；回壳 `nudgePoll` |
-| syncingCookies | `ptqrlogin=0` → check_sig → inject WKHTTPCookieStore |
-| loadingGame | load authorize / phonepk 完成 OAuth 尾段 |
-| failed / unsupported | 终态，提示扫码/Cookie；不自动重试 |
+| fetchingTicket | 加载 live style=35 xlogin → JS `ptqrshow` type=1 → `polling()` |
+| waitingQQConfirm | freeze 后再 `ptqrshow`；`wtloginmqq3?qrcode=`（`encodeURIComponent` 保留 `*`） |
+| loadingGame | 回壳 resume + 推 phonepk + `syncSessionFromWebView` |
+| succeeded | SessionStore 有非空 skey/p_skey |
+
+实测：QQ 安全确认倒计时后点同意，客户端常弹「二维码已过期」，但**马上回 App** 仍可进游戏；须把 WebView Cookie 写入 SessionStore，否则官方动画报未登录。
 
 | Forbidden | Why |
 |-----------|-----|
-| WebView 发起一键 / 等页内拉 QQ | 营销页「不支持快速登录」 |
-| `isAuthorizationQR` 只认字母数字 | type=1 现网返回 `http://txz.qq.com/p?k=` |
-| `urlQueryAllowed` 编 qrcode | `&f=` 截断 |
+| 打开 QQ 后仍 `ptqrshow` / 加载新 xlogin | 作废当前票 |
+| `*` → `%2A` | 票校验失败 |
 | `wtlogin?p=` | iOS 授权失败 |
+| 进游戏却不 `onCookiesCaptured` | 动画/战斗无 skey |
 
 扫码 + Cookie 为降级路径。Ruffle 勿动。
 

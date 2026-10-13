@@ -134,7 +134,12 @@ final class OneKeyTicketFetcher: NSObject {
 
             let cookies = await CookieBridge.snapshotQQCookies(from: wv)
             QqOneKeyLogin.rememberAuthorization(loginURL: wv.url, cookies: cookies)
-            // 冻结页内再取票，再拉起 QQ
+            // 竞品：取票后先 pt.qrcode.polling()，等首轮请求发出再拉 QQ
+            _ = await eval(QqOneKeyLogin.jsKeepPolling, in: wv)
+            try? await Task.sleep(nanoseconds: 800_000_000)
+            _ = await eval(QqOneKeyLogin.jsKeepPolling, in: wv)
+            try? await Task.sleep(nanoseconds: 700_000_000)
+            // 冻结后续 ptqrshow（不拦 polling）
             _ = await eval(QqOneKeyLogin.jsFreezeQr, in: wv)
             let ok = QqOneKeyLogin.openWithQrAuthorization(qr, force: true)
             if ok {
@@ -142,7 +147,7 @@ final class OneKeyTicketFetcher: NSObject {
                 openedQQ = true
                 beginBG()
                 onEvent(.openedQQ)
-                onEvent(.status("QQ：等倒计时→继续→同意，然后立刻返回"))
+                onEvent(.status("QQ：倒计时→继续→同意→马上回 App（过期可忽略）"))
                 AppViewModel.logOneKey("fetcher_opened", "ok")
                 break
             } else {
