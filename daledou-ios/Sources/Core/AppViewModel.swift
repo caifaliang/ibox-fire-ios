@@ -280,7 +280,7 @@ final class AppViewModel: ObservableObject {
 
         if LoginURLs.isConnectMarketing(url) {
             if loginMode == .oneKey {
-                bounceOneKeyToPhonepk(reason: "离开营销页")
+                bounceOneKeyToLiveXlogin(reason: "离开营销页")
                 return
             }
             if loginMode == .scan {

@@ -279,7 +279,7 @@ struct GameWebView: UIViewRepresentable {
                         self.vm.statusText = "已拦截网页授权，改安全取票…"
                         self.vm.attachOneKeyFetcher(to: wv)
                     } else {
-                        self.vm.bounceOneKeyToPhonepk(reason: "拦截网页授权后重进")
+                        self.vm.bounceOneKeyToLiveXlogin(reason: "拦截网页授权后重进")
                     }
                 }
                 return
