@@ -207,7 +207,7 @@ enum QqOneKeyLogin {
         bar.setAttribute('style',
             'position:fixed;left:0;right:0;top:0;z-index:2147483647;padding:10px 12px;' +
             'background:#0b57d0;color:#fff;font:14px/1.4 -apple-system,sans-serif;text-align:center;');
-        bar.textContent = '一键登录：请在本页切换账号；随后自动跳转 QQ 原生确认（可切号）';
+        bar.textContent = '一键登录：请在本页切换 QQ 账号；几秒后自动跳转 QQ 确认（可切号）';
         document.documentElement.appendChild(bar);
         document.documentElement.style.scrollPaddingTop = '48px';
         return 'ok';

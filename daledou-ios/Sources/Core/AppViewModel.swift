@@ -61,7 +61,11 @@ final class AppViewModel: ObservableObject {
         }
     }
 
-    /// 一键登录：手机 UA → 新鲜 style=35 → 壳内切号 → ptqrshow 取 qrcode → 跳 QQ（禁止 p=）。
+    /// 防 connect 营销页死循环回跳
+    private var lastOneKeyBounceAt: TimeInterval = 0
+
+    /// 一键登录（对齐饭点 QQ_ONE_KEY）：手机 UA 打开 phonepk → 未登录会跳 authorize→style=35 xlogin；
+    /// 壳内切号后 ptqrshow 取 qrcode 跳 QQ。禁止 p= / connect 营销页。
     func openOneKeyLogin() {
         loginMode = .oneKey
         preferDesktopUA = false
@@ -70,24 +74,17 @@ final class AppViewModel: ObservableObject {
         session.clear()
         oneKeyFetcher?.cancel()
         oneKeyFetcher = nil
-        statusText = "一键登录：解析登录地址…"
+        lastOneKeyBounceAt = 0
+        statusText = "一键登录：打开登录页…"
         clearWebEpoch &+= 1
-        Task { @MainActor in
-            let live = await LoginURLs.resolveLiveXloginURL()
-            guard loginMode == .oneKey else { return }
-            if let live {
-                statusText = "一键登录：请先在本页切号，随后自动跳 QQ…"
-                pendingURL = live
-            } else {
-                statusText = "解析失败，请用扫码登陆或 Cookie"
-                loginMode = .idle
-            }
-        }
+        // 与饭点一致：入口是游戏壳，未登录由腾讯侧跳到新鲜 xlogin
+        pendingURL = URL(string: LoginURLs.ledouEntry)
     }
 
-    /// 主壳已落到登录页后由 GameWebView 调用（同一轮一键只挂一次）
+    /// 主壳已落到 xlogin 后由 GameWebView 调用（同一轮一键只挂一次）
     func attachOneKeyFetcher(to webView: WKWebView) {
         guard loginMode == .oneKey else { return }
+        guard QqOneKeyLogin.isXloginPage(webView.url) else { return }
         if oneKeyFetcher != nil { return }
         let fetcher = OneKeyTicketFetcher(webView: webView) { [weak self] event in
             self?.handleOneKeyEvent(event)
@@ -98,6 +95,25 @@ final class AppViewModel: ObservableObject {
 
     func oneKeyFetcherMarkOpened() {
         oneKeyFetcher?.markOpenedQQ()
+    }
+
+    /// 误入 connect「亿万用户」营销页 / 非 xlogin：拉回新鲜 style=35
+    func bounceOneKeyToLiveXlogin(reason: String = "拉回登录页") {
+        guard loginMode == .oneKey else { return }
+        let now = Date().timeIntervalSince1970
+        guard now - lastOneKeyBounceAt > 2.0 else { return }
+        lastOneKeyBounceAt = now
+        oneKeyFetcher?.cancel()
+        oneKeyFetcher = nil
+        statusText = "一键登录：\(reason)…"
+        Task { @MainActor in
+            guard loginMode == .oneKey else { return }
+            if let live = await LoginURLs.resolveLiveXloginURL() {
+                pendingURL = live
+            } else {
+                pendingURL = URL(string: LoginURLs.oneKeyLogin)
+            }
+        }
     }
 
     private func handleOneKeyEvent(_ event: OneKeyTicketFetcher.Event) {
@@ -219,10 +235,16 @@ final class AppViewModel: ObservableObject {
             return
         }
 
-        if LoginURLs.isConnectMarketing(url), loginMode == .scan {
-            statusText = "误入 QQ 互联首页，请重新扫码登陆"
-            pendingURL = URL(string: LoginURLs.scanLedou)
-            return
+        if LoginURLs.isConnectMarketing(url) {
+            if loginMode == .oneKey {
+                bounceOneKeyToLiveXlogin(reason: "离开营销页")
+                return
+            }
+            if loginMode == .scan {
+                statusText = "误入 QQ 互联首页，请重新扫码登陆"
+                pendingURL = URL(string: LoginURLs.scanLedou)
+                return
+            }
         }
 
         // 已进 phonepk 首页：把「正在进入…」改成正式已登录

@@ -67,7 +67,7 @@ Extract from screenshots: color, type size, spacing, radius, animation ms → to
 | 扫码 `graph show` display=pc | 壳内跟完 | OK backup |
 | 粘贴 Cookie | 总兜底 | OK |
 
-**Primary one-key on iOS:** iPhone UA resolve live `style=35&h5sig` → WK load → user may switch on page → inject `ptqrshow` (no hasInit gate) → open QQ with **qrcode only**. Never open `p=`; never click page「一键登录」.
+**Primary one-key on iOS (饭点 QQ_ONE_KEY 入口 + iOS 取票):** iPhone UA load `phonepk` → authorize → live `style=35` xlogin → user may switch → `ptqrshow` → `wtloginmqq3?qrcode=` only. Bounce off connect「亿万用户」marketing. Never open `p=`; never click page「一键登录」.
 
 ### 6. Evidence habit
 
