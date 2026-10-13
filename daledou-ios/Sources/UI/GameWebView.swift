@@ -145,11 +145,12 @@ struct GameWebView: UIViewRepresentable {
         var lastCookieInject = 0
         var defaultUA: String?
         private var captureTask: Task<Void, Never>?
+        private var oneKeyQrTask: Task<Void, Never>?
         private var lastContinueURL = ""
         private var lastHandledCode = ""
         private var lastStuckRecoverAt: TimeInterval = 0
 
-        /// 把 _blank / window.open 留在壳内；不处理 mqq（交给原生拦截）
+        /// 把 _blank / window.open 留在壳内；wtlogin 交给原生拦截
         private let stayJS = """
         (function(){
           if (window.__dldStay2) return; window.__dldStay2=1;
@@ -181,6 +182,9 @@ struct GameWebView: UIViewRepresentable {
             Task { @MainActor in vm.onNavigated(to: webView.url) }
             webView.evaluateJavaScript(stayJS, completionHandler: nil)
             scheduleCookieCapture(webView)
+            if vm.loginMode == .oneKey, QqOneKeyLogin.isXloginPage(webView.url) {
+                startOneKeyQrPipeline(webView)
+            }
             // 已登录却仍停在 QQ「一键登录」页 → 强制进 phonepk
             webView.evaluateJavaScript(LoginURLs.qqLoginProbeJS) { [weak self] result, _ in
                 guard let self else { return }
@@ -191,6 +195,48 @@ struct GameWebView: UIViewRepresentable {
                     guard now - self.lastStuckRecoverAt > 2.5 else { return }
                     self.lastStuckRecoverAt = now
                     self.vm.recoverIfStuckOnQqLoginPage()
+                }
+            }
+        }
+
+        /// 竞品流程：ptqrshow → qrcode 授权串 → 唤 QQ；WebView 同时 polling 写 Cookie
+        private func startOneKeyQrPipeline(_ webView: WKWebView) {
+            oneKeyQrTask?.cancel()
+            oneKeyQrTask = Task { @MainActor [weak self, weak webView] in
+                guard let self, let webView else { return }
+                self.vm.statusText = "一键登录：正在生成 QQ 授权…"
+                var opened = false
+                for round in 0..<50 {
+                    guard !Task.isCancelled, self.vm.loginMode == .oneKey else { return }
+                    if round == 0 || round % 8 == 0 {
+                        _ = await self.evalJS(QqOneKeyLogin.jsRequestQr, in: webView) as? String
+                    }
+                    try? await Task.sleep(nanoseconds: 400_000_000)
+                    guard let raw = await self.evalJS(QqOneKeyLogin.jsPollStatus, in: webView) as? String,
+                          let data = raw.data(using: .utf8),
+                          let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                          let status = obj["status"] as? String else { continue }
+                    if status == "ready", let qr = obj["url"] as? String, !qr.isEmpty, !opened {
+                        opened = true
+                        let ok = QqOneKeyLogin.openWithQrAuthorization(qr)
+                        self.vm.statusText = ok
+                            ? "已打开 QQ，请确认登录（可切换账号）；完成后自动回壳…"
+                            : "无法唤起 QQ，请安装手机 QQ 或改用扫码"
+                    } else if status == "failed" {
+                        _ = await self.evalJS(QqOneKeyLogin.jsResetQr, in: webView)
+                        self.vm.statusText = "授权准备失败，重试中…"
+                    }
+                    if opened {
+                        _ = await self.evalJS(QqOneKeyLogin.jsResumeAfterQQ, in: webView)
+                    }
+                }
+            }
+        }
+
+        private func evalJS(_ script: String, in webView: WKWebView) async -> Any? {
+            await withCheckedContinuation { cont in
+                webView.evaluateJavaScript(script) { result, _ in
+                    cont.resume(returning: result)
                 }
             }
         }
@@ -228,15 +274,23 @@ struct GameWebView: UIViewRepresentable {
                 return
             }
 
-            // ② wtlogin / mqq：改写成 wtloginmqq3?qrcode=…&schemacallback=daledoulogin:// 再唤 QQ
+            // ② wtlogin / mqq：拒绝页内 p=（会授权失败）；仅放行自带 qrcode 的链接
             if QqOneKeyLogin.isWtloginScheme(scheme) {
                 decisionHandler(.cancel)
+                if QqOneKeyLogin.isBrokenPageOneClick(url) {
+                    Task { @MainActor in
+                        self.vm.loginMode = .oneKey
+                        self.vm.statusText = "请稍候，正在用 QQ 扫码确认登录…"
+                        if let wv = self.webView { self.startOneKeyQrPipeline(wv) }
+                    }
+                    return
+                }
                 let ok = QqOneKeyLogin.openInQQ(url)
                 Task { @MainActor in
                     self.vm.loginMode = .oneKey
-                    self.vm.statusText = ok
-                        ? "已打开手机 QQ，请确认；完成后应回到本 App（不要用浏览器）…"
-                        : "无法唤起 QQ，请安装手机 QQ 或改用扫码"
+                    if ok {
+                        self.vm.statusText = "已打开 QQ，请确认登录…"
+                    }
                 }
                 return
             }
@@ -275,10 +329,17 @@ struct GameWebView: UIViewRepresentable {
             guard let url = navigationAction.request.url else { return nil }
             let scheme = (url.scheme ?? "").lowercased()
             if QqOneKeyLogin.isWtloginScheme(scheme) {
-                _ = QqOneKeyLogin.openInQQ(url)
-                Task { @MainActor in
-                    self.vm.loginMode = .oneKey
-                    self.vm.statusText = "已打开手机 QQ，请确认；完成后应回到本 App…"
+                if QqOneKeyLogin.isBrokenPageOneClick(url) {
+                    Task { @MainActor in
+                        self.vm.loginMode = .oneKey
+                        if let wv = self.webView { self.startOneKeyQrPipeline(wv) }
+                    }
+                } else {
+                    _ = QqOneKeyLogin.openInQQ(url)
+                    Task { @MainActor in
+                        self.vm.loginMode = .oneKey
+                        self.vm.statusText = "已打开 QQ，请确认登录…"
+                    }
                 }
                 return nil
             }

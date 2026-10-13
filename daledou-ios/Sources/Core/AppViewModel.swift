@@ -59,8 +59,8 @@ final class AppViewModel: ObservableObject {
         }
     }
 
-    /// QQ App 一键登录：桌面 UA 打开 xlogin（亿万用户/切换账号），页内点一键唤 QQ。
-    /// 仅改 schemacallback→daledoulogin，保留页内原始 p/qrcode（勿改名，否则 QQ 授权失败）。
+    /// QQ 一键：桌面 UA 开 xlogin → 取 ptqrshow 授权串 → wtloginmqq3?qrcode=… 唤 QQ（竞品同款）。
+    /// 勿走页内 `p=` 一键（iOS QQ 会「网页申请使用 / 授权失败」）。
     func openOneKeyLogin() {
         loginMode = .oneKey
         preferDesktopUA = true
@@ -68,7 +68,7 @@ final class AppViewModel: ObservableObject {
         QqOneKeyLogin.clearPending()
         session.clear()
         clearWebEpoch &+= 1
-        statusText = "一键登录：页内可切号，点「一键登录」后确认回壳…"
+        statusText = "一键登录：准备 QQ 授权（可先在页内切换账号）…"
         pendingURL = URL(string: LoginURLs.xloginHome)
     }
 
@@ -127,50 +127,33 @@ final class AppViewModel: ObservableObject {
             pendingURL = finish
             return
         }
-        // 竞品：schemacallback 带回 jump（含 clientuin/clientkey）→ 壳内打开
-        if let jump = QqOneKeyLogin.continueURL(fromCallback: url) {
-            QqOneKeyLogin.markReturned()
-            loginMode = .oneKey
-            preferDesktopUA = false
-            statusText = "已从 QQ 返回，正在写入会话…"
-            pendingURL = jump
-            return
-        }
-        resumeAfterOneKeyReturn(reason: "scheme", requireClientTicket: false)
-    }
-
-    /// 仅当用户从 QQ 手动切回且尚未收到 scheme 时提示；勿盲目加载无 ticket 的旧 jump（会白忙）
-    func onAppBecameActive() {
-        guard loginMode == .oneKey, QqOneKeyLogin.awaitingReturn else { return }
-        Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 800_000_000)
-            guard loginMode == .oneKey, QqOneKeyLogin.awaitingReturn else { return }
-            // 若 QQ 把 jump 丢给了 Safari，壳内没有 clientuin，加载旧 jump 无效
-            statusText = "若已跳到浏览器：请回到本 App，重新点一键登录；或用扫码/Cookie"
-            QqOneKeyLogin.markReturned()
-        }
-    }
-
-    private func resumeAfterOneKeyReturn(reason: String, requireClientTicket: Bool = true) {
-        preferDesktopUA = false
-        loginMode = .oneKey
+        // schemacallback：优先在原 xlogin 页 resume polling 写 Cookie；有 jump 再跟
         QqOneKeyLogin.markReturned()
-        if session.isLoggedIn {
-            statusText = "已登录，进入游戏…"
-            openGameHome()
-            return
+        loginMode = .oneKey
+        preferDesktopUA = true
+        statusText = "已从 QQ 返回，正在写入会话…"
+        if let jump = QqOneKeyLogin.continueURL(fromCallback: url) {
+            pendingURL = jump
+        } else if let cur = gameWebView?.url, QqOneKeyLogin.isXloginPage(cur) {
+            // 留在 xlogin，由 WebView 继续 polling / Cookie 捕获
+            gameWebView?.evaluateJavaScript(QqOneKeyLogin.jsResumeAfterQQ, completionHandler: nil)
+        } else {
+            pendingURL = URL(string: LoginURLs.xloginHome)
         }
-        let jump = QqOneKeyLogin.takePendingJump() ?? LoginURLs.oneClickJumpURL
-        if requireClientTicket {
-            let s = jump?.absoluteString ?? ""
-            if !s.contains("clientuin=") && !s.contains("clientkey=") {
-                statusText = "QQ 未回壳（可能进了浏览器）。请再试一键，或改用扫码/Cookie"
-                pendingURL = URL(string: LoginURLs.xloginHome)
-                return
+    }
+
+    /// QQ 确认后用户切回 App：在 xlogin 上 resume，等 Cookie（不必依赖 Safari jump）
+    func onAppBecameActive() {
+        guard loginMode == .oneKey, QqOneKeyLogin.awaitingReturn || session.isLoggedIn == false else { return }
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            guard loginMode == .oneKey, !session.isLoggedIn else { return }
+            if let wv = gameWebView, QqOneKeyLogin.isXloginPage(wv.url) {
+                wv.evaluateJavaScript(QqOneKeyLogin.jsResumeAfterQQ, completionHandler: nil)
+                statusText = "已回到 App，正在完成登录…"
             }
+            QqOneKeyLogin.markReturned()
         }
-        statusText = "已从 QQ 返回（\(reason)），正在写入会话…"
-        pendingURL = jump ?? URL(string: LoginURLs.xloginHome)
     }
 
     func onNavigated(to url: URL?) {
