@@ -191,12 +191,17 @@ struct GameWebView: UIViewRepresentable {
             scheduleCookieCapture(webView)
             if vm.loginMode == .oneKey {
                 if LoginURLs.isConnectMarketing(webView.url) {
-                    vm.bounceOneKeyToPhonepk(reason: "离开营销页")
+                    // 营销页点「一键登录」会 toast「不支持QQ快速登录」——立刻离开
+                    vm.stopOneKeyFetcher()
+                    vm.bounceOneKeyToLiveXlogin(reason: "离开营销页")
                 } else if QqOneKeyLogin.isXloginPage(webView.url) {
                     vm.attachOneKeyFetcher(to: webView)
+                } else {
+                    // 中间页：停掉错页取票，避免「取票失败，重试中」刷屏
+                    vm.stopOneKeyFetcher()
                 }
             }
-            // 「亿万用户已选择」= connect 营销页
+            // 「亿万用户已选择」= connect 营销页（URL 有时不像 marketing）
             webView.evaluateJavaScript(LoginURLs.qqLoginProbeJS) { [weak self] result, _ in
                 guard let self else { return }
                 let flag = (result as? String) ?? ""
@@ -205,7 +210,8 @@ struct GameWebView: UIViewRepresentable {
                     guard now - self.lastStuckRecoverAt > 2.5 else { return }
                     if flag == "qq", self.vm.loginMode == .oneKey, !self.vm.session.isLoggedIn {
                         self.lastStuckRecoverAt = now
-                        self.vm.bounceOneKeyToPhonepk(reason: "离开营销页")
+                        self.vm.stopOneKeyFetcher()
+                        self.vm.bounceOneKeyToLiveXlogin(reason: "离开营销页")
                         return
                     }
                     guard self.vm.session.isLoggedIn, flag == "qq" else { return }

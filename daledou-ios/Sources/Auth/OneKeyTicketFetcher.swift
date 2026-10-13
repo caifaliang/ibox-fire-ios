@@ -57,9 +57,16 @@ final class OneKeyTicketFetcher: NSObject {
         guard let wv = webView else { return }
         onEvent(.status("一键登录：准备跳转 QQ…"))
 
+        var failStreak = 0
         for _ in 0..<90 {
             if stopped || Task.isCancelled { return }
             try? await Task.sleep(nanoseconds: 400_000_000)
+
+            // 掉进 connect「亿万用户」等非 xlogin：立刻停，交给外层拉回
+            if !QqOneKeyLogin.isXloginPage(wv.url) {
+                onEvent(.failed("离开登录页"))
+                return
+            }
 
             let diag = await eval(QqOneKeyLogin.jsPtDiag, in: wv) as? String ?? ""
             if diag != "ready" {
@@ -83,10 +90,16 @@ final class OneKeyTicketFetcher: NSObject {
             }
 
             if status == "failed" {
+                failStreak += 1
                 _ = await eval(QqOneKeyLogin.jsResetQr, in: wv)
+                if failStreak >= 3 {
+                    onEvent(.failed("取票失败"))
+                    return
+                }
                 onEvent(.status("取票失败，重试中…"))
                 continue
             }
+            failStreak = 0
             guard status == "ready", let qr = obj["url"] as? String, !qr.isEmpty else {
                 continue
             }

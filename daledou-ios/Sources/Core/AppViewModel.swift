@@ -65,8 +65,8 @@ final class AppViewModel: ObservableObject {
     /// 防回壳自动刷新重入
     private var oneKeyReturnBusy = false
 
-    /// 一键登录（竞品 iOS）：清 Cookie → phonepk → style=35 → ptqrshow/qrcode → QQ「同意」→ 回壳自动刷新取 Cookie。
-    /// 对拍结论：竞品也切不了号；能点同意；回 App 需刷新才有 Cookie —— 我们自动刷新。
+    /// 一键登录：清 Cookie → **authorize/style=35**（勿停在 connect 营销页）→ qrcode 跳 QQ。
+    /// 图上「亿万用户」+「不支持QQ快速登录」= connect 营销页点按钮；必须离开该页。
     func openOneKeyLogin() {
         loginMode = .oneKey
         preferDesktopUA = false
@@ -77,14 +77,22 @@ final class AppViewModel: ObservableObject {
         oneKeyFetcher = nil
         lastOneKeyBounceAt = 0
         oneKeyReturnBusy = false
-        statusText = "一键登录：清理会话并打开入口…"
+        statusText = "一键登录：清理并打开登录页…"
         clearWebEpoch &+= 1
-        pendingURL = URL(string: LoginURLs.ledouEntry)
+        // 直接 authorize，比 phonepk 更稳落到 style=35；避开 connect「亿万用户」
+        pendingURL = URL(string: LoginURLs.oneKeyLogin)
+        Task { @MainActor in
+            if let live = await LoginURLs.resolveLiveXloginURL() {
+                guard loginMode == .oneKey, !session.isLoggedIn else { return }
+                pendingURL = live
+            }
+        }
     }
 
     func attachOneKeyFetcher(to webView: WKWebView) {
         guard loginMode == .oneKey else { return }
         guard QqOneKeyLogin.isXloginPage(webView.url) else { return }
+        // 已在跑则不重挂；离开 xlogin 后会 cancel
         if oneKeyFetcher != nil { return }
         let fetcher = OneKeyTicketFetcher(webView: webView) { [weak self] event in
             self?.handleOneKeyEvent(event)
@@ -97,16 +105,32 @@ final class AppViewModel: ObservableObject {
         oneKeyFetcher?.markOpenedQQ()
     }
 
-    /// 误入 connect「亿万用户」：拉回 phonepk 重走
-    func bounceOneKeyToPhonepk(reason: String = "离开营销页") {
-        guard loginMode == .oneKey else { return }
-        let now = Date().timeIntervalSince1970
-        guard now - lastOneKeyBounceAt > 2.0 else { return }
-        lastOneKeyBounceAt = now
+    func stopOneKeyFetcher() {
         oneKeyFetcher?.cancel()
         oneKeyFetcher = nil
-        statusText = "一键登录：\(reason)，重新打开入口…"
-        pendingURL = URL(string: LoginURLs.ledouEntry)
+    }
+
+    /// 误入 connect「亿万用户」/取票失败：拉到新鲜 style=35，禁止再刷 phonepk（会又进营销页）
+    func bounceOneKeyToLiveXlogin(reason: String = "离开营销页") {
+        guard loginMode == .oneKey else { return }
+        let now = Date().timeIntervalSince1970
+        guard now - lastOneKeyBounceAt > 2.5 else { return }
+        lastOneKeyBounceAt = now
+        stopOneKeyFetcher()
+        statusText = "一键登录：\(reason)…"
+        Task { @MainActor in
+            guard loginMode == .oneKey else { return }
+            if let live = await LoginURLs.resolveLiveXloginURL() {
+                pendingURL = live
+            } else {
+                pendingURL = URL(string: LoginURLs.oneKeyLogin)
+            }
+        }
+    }
+
+    /// 兼容旧名
+    func bounceOneKeyToPhonepk(reason: String = "离开营销页") {
+        bounceOneKeyToLiveXlogin(reason: reason)
     }
 
     private func handleOneKeyEvent(_ event: OneKeyTicketFetcher.Event) {
@@ -117,6 +141,10 @@ final class AppViewModel: ObservableObject {
             statusText = "已跳转 QQ，请点「同意」…"
         case .failed(let msg):
             statusText = msg
+            // 持续取票失败多半已离开 xlogin（如掉进 connect）→ 拉回真登录页
+            if msg.contains("取票失败") || msg.contains("离开登录页") {
+                bounceOneKeyToLiveXlogin(reason: msg)
+            }
         }
     }
 
