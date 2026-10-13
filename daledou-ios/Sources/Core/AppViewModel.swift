@@ -59,8 +59,7 @@ final class AppViewModel: ObservableObject {
         }
     }
 
-    /// iOS 主路径：桌面 UA 开 xlogin，登录全程留在 WKWebView。
-    /// 页内可「切换账号」/ 密码 / 扫页内二维码；禁止自动唤起 QQ（会授权失败且无切号）。
+    /// 一键登录：桌面 UA 开 xlogin → ptqrshow 授权串 → 自动跳转 QQ 确认。
     func openOneKeyLogin() {
         loginMode = .oneKey
         preferDesktopUA = true
@@ -68,7 +67,7 @@ final class AppViewModel: ObservableObject {
         QqOneKeyLogin.clearPending()
         session.clear()
         clearWebEpoch &+= 1
-        statusText = "登录页：请点「切换账号」，或用手机 QQ 扫本页二维码…"
+        statusText = "一键登录：准备跳转 QQ…"
         pendingURL = URL(string: LoginURLs.xloginHome)
     }
 
@@ -142,15 +141,21 @@ final class AppViewModel: ObservableObject {
         }
     }
 
-    /// 壳内一键：从后台回前台时继续等 Cookie（用户可能刚用 QQ 扫完页内码）
+    /// 从 QQ 回到 App：resume 写 Cookie；仍未登录则提示换新码（由 WebView pipeline 重开）
     func onAppBecameActive() {
         guard loginMode == .oneKey, !session.isLoggedIn else { return }
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 400_000_000)
             guard loginMode == .oneKey, !session.isLoggedIn else { return }
             if let wv = gameWebView, QqOneKeyLogin.isXloginPage(wv.url) {
+                wv.evaluateJavaScript(QqOneKeyLogin.jsResumeAfterQQ, completionHandler: nil)
                 wv.evaluateJavaScript(QqOneKeyLogin.jsKeepPolling, completionHandler: nil)
-                statusText = "若已扫码，正在写入会话…"
+                if QqOneKeyLogin.awaitingReturn || QqOneKeyLogin.qrLikelyExpired {
+                    statusText = "未登录成功则将换新码并重新跳转 QQ…"
+                    webReloadToken &+= 1
+                } else {
+                    statusText = "已回 App，正在写入会话…"
+                }
             }
             QqOneKeyLogin.markReturned()
         }

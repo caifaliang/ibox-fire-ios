@@ -64,11 +64,12 @@ Extract from screenshots: color, type size, spacing, radius, animation ms → to
 | `graph.qq.com/oauth` → QQ | 「网页申请使用」授权失败、无切号 | **FORBIDDEN** |
 | Page `wtlogin?p=` → QQ | 同上或丢 Safari | **FORBIDDEN** as primary |
 | `wtloginmqq3?qrcode=<ptqrshow>` → QQ | 易过期；切号仅在 QQ 内，不稳定 | Trial only with live ticket capture |
-| **Desktop UA xlogin 留在 WKWebView**（页内切号 / 扫页内码） | Cookie 留在壳内 | **PRIMARY** |
+| **Desktop UA xlogin → ptqrshow → `wtloginmqq3?qrcode=` 跳转 QQ** | 可跳出 QQ；确认前勿 `qlogin_submit`；到期换新码 | **PRIMARY（一键）** |
+| Desktop UA xlogin 留在壳内扫页内码 | 不跳 QQ | 兜底 / 调试 |
 | 扫码 `graph show` display=pc | 壳内跟完 | OK backup |
 | 粘贴 Cookie | 总兜底 | OK |
 
-**Primary one-key/login path on iOS:** open `xloginHome` with desktop UA; **do not** auto-`UIApplication.open` QQ; block page `p=` wtlogin; let user **切换账号** on page or scan **in-page QR** with phone QQ; capture `skey` from WKWebView.
+**Primary one-key on iOS:** open `xloginHome` (desktop UA) → inject ptqrshow → `open` QQ with `qrcode` + `schemacallback=daledoulogin://`. Block page `p=` wtlogin (rewrite to QR pipeline). Never leave user stuck unable to jump to QQ when they chose 一键登录.
 
 ### 6. Evidence habit
 
