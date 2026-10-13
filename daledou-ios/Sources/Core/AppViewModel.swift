@@ -24,6 +24,8 @@ final class AppViewModel: ObservableObject {
     @Published var qqLabel = ""
     @Published var loginMode: LoginMode = .idle
     @Published var preferDesktopUA = false
+    /// 一键取票（隐藏 WebView，前台不展示二维码页）
+    private var oneKeyFetcher: OneKeyTicketFetcher?
 
     // 官方动画（viewfight）
     @Published var showViewFightFab = false
@@ -59,22 +61,66 @@ final class AppViewModel: ObservableObject {
         }
     }
 
-    /// 一键登录：桌面 UA 开 graph authorize → 新鲜 xlogin → ptqrshow → QQ（可切号）。
+    /// 一键登录：前台只显示等待页；隐藏 WebView 取票并跳转 QQ（可切号）。绝不把二维码页给用户看。
     func openOneKeyLogin() {
         loginMode = .oneKey
-        preferDesktopUA = true
+        preferDesktopUA = false
         didEnterGameFromCapture = false
         QqOneKeyLogin.clearPending()
         session.clear()
-        clearWebEpoch &+= 1
-        statusText = "一键登录：准备跳转 QQ…"
-        pendingURL = URL(string: LoginURLs.oneKeyLogin)
+        oneKeyFetcher?.cancel()
+        oneKeyFetcher = nil
+        pendingURL = nil
+        statusText = "一键登录：正在跳转手机 QQ…"
+        // 先清 Cookie 再取票，避免与隐藏 WebView 抢同一 dataStore
+        Task { @MainActor in
+            if let wv = gameWebView {
+                await CookieBridge.clearAll(from: wv)
+                wv.loadHTMLString(
+                    LoginURLs.waitingHTML,
+                    baseURL: URL(string: "https://dld.qzapp.z.qq.com/")
+                )
+            } else {
+                loadWaitingPage = true
+                clearWebEpoch &+= 1
+                try? await Task.sleep(nanoseconds: 400_000_000)
+            }
+            guard loginMode == .oneKey else { return }
+            let fetcher = OneKeyTicketFetcher { [weak self] event in
+                self?.handleOneKeyEvent(event)
+            }
+            oneKeyFetcher = fetcher
+            fetcher.start()
+        }
     }
 
-    /// 扫码登陆
+    private func handleOneKeyEvent(_ event: OneKeyTicketFetcher.Event) {
+        switch event {
+        case .status(let s):
+            statusText = s
+        case .openedQQ:
+            statusText = "已跳转 QQ，请在 QQ 内切换账号并确认…"
+        case .loggedIn(let header):
+            oneKeyFetcher?.cancel()
+            oneKeyFetcher = nil
+            session.save(cookieHeader: header)
+            loginMode = .idle
+            preferDesktopUA = false
+            cookieInjectToken &+= 1
+            pendingURL = URL(string: LoginURLs.ledouEntry)
+            refreshStatus()
+            statusText = "一键登录成功，进入游戏…"
+        case .failed(let msg):
+            statusText = msg
+        }
+    }
+
+    /// 扫码登陆（壳内展示二维码，与一键分流）
     func openScanLogin() {
         loginMode = .scan
         preferDesktopUA = true
+        oneKeyFetcher?.cancel()
+        oneKeyFetcher = nil
         QqOneKeyLogin.clearPending()
         session.clear()
         clearWebEpoch &+= 1
@@ -126,10 +172,9 @@ final class AppViewModel: ObservableObject {
             pendingURL = finish
             return
         }
-        // schemacallback：对齐饭点 —— restore Cookie → 留在 xlogin 做 qlogin_submit
+        // schemacallback：在隐藏取票 WebView 上 resume（前台仍是等待页）
         QqOneKeyLogin.markReturned()
         loginMode = .oneKey
-        preferDesktopUA = true
         statusText = "已从 QQ 返回，正在完成授权…"
         if let https = QqOneKeyLogin.continueURL(fromCallback: url),
            (https.scheme == "http" || https.scheme == "https"),
@@ -137,24 +182,7 @@ final class AppViewModel: ObservableObject {
             pendingURL = https
             return
         }
-        Task { @MainActor in
-            if let wv = gameWebView {
-                await CookieBridge.restore(QqOneKeyLogin.savedCookies, into: wv)
-                if QqOneKeyLogin.isXloginPage(wv.url) {
-                    wv.evaluateJavaScript(QqOneKeyLogin.jsResumeAfterQQ, completionHandler: nil)
-                    wv.evaluateJavaScript(QqOneKeyLogin.jsKeepPolling, completionHandler: nil)
-                    return
-                }
-                if let saved = QqOneKeyLogin.savedLoginURL, QqOneKeyLogin.isXloginPage(saved) {
-                    pendingURL = saved
-                    try? await Task.sleep(nanoseconds: 600_000_000)
-                    wv.evaluateJavaScript(QqOneKeyLogin.jsResumeAfterQQ, completionHandler: nil)
-                    return
-                }
-            }
-            // 丢页：重走开 graph authorize（新鲜 xlogin），勿用死 h5sig
-            pendingURL = URL(string: LoginURLs.oneKeyLogin)
-        }
+        oneKeyFetcher?.resumeAfterQQ()
     }
 
     /// Android `ssl.ptlogin2.qq.com/jump?...` 在 iOS WebView 里常显示「授权失败」
@@ -164,35 +192,13 @@ final class AppViewModel: ObservableObject {
         return url.path.lowercased().contains("jump")
     }
 
-    /// 从 QQ 回到 App：restore Cookie + resume；禁止立刻 reload（会清掉 qrsig）
+    /// 从 QQ 回到 App：隐藏取票页 resume（勿 reload 主 WebView）
     func onAppBecameActive() {
         guard loginMode == .oneKey, !session.isLoggedIn else { return }
         Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 500_000_000)
+            try? await Task.sleep(nanoseconds: 400_000_000)
             guard loginMode == .oneKey, !session.isLoggedIn else { return }
-            guard let wv = gameWebView else { return }
-            await CookieBridge.restore(QqOneKeyLogin.savedCookies, into: wv)
-            if QqOneKeyLogin.isXloginPage(wv.url) {
-                let resume = await withCheckedContinuation { (cont: CheckedContinuation<String?, Never>) in
-                    wv.evaluateJavaScript(QqOneKeyLogin.jsResumeAfterQQ) { result, _ in
-                        cont.resume(returning: result as? String)
-                    }
-                }
-                wv.evaluateJavaScript(QqOneKeyLogin.jsKeepPolling, completionHandler: nil)
-                statusText = "已回 App，正在写入会话…"
-                if resume == "missing-session" {
-                    // 再 restore 一次后仍缺 qrsig：从 graph 重开拿新鲜 xlogin
-                    try? await Task.sleep(nanoseconds: 800_000_000)
-                    guard loginMode == .oneKey, !session.isLoggedIn else { return }
-                    statusText = "会话丢失，重新准备授权…"
-                    pendingURL = URL(string: LoginURLs.oneKeyLogin)
-                } else if QqOneKeyLogin.qrLikelyExpired {
-                    try? await Task.sleep(nanoseconds: 1_200_000_000)
-                    guard loginMode == .oneKey, !session.isLoggedIn else { return }
-                    statusText = "授权过期，换新码并重新跳转 QQ…"
-                    webReloadToken &+= 1
-                }
-            }
+            oneKeyFetcher?.resumeAfterQQ()
             QqOneKeyLogin.markReturned()
         }
     }
@@ -384,6 +390,8 @@ final class AppViewModel: ObservableObject {
     }
 
     func logout() {
+        oneKeyFetcher?.cancel()
+        oneKeyFetcher = nil
         session.clear()
         loginMode = .idle
         preferDesktopUA = false

@@ -182,12 +182,9 @@ struct GameWebView: UIViewRepresentable {
             Task { @MainActor in vm.onNavigated(to: webView.url) }
             webView.evaluateJavaScript(stayJS, completionHandler: nil)
             scheduleCookieCapture(webView)
-            // 一键：graph → 抠 iframe xlogin（新鲜 h5sig）→ ptqrshow → 跳 QQ；禁止黑屏遮罩卡死
+            // 一键取票在 OneKeyTicketFetcher（隐藏 WebView）；前台只显示等待页，禁止再开二维码页
             if vm.loginMode == .oneKey {
-                Task { @MainActor [weak self] in
-                    guard let self else { return }
-                    await self.driveOneKey(from: webView)
-                }
+                return
             }
             // 已登录却仍停在 QQ「一键登录」页 → 强制进 phonepk
             webView.evaluateJavaScript(LoginURLs.qqLoginProbeJS) { [weak self] result, _ in
