@@ -75,6 +75,7 @@ final class AppViewModel: ObservableObject {
         clearWebEpoch &+= 1
         Task { @MainActor in
             let live = await LoginURLs.resolveLiveXloginURL()
+                ?? LoginURLs.assembleShowXloginURL(clientId: LoginURLs.qqAppId)
             guard loginMode == .oneKey else { return }
             if let live {
                 statusText = "一键登录：请先点「切换账号」，随后自动跳 QQ…"

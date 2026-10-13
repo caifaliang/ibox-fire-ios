@@ -25,7 +25,8 @@ enum LoginURLs {
     /// 兼容旧名
     static var xloginHome: String { oneKeyLogin }
 
-    /// 用桌面 UA 跟随 authorize 重定向，得到带新鲜 h5sig 的 xlogin（不经过 WK，避免自动唤起 QQ 网页授权）
+    /// 用桌面 UA 跟随 authorize → graph/show，从页面脚本拼出新鲜 xlogin（不经 WK，避免「APP网页申请」）
+    /// 实测：authorize 302 到 show，xlogin 在 iframe 里由 JS 拼装，最终 URL 不是 xlogin。
     static func resolveLiveXloginURL() async -> URL? {
         guard let start = URL(string: oneKeyLogin) else { return nil }
         var req = URLRequest(url: start)
@@ -33,18 +34,85 @@ enum LoginURLs {
         req.setValue("text/html,application/xhtml+xml", forHTTPHeaderField: "Accept")
         req.httpMethod = "GET"
         do {
-            let (_, resp) = try await URLSession.shared.data(for: req)
+            let (data, resp) = try await URLSession.shared.data(for: req)
             guard let final = resp.url else { return nil }
             let host = (final.host ?? "").lowercased()
             let path = final.path.lowercased()
             if host.contains("ptlogin2.qq.com"), path.contains("xlogin") {
                 return final
             }
-            // 有的链路停在 graph：再试一次带 display 的变体无意义；返回 nil 让调用方回退
-            return nil
+            let html = String(data: data, encoding: .utf8)
+                ?? String(data: data, encoding: .isoLatin1)
+                ?? ""
+            if let parsed = xloginURL(fromShowHTML: html, pageURL: final) {
+                return parsed
+            }
+            // show 页配方固定：即使正则漏了也能拼出可用 xlogin
+            return assembleShowXloginURL(clientId: clientId(from: final) ?? qqAppId)
         } catch {
-            return nil
+            return assembleShowXloginURL(clientId: qqAppId)
         }
+    }
+
+    /// graph oauth2.0/show 内 `Q.ptlogin2()` 等价拼装（无写死 h5sig）
+    static func assembleShowXloginURL(clientId: String) -> URL? {
+        let jump = "https://graph.qq.com/oauth2.0/login_jump"
+        let feedback =
+            "https://support.qq.com/products/77942?customInfo=.appid\(clientId)"
+        var c = URLComponents()
+        c.scheme = "https"
+        c.host = "xui.ptlogin2.qq.com"
+        c.path = "/cgi-bin/xlogin"
+        c.queryItems = [
+            .init(name: "appid", value: "716027609"),
+            .init(name: "daid", value: "383"),
+            .init(name: "style", value: "33"),
+            .init(name: "login_text", value: "登录"),
+            .init(name: "hide_title_bar", value: "1"),
+            .init(name: "hide_border", value: "1"),
+            .init(name: "target", value: "self"),
+            .init(name: "s_url", value: jump),
+            .init(name: "pt_3rd_aid", value: clientId),
+            .init(name: "pt_feedback_link", value: feedback),
+            .init(name: "theme", value: "2"),
+            .init(name: "verify_theme", value: ""),
+        ]
+        return c.url
+    }
+
+    /// 从 show HTML 抠完整 xlogin；失败则按页内 client_id 拼装
+    private static func xloginURL(fromShowHTML html: String, pageURL: URL) -> URL? {
+        let cid = clientId(from: pageURL) ?? qqAppId
+        // 完整绝对地址（少见，但有则直接用）
+        let fullPat = #"https://xui\.ptlogin2\.qq\.com/cgi-bin/xlogin\?[^\s"'<>]+"#
+        if let r = try? NSRegularExpression(pattern: fullPat, options: .caseInsensitive),
+           let m = r.firstMatch(in: html, range: NSRange(html.startIndex..., in: html)),
+           let range = Range(m.range, in: html) {
+            var raw = String(html[range])
+            // 页内常截断到 s_url=，需补全
+            if raw.hasSuffix("s_url=") || raw.hasSuffix("s_url=''") || !raw.contains("pt_3rd_aid") {
+                return assembleShowXloginURL(clientId: cid)
+            }
+            if let u = URL(string: raw), u.path.lowercased().contains("xlogin") {
+                return u
+            }
+        }
+        // 识别 show 页特征脚本后再拼装
+        if html.contains("ptlogin_iframe"), html.contains("/cgi-bin/xlogin") {
+            return assembleShowXloginURL(clientId: cid)
+        }
+        if (pageURL.host ?? "").lowercased().contains("graph.qq.com"),
+           pageURL.path.lowercased().contains("show") {
+            return assembleShowXloginURL(clientId: cid)
+        }
+        return nil
+    }
+
+    private static func clientId(from url: URL) -> String? {
+        URLComponents(url: url, resolvingAgainstBaseURL: false)?
+            .queryItems?
+            .first(where: { $0.name == "client_id" })?
+            .value
     }
 
     /// Android 直唤 `wtlogin?p=`（iOS 一键 **禁止** 用此路径，会「授权失败」；仅作对照保留）
