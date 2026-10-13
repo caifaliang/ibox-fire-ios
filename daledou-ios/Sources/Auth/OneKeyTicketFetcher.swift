@@ -2,13 +2,16 @@ import Foundation
 import UIKit
 import WebKit
 
-/// style=35 xlogin 上取 qrcode，再 `wtloginmqq3?qrcode=` 跳 QQ（竞品 iOS 同款）。
+/// 仅在确认的 xlogin 页取 qrcode；失败分类上报，不在营销页重试。
 @MainActor
 final class OneKeyTicketFetcher: NSObject {
     enum Event {
         case status(String)
         case openedQQ
-        case failed(String)
+        case leftAuthPage
+        case ticketFailed
+        case cannotOpenQQ
+        case timeout
     }
 
     private let onEvent: (Event) -> Void
@@ -36,7 +39,7 @@ final class OneKeyTicketFetcher: NSObject {
         stopped = true
         task?.cancel()
         task = nil
-        QqOneKeyLogin.clearLaunchStamp()
+        // 勿 clearLaunchStamp：回壳 recovering 仍需 launchedQrcode 判定
     }
 
     func markOpenedQQ() {
@@ -49,7 +52,7 @@ final class OneKeyTicketFetcher: NSObject {
             await CookieBridge.restore(QqOneKeyLogin.savedCookies, into: wv)
             _ = await eval(QqOneKeyLogin.jsResumeAfterQQ, in: wv)
             _ = await eval(QqOneKeyLogin.jsKeepPolling, in: wv)
-            onEvent(.status("已回 App，正在完成授权…"))
+            onEvent(.status("已回 App，正在校验会话…"))
         }
     }
 
@@ -58,19 +61,18 @@ final class OneKeyTicketFetcher: NSObject {
         onEvent(.status("一键登录：准备跳转 QQ…"))
 
         var failStreak = 0
-        for _ in 0..<90 {
+        for _ in 0..<60 {
             if stopped || Task.isCancelled { return }
             try? await Task.sleep(nanoseconds: 400_000_000)
 
-            // 掉进 connect「亿万用户」等非 xlogin：立刻停，交给外层拉回
             if !QqOneKeyLogin.isXloginPage(wv.url) {
-                onEvent(.failed("离开登录页"))
+                onEvent(.leftAuthPage)
                 return
             }
 
             let diag = await eval(QqOneKeyLogin.jsPtDiag, in: wv) as? String ?? ""
             if diag != "ready" {
-                onEvent(.status("一键登录：等待登录页就绪…"))
+                onEvent(.status("一键登录：等待授权页就绪…"))
                 continue
             }
 
@@ -93,7 +95,7 @@ final class OneKeyTicketFetcher: NSObject {
                 failStreak += 1
                 _ = await eval(QqOneKeyLogin.jsResetQr, in: wv)
                 if failStreak >= 3 {
-                    onEvent(.failed("取票失败"))
+                    onEvent(.ticketFailed)
                     return
                 }
                 onEvent(.status("取票失败，重试中…"))
@@ -118,14 +120,13 @@ final class OneKeyTicketFetcher: NSObject {
             if ok {
                 lastOpenedQr = qr
                 onEvent(.openedQQ)
-                onEvent(.status("已跳转 QQ，请点「同意」…"))
             } else {
-                onEvent(.failed("无法打开 QQ，请确认已安装"))
+                onEvent(.cannotOpenQQ)
                 return
             }
         }
         if !stopped {
-            onEvent(.failed("一键登录超时，请重试或用扫码"))
+            onEvent(.timeout)
         }
     }
 

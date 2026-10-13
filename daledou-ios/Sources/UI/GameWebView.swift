@@ -191,17 +191,14 @@ struct GameWebView: UIViewRepresentable {
             scheduleCookieCapture(webView)
             if vm.loginMode == .oneKey {
                 if LoginURLs.isConnectMarketing(webView.url) {
-                    // 营销页点「一键登录」会 toast「不支持QQ快速登录」——立刻离开
-                    vm.stopOneKeyFetcher()
-                    vm.bounceOneKeyToLiveXlogin(reason: "离开营销页")
+                    // 营销页 = 不支持快速登录终态，禁止再跳转取票
+                    vm.markOneKeyUnsupportedQuickLogin()
                 } else if QqOneKeyLogin.isXloginPage(webView.url) {
                     vm.attachOneKeyFetcher(to: webView)
-                } else {
-                    // 中间页：停掉错页取票，避免「取票失败，重试中」刷屏
+                } else if vm.oneKeyPhase == .fetchingTicket {
                     vm.stopOneKeyFetcher()
                 }
             }
-            // 「亿万用户已选择」= connect 营销页（URL 有时不像 marketing）
             webView.evaluateJavaScript(LoginURLs.qqLoginProbeJS) { [weak self] result, _ in
                 guard let self else { return }
                 let flag = (result as? String) ?? ""
@@ -210,8 +207,7 @@ struct GameWebView: UIViewRepresentable {
                     guard now - self.lastStuckRecoverAt > 2.5 else { return }
                     if flag == "qq", self.vm.loginMode == .oneKey, !self.vm.session.isLoggedIn {
                         self.lastStuckRecoverAt = now
-                        self.vm.stopOneKeyFetcher()
-                        self.vm.bounceOneKeyToLiveXlogin(reason: "离开营销页")
+                        self.vm.markOneKeyUnsupportedQuickLogin()
                         return
                     }
                     guard self.vm.session.isLoggedIn, flag == "qq" else { return }
@@ -262,24 +258,28 @@ struct GameWebView: UIViewRepresentable {
                 return
             }
 
-            // ② wtlogin：只开 qrcode=（竞品 iOS）；任何 p= → 授权失败，改取票
+            // ② wtlogin：只开 qrcode=；p= 不跟跳（iOS 授权失败），留在 xlogin 取票
             if QqOneKeyLogin.isWtloginScheme(scheme) {
                 decisionHandler(.cancel)
                 Task { @MainActor in
-                    self.vm.loginMode = .oneKey
+                    AppViewModel.logOneKey("wtlogin", AppViewModel.sanitizeURLLog(url))
                     if let ticket = QqOneKeyLogin.qrcodeTicket(fromWtlogin: url) {
+                        self.vm.loginMode = .oneKey
                         if let wv = self.webView {
                             let cookies = await CookieBridge.snapshotQQCookies(from: wv)
                             QqOneKeyLogin.rememberAuthorization(loginURL: wv.url, cookies: cookies)
                         }
                         let ok = QqOneKeyLogin.openWithQrAuthorization(ticket, force: true)
-                        self.vm.statusText = ok ? "已跳转 QQ，请点「同意」…" : "票据无效，请重试"
-                        if ok { self.vm.oneKeyFetcherMarkOpened() }
+                        if ok {
+                            self.vm.oneKeyFetcherMarkOpened()
+                        } else {
+                            self.vm.statusText = "票据无效，请用扫码或 Cookie"
+                        }
                     } else if let wv = self.webView, QqOneKeyLogin.isXloginPage(wv.url) {
-                        self.vm.statusText = "已拦截网页授权，改安全取票…"
                         self.vm.attachOneKeyFetcher(to: wv)
                     } else {
-                        self.vm.bounceOneKeyToLiveXlogin(reason: "拦截网页授权后重进")
+                        // 营销页等发起的 p=：终态停，不循环
+                        self.vm.markOneKeyUnsupportedQuickLogin(reason: "网页快速登录不可用")
                     }
                 }
                 return
@@ -289,7 +289,7 @@ struct GameWebView: UIViewRepresentable {
                 if vm.loginMode == .oneKey, LoginURLs.isConnectMarketing(url) {
                     decisionHandler(.cancel)
                     Task { @MainActor in
-                        self.vm.bounceOneKeyToPhonepk(reason: "离开营销页")
+                        self.vm.markOneKeyUnsupportedQuickLogin()
                     }
                     return
                 }
@@ -340,15 +340,12 @@ struct GameWebView: UIViewRepresentable {
             if QqOneKeyLogin.isWtloginScheme(scheme) {
                 if let ticket = QqOneKeyLogin.qrcodeTicket(fromWtlogin: url) {
                     _ = QqOneKeyLogin.openWithQrAuthorization(ticket, force: true)
-                    Task { @MainActor in
-                        self.vm.loginMode = .oneKey
-                        self.vm.statusText = "已跳转 QQ，请点「同意」…"
-                    }
+                    Task { @MainActor in self.vm.oneKeyFetcherMarkOpened() }
+                } else if let wv = self.webView, QqOneKeyLogin.isXloginPage(wv.url) {
+                    Task { @MainActor in self.vm.attachOneKeyFetcher(to: wv) }
                 } else {
                     Task { @MainActor in
-                        self.vm.loginMode = .oneKey
-                        self.vm.statusText = "已拦截网页授权（p=），改安全取票…"
-                        if let wv = self.webView { self.vm.attachOneKeyFetcher(to: wv) }
+                        self.vm.markOneKeyUnsupportedQuickLogin(reason: "网页快速登录不可用")
                     }
                 }
                 return nil

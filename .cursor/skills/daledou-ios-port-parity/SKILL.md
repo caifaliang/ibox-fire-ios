@@ -57,24 +57,26 @@ Extract from screenshots: color, type size, spacing, radius, animation ms → to
 - **Behavior:** same inputs → compare request sequence, key logs, state transitions.
 - **Perf budget:** memory / jetsam / fps written in the spec.
 
-### 5. Login (Fandian **iOS IPA** 对拍 — current)
+### 5. Login (state machine — current)
 
-实机：竞品也**切不了号**；能点「同意」；回 App 后手动刷新才有 Cookie。
+目标是 **游戏站点 skey 会话**，不是 QQ OAuth access_token。
 
-| Step | Behavior |
-|------|----------|
-| Entry | Clear QQ WK → iPhone UA → `phonepk` |
-| Page | authorize → style=35；藏 `#onekey`（点了走 p= 会授权失败） |
-| Jump QQ | `ptqrshow` → `wtloginmqq3?qrcode=&schemacallback=daledoulogin://` |
-| Return | restore + `qlogin_submit` + **自动刷新 phonepk** 取 Cookie |
-| Non-goals | 切号（iOS 竞品也不行）；Android `p=` |
+| Phase | Behavior |
+|-------|----------|
+| preparing / awaitingAuthPage | Clear → load authorize；脱敏记初始 URL |
+| fetchingTicket | **仅** xlogin 上 ptqrshow；离开 xlogin 停取票 |
+| awaitingQQ | `wtloginmqq3?qrcode=&schemacallback=` |
+| recovering | 回壳校验一次；有效则最多刷新 phonepk **一次** |
+| unsupportedQuickLogin | connect「亿万用户」/「不支持快速登录」→ **终态停**，提示扫码/Cookie |
+| failed | 取票失败/超时 → 终态，提示扫码/Cookie |
 
 | Forbidden | Why |
 |-----------|-----|
-| `wtlogin?p=` | iOS「登录授权失败」 |
-| Desktop UA for one-key | style=33 |
+| phonepk ↔ connect 自动循环 | 死局 |
+| `wtlogin?p=` 当真路径 | iOS 授权失败 |
+| 把 style=35 当成功标准 | 服务端未必允进 |
 
-扫码 + Cookie 粘贴仍为备份。官方动画（Ruffle）勿回退。
+扫码 + Cookie 为正式可用路径。Ruffle 勿动。
 
 ### 6. Evidence habit
 
