@@ -61,13 +61,13 @@ Extract from screenshots: color, type size, spacing, radius, animation ms → to
 
 | Approach | iOS result | Verdict |
 |----------|------------|---------|
-| 写死 `xlogin?h5sig=…` / 过期安卓字面量 `p=` | 「网页申请」授权失败、无切号 | **FORBIDDEN** |
-| **Desktop UA** authorize → show/style=33 扫码框 + 等 `pt.hasInit` | 永久 `no-init`（页内已无该 API） | **FORBIDDEN** |
-| **iPhone UA** authorize → 新鲜 style=35+h5sig → 点「一键登录」→ `wtloginmqq?p=`（live jump）+ `schemacallback=daledoulogin://` | QQ 原生确认可切号；对齐饭点 | **PRIMARY** |
+| 任何 `wtlogin?p=`（含页内「一键登录」、新鲜/过期 h5sig） | 「网页申请使用」→ 授权失败、**无切号** | **FORBIDDEN on iOS**（安卓饭点可用，iOS 不行） |
+| **Desktop UA** authorize → style=33 + 等 `pt.hasInit` | 永久 `no-init` | **FORBIDDEN** |
+| **iPhone UA** authorize → 新鲜 style=35 → **ptqrshow（不依赖 hasInit）** → `wtloginmqq3?qrcode=` + `schemacallback=daledoulogin://` | QQ 原生确认**可切号** | **PRIMARY** |
 | 扫码 `graph show` display=pc | 壳内跟完 | OK backup |
 | 粘贴 Cookie | 总兜底 | OK |
 
-**Primary one-key on iOS:** URLSession with **iPhone UA** on `graph.../authorize` → parse meta/JS for live `xui.../xlogin?style=35&h5sig=…` → load in WK → wait/click `#onekey` → open QQ with **live** `p=` jump (reject stale h5sig) + `schemacallback=daledoulogin://`. Never hardcode h5sig; never use desktop UA for one-key resolve.
+**Primary one-key on iOS:** iPhone UA resolve live `style=35&h5sig` → WK load → user may switch on page → inject `ptqrshow` (no hasInit gate) → open QQ with **qrcode only**. Never open `p=`; never click page「一键登录」.
 
 ### 6. Evidence habit
 

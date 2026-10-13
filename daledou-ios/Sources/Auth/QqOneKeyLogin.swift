@@ -125,13 +125,12 @@ enum QqOneKeyLogin {
     })();
     """
 
-    /// 申请 QR 授权串（严格：对齐饭点，需 pt 已初始化）
+    /// 申请 QR 授权串：不依赖已消失的 pt.hasInit；直接挂 ptui_qrcode_CB + 拉 ptqrshow。
+    /// iOS 必须走 qrcode=（p= 会进「网页申请使用」授权失败且无切号）。
     static let jsRequestQr = """
     (() => {
         if (location.protocol !== 'https:' || !/\\.ptlogin2\\.qq\\.com$/i.test(location.hostname) ||
             location.pathname.indexOf('xlogin') < 0) return 'waiting';
-        if (typeof pt === 'undefined' || !pt.hasInit || !pt.qrcode ||
-            pt.loginUrl !== 'https://ssl.ptlogin2.qq.com/' || typeof pt.qrcode.polling !== 'function') return 'waiting';
         if (window.__dldQrRequested) return window.__dldQrStatus === 'ready' ? 'ready' : 'requested';
         window.__dldQrRequested = true;
         window.__dldQrStatus = 'waiting';
@@ -140,14 +139,21 @@ enum QqOneKeyLogin {
             if (response && response.ec === 0 && typeof response.qrcode === 'string' && response.qrcode.length > 0) {
                 window.__dldQrAuthorization = response.qrcode;
                 window.__dldQrStatus = 'ready';
-                try { pt.qrcode.used = true; pt.qrcode.polling(); } catch (e) {}
+                try {
+                    if (typeof pt !== 'undefined' && pt.qrcode) {
+                        pt.qrcode.used = true;
+                        if (typeof pt.qrcode.polling === 'function') pt.qrcode.polling();
+                    }
+                } catch (e) {}
             } else {
                 window.__dldQrStatus = 'failed';
             }
         };
         try {
-            pt.qrcode.used = true;
-            pt.qrcode.done = false;
+            if (typeof pt !== 'undefined' && pt.qrcode) {
+                pt.qrcode.used = true;
+                pt.qrcode.done = false;
+            }
         } catch (e) {}
         const request = document.createElement('script');
         request.src = 'https://xui.ptlogin2.qq.com/ssl/ptqrshow?s=8&e=0&appid=716027609&type=1' +
@@ -157,24 +163,20 @@ enum QqOneKeyLogin {
             try { request.remove(); } catch (e) {}
             setTimeout(() => {
                 if (window.__dldQrStatus === 'waiting') window.__dldQrStatus = 'failed';
-            }, 1500);
+            }, 2500);
         };
         document.head.appendChild(request);
         return 'requested';
     })();
     """
 
-    /// 诊断 pt 是否可取票（对齐饭点门闩）
+    /// 诊断：仅确认在 xlogin；取票不再要求 hasInit
     static let jsPtDiag = """
     (() => {
         if (location.protocol !== 'https:' || !/\\.ptlogin2\\.qq\\.com$/i.test(location.hostname) ||
             location.pathname.indexOf('xlogin') < 0) {
             return 'page:' + location.hostname + location.pathname;
         }
-        if (typeof pt === 'undefined') return 'no-pt';
-        if (!pt.hasInit) return 'no-init';
-        if (!pt.qrcode || typeof pt.qrcode.polling !== 'function') return 'no-qrcode';
-        if (pt.loginUrl !== 'https://ssl.ptlogin2.qq.com/') return 'bad-loginUrl';
         return 'ready';
     })();
     """
@@ -194,16 +196,18 @@ enum QqOneKeyLogin {
     })();
     """
 
-    /// 页内提示：优先切号，勿去点会失败的网页授权
+    /// 页内提示 + 藏起网页「一键登录」（点了会进 iOS 授权失败页）
     static let jsOneKeyPageHint = """
     (() => {
+        var b = document.getElementById('onekey');
+        if (b) { b.style.display = 'none'; b.style.pointerEvents = 'none'; }
         if (document.getElementById('dld-onekey-hint')) return 'ok';
         var bar = document.createElement('div');
         bar.id = 'dld-onekey-hint';
         bar.setAttribute('style',
             'position:fixed;left:0;right:0;top:0;z-index:2147483647;padding:10px 12px;' +
             'background:#0b57d0;color:#fff;font:14px/1.4 -apple-system,sans-serif;text-align:center;');
-        bar.textContent = '一键登录：可先切换账号，随后自动点「一键登录」跳转 QQ 确认';
+        bar.textContent = '一键登录：请在本页切换账号；随后自动跳转 QQ 原生确认（可切号）';
         document.documentElement.appendChild(bar);
         document.documentElement.style.scrollPaddingTop = '48px';
         return 'ok';

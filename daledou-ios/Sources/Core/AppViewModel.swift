@@ -61,7 +61,7 @@ final class AppViewModel: ObservableObject {
         }
     }
 
-    /// 一键登录：手机 UA 解析带新鲜 h5sig 的 style=35 → 壳内切号 → 点「一键登录」→ wtlogin?p= 跳 QQ。
+    /// 一键登录：手机 UA → 新鲜 style=35 → 壳内切号 → ptqrshow 取 qrcode → 跳 QQ（禁止 p=）。
     func openOneKeyLogin() {
         loginMode = .oneKey
         preferDesktopUA = false
@@ -76,7 +76,7 @@ final class AppViewModel: ObservableObject {
             let live = await LoginURLs.resolveLiveXloginURL()
             guard loginMode == .oneKey else { return }
             if let live {
-                statusText = "一键登录：请先切换账号，随后自动跳 QQ…"
+                statusText = "一键登录：请先在本页切号，随后自动跳 QQ…"
                 pendingURL = live
             } else {
                 statusText = "解析失败，请用扫码登陆或 Cookie"

@@ -252,29 +252,24 @@ struct GameWebView: UIViewRepresentable {
                 return
             }
 
-            // ② wtlogin / mqq：qrcode 或新鲜 p= jump（饭点主路径）；拒绝过期字面量 h5sig
+            // ② wtlogin / mqq：iOS **只允许 qrcode=**。任何 p=（含页内「一键登录」）→「网页申请使用」授权失败无切号
             if QqOneKeyLogin.isWtloginScheme(scheme) {
                 decisionHandler(.cancel)
                 Task { @MainActor in
-                    if let wv = self.webView {
-                        let cookies = await CookieBridge.snapshotQQCookies(from: wv)
-                        QqOneKeyLogin.rememberAuthorization(loginURL: wv.url, cookies: cookies)
-                    }
                     self.vm.loginMode = .oneKey
                     if let ticket = QqOneKeyLogin.qrcodeTicket(fromWtlogin: url) {
+                        if let wv = self.webView {
+                            let cookies = await CookieBridge.snapshotQQCookies(from: wv)
+                            QqOneKeyLogin.rememberAuthorization(loginURL: wv.url, cookies: cookies)
+                        }
                         let ok = QqOneKeyLogin.openWithQrAuthorization(ticket, force: true)
-                        self.vm.statusText = ok ? "已跳转 QQ，请确认…" : "票据无效，请重试一键登录"
+                        self.vm.statusText = ok ? "已跳转 QQ，请确认（可切号）…" : "票据无效，请重试"
                         if ok { self.vm.oneKeyFetcherMarkOpened() }
-                    } else if QqOneKeyLogin.openWithLivePJump(fromWtlogin: url) {
-                        self.vm.statusText = "已跳转 QQ，请确认登录（可切号）…"
-                        self.vm.oneKeyFetcherMarkOpened()
-                    } else if QqOneKeyLogin.isBrokenPageOneClick(url) {
-                        self.vm.statusText = "已拦截过期授权链，请重新点一键登录…"
+                    } else {
+                        self.vm.statusText = "已拦截网页授权（会失败无切号），改走安全取票…"
                         if let wv = self.webView {
                             self.vm.attachOneKeyFetcher(to: wv)
                         }
-                    } else {
-                        self.vm.statusText = "未能打开 QQ，请点页内「一键登录」重试"
                     }
                 }
                 return
