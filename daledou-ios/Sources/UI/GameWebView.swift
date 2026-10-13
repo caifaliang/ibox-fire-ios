@@ -228,14 +228,14 @@ struct GameWebView: UIViewRepresentable {
                 return
             }
 
-            // ② wtlogin / mqq：唤起 QQ App，schemacallback 回壳（对齐竞品一键登录）
+            // ② wtlogin / mqq：改写成 wtloginmqq3?qrcode=…&schemacallback=daledoulogin:// 再唤 QQ
             if QqOneKeyLogin.isWtloginScheme(scheme) {
                 decisionHandler(.cancel)
                 let ok = QqOneKeyLogin.openInQQ(url)
                 Task { @MainActor in
                     self.vm.loginMode = .oneKey
                     self.vm.statusText = ok
-                        ? "已打开手机 QQ，请确认登录；完成后自动回壳…"
+                        ? "已打开手机 QQ，请确认；完成后应回到本 App（不要用浏览器）…"
                         : "无法唤起 QQ，请安装手机 QQ 或改用扫码"
                 }
                 return
@@ -278,7 +278,7 @@ struct GameWebView: UIViewRepresentable {
                 _ = QqOneKeyLogin.openInQQ(url)
                 Task { @MainActor in
                     self.vm.loginMode = .oneKey
-                    self.vm.statusText = "已打开手机 QQ，请确认登录…"
+                    self.vm.statusText = "已打开手机 QQ，请确认；完成后应回到本 App…"
                 }
                 return nil
             }
