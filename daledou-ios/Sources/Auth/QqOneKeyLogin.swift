@@ -139,45 +139,18 @@ enum QqOneKeyLogin {
     })();
     """
 
-    /// 松弛取票：不要求 pt.hasInit（隐藏 WebView 里 pt 常晚于 onload）
-    static let jsRequestQrLoose = """
+    /// 诊断 pt 是否可取票（对齐饭点门闩）
+    static let jsPtDiag = """
     (() => {
-        if (window.__dldQrRequested) return window.__dldQrStatus === 'ready' ? 'ready' : 'requested';
-        window.__dldQrRequested = true;
-        window.__dldQrStatus = 'waiting';
-        window.__dldQrAuthorization = '';
-        window.ptui_qrcode_CB = response => {
-            if (response && response.ec === 0 && typeof response.qrcode === 'string' && response.qrcode.length > 0) {
-                window.__dldQrAuthorization = response.qrcode;
-                window.__dldQrStatus = 'ready';
-                try {
-                    if (typeof pt !== 'undefined' && pt.qrcode && typeof pt.qrcode.polling === 'function') {
-                        pt.qrcode.used = true;
-                        pt.qrcode.polling();
-                    }
-                } catch (e) {}
-            } else {
-                window.__dldQrStatus = 'failed';
-            }
-        };
-        try {
-            if (typeof pt !== 'undefined' && pt.qrcode) {
-                pt.qrcode.used = true;
-                pt.qrcode.done = false;
-            }
-        } catch (e) {}
-        const request = document.createElement('script');
-        request.src = 'https://xui.ptlogin2.qq.com/ssl/ptqrshow?s=8&e=0&appid=716027609&type=1' +
-            '&u1=https%3A%2F%2Fconnect.qq.com&daid=383&pt_3rd_aid=102067279&t=' + Math.random();
-        request.onerror = () => { window.__dldQrStatus = 'failed'; try { request.remove(); } catch (e) {} };
-        request.onload = () => {
-            try { request.remove(); } catch (e) {}
-            setTimeout(() => {
-                if (window.__dldQrStatus === 'waiting') window.__dldQrStatus = 'failed';
-            }, 2000);
-        };
-        (document.head || document.documentElement).appendChild(request);
-        return 'requested';
+        if (location.protocol !== 'https:' || !/\\.ptlogin2\\.qq\\.com$/i.test(location.hostname) ||
+            location.pathname.indexOf('xlogin') < 0) {
+            return 'page:' + location.hostname + location.pathname;
+        }
+        if (typeof pt === 'undefined') return 'no-pt';
+        if (!pt.hasInit) return 'no-init';
+        if (!pt.qrcode || typeof pt.qrcode.polling !== 'function') return 'no-qrcode';
+        if (pt.loginUrl !== 'https://ssl.ptlogin2.qq.com/') return 'bad-loginUrl';
+        return 'ready';
     })();
     """
 
@@ -196,15 +169,19 @@ enum QqOneKeyLogin {
     })();
     """
 
-    static let jsPollStatusLoose = """
+    /// 页内提示：优先切号，勿去点会失败的网页授权
+    static let jsOneKeyPageHint = """
     (() => {
-        var hasSig = document.cookie.split(';').some(function(v){ return v.trim().indexOf('qrsig=')===0; });
-        return JSON.stringify({
-            status: window.__dldQrStatus || 'waiting',
-            url: window.__dldQrAuthorization || '',
-            qrsig: hasSig,
-            page: location.hostname + location.pathname
-        });
+        if (document.getElementById('dld-onekey-hint')) return 'ok';
+        var bar = document.createElement('div');
+        bar.id = 'dld-onekey-hint';
+        bar.setAttribute('style',
+            'position:fixed;left:0;right:0;top:0;z-index:2147483647;padding:10px 12px;' +
+            'background:#0b57d0;color:#fff;font:14px/1.4 -apple-system,sans-serif;text-align:center;');
+        bar.textContent = '一键登录：请先点本页「切换账号」选号；选好后等自动跳转 QQ 确认（不要点网页授权失败页）';
+        document.documentElement.appendChild(bar);
+        document.documentElement.style.scrollPaddingTop = '48px';
+        return 'ok';
     })();
     """
 
@@ -242,35 +219,23 @@ enum QqOneKeyLogin {
     })();
     """
 
-    /// 壳内登录提示：切号 / 扫页内码（不跳转 QQ 授权页）
-    static let jsShellLoginHint = """
-    (() => {
-        if (document.getElementById('dld-shell-login-hint')) return 'ok';
-        var bar = document.createElement('div');
-        bar.id = 'dld-shell-login-hint';
-        bar.setAttribute('style',
-            'position:fixed;left:0;right:0;top:0;z-index:2147483647;padding:10px 12px;' +
-            'background:#1a1a1a;color:#fff;font:14px/1.4 -apple-system,sans-serif;text-align:center;');
-        bar.textContent = '请在本页点「切换账号」，或用手机 QQ 扫描本页二维码（勿跳到 QQ 授权页）';
-        document.documentElement.appendChild(bar);
-        document.documentElement.style.scrollPaddingTop = '48px';
-        return 'ok';
-    })();
-    """
-
     static func launchURL(qrAuthorization: String) -> URL? {
-        // 手工拼 query，避免 URLQueryItem 对已编码票据二次编码
-        let cb = callbackURLString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? callbackURLString
+        // 饭点：qrcode= 原样拼接；schemacallback 编码。字母数字票据勿二次编码。
+        let ticket = qrAuthorization.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !ticket.isEmpty else { return nil }
+        let cb = callbackURLString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)
+            ?? "daledoulogin://"
         let qrEnc: String
-        if qrAuthorization.removingPercentEncoding != qrAuthorization {
-            // 已是百分号编码，原样使用
-            qrEnc = qrAuthorization.replacingOccurrences(of: "&", with: "%26")
+        if ticket.rangeOfCharacter(from: CharacterSet.alphanumerics.inverted) == nil {
+            qrEnc = ticket
+        } else if ticket.removingPercentEncoding != ticket {
+            qrEnc = ticket.replacingOccurrences(of: "&", with: "%26")
         } else {
-            qrEnc = qrAuthorization.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)
-                ?? qrAuthorization
+            qrEnc = ticket.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ticket
         }
         let s = "wtloginmqq3://ptlogin/qlogin?qrcode=\(qrEnc)&schemacallback=\(cb)"
-        return URL(string: s)
+        if let u = URL(string: s) { return u }
+        return NSURL(string: s) as URL?
     }
 
     static func buildLaunchURL(from raw: URL) -> URL? {

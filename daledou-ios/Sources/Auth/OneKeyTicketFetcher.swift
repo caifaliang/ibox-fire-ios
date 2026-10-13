@@ -2,231 +2,123 @@ import Foundation
 import UIKit
 import WebKit
 
-/// 一键登录取票器：隐藏 WKWebView 跑 graph→xlogin→ptqrshow，前台绝不展示二维码页。
+/// 一键辅助：在**已有** WKWebView（主壳）上等到 pt 就绪后取票并跳 QQ。
+/// 主壳需已打开 graph authorize → 新鲜 xlogin（用户可在页内点「切换账号」）。
 @MainActor
-final class OneKeyTicketFetcher: NSObject, WKNavigationDelegate, WKUIDelegate {
+final class OneKeyTicketFetcher: NSObject {
     enum Event {
         case status(String)
         case openedQQ
-        case loggedIn(cookieHeader: String)
         case failed(String)
     }
 
     private let onEvent: (Event) -> Void
-    private var webView: WKWebView?
+    private weak var webView: WKWebView?
     private var task: Task<Void, Never>?
     private var lastOpenedQr = ""
-    private var finished = false
-    private var lastLoadedTarget = ""
-    private var navContinuations: [CheckedContinuation<Void, Never>] = []
+    private var stopped = false
 
-    init(onEvent: @escaping (Event) -> Void) {
+    init(webView: WKWebView, onEvent: @escaping (Event) -> Void) {
+        self.webView = webView
         self.onEvent = onEvent
         super.init()
     }
 
-    var loginWebView: WKWebView? { webView }
-
     func start() {
         cancel()
-        finished = false
+        stopped = false
         lastOpenedQr = ""
-        lastLoadedTarget = ""
-
-        let cfg = WKWebViewConfiguration()
-        cfg.defaultWebpagePreferences.allowsContentJavaScript = true
-        cfg.websiteDataStore = .default()
-        let wv = WKWebView(frame: CGRect(x: 0, y: 0, width: 390, height: 844), configuration: cfg)
-        wv.navigationDelegate = self
-        wv.uiDelegate = self
-        wv.customUserAgent = LoginURLs.desktopUA
-        webView = wv
-
-        onEvent(.status("一键登录：后台准备授权…"))
-        guard let url = URL(string: LoginURLs.oneKeyLogin) else {
-            onEvent(.failed("授权入口无效"))
-            return
-        }
         task = Task { @MainActor [weak self] in
-            await self?.loadAndWait(url)
-            await self?.runPipeline()
+            await self?.run()
         }
     }
 
     func cancel() {
+        stopped = true
         task?.cancel()
         task = nil
-        finishNavWaiters()
-        webView?.stopLoading()
-        webView?.navigationDelegate = nil
-        webView?.uiDelegate = nil
-        webView = nil
         QqOneKeyLogin.clearLaunchStamp()
     }
 
-    /// QQ schemacallback / 回前台：在隐藏页 resume
     func resumeAfterQQ() {
-        guard let wv = webView, !finished else { return }
+        guard let wv = webView, !stopped else { return }
         Task { @MainActor in
             await CookieBridge.restore(QqOneKeyLogin.savedCookies, into: wv)
             _ = await eval(QqOneKeyLogin.jsResumeAfterQQ, in: wv)
             _ = await eval(QqOneKeyLogin.jsKeepPolling, in: wv)
             onEvent(.status("已回 App，正在写入会话…"))
-            for _ in 0..<24 {
-                guard !Task.isCancelled, !finished else { return }
-                let header = await CookieBridge.waitForSkey(from: wv, attempts: 2, gapMs: 300)
-                if LoginURLs.hasRealSkey(header) {
-                    finished = true
-                    onEvent(.loggedIn(cookieHeader: header))
-                    return
-                }
-                try? await Task.sleep(nanoseconds: 400_000_000)
-            }
         }
     }
 
-    private func runPipeline() async {
+    private func run() async {
         guard let wv = webView else { return }
-        for round in 0..<150 {
-            guard !Task.isCancelled, !finished else { return }
-            let url = wv.url
-            let hostPath = "\(url?.host ?? "?")\(url?.path ?? "")"
+        onEvent(.status("一键登录：等待登录页就绪（可先点「切换账号」）…"))
 
-            if let url, LoginURLs.isOauthLanding(url), LoginURLs.oauthCode(from: url) == nil {
-                onEvent(.status("一键登录：重新进入授权…"))
-                await loadAndWait(URL(string: LoginURLs.oneKeyLogin)!)
+        for round in 0..<100 {
+            guard !Task.isCancelled, !stopped else { return }
+
+            // 等 pt 真正初始化（饭点严格条件）
+            let diag = await eval(QqOneKeyLogin.jsPtDiag, in: wv) as? String ?? ""
+            if diag != "ready" {
+                if round % 4 == 0 {
+                    onEvent(.status("一键登录：等待脚本 \(diag.isEmpty ? "…" : diag)（可切号）"))
+                }
+                // graph 页尝试点进 xlogin / 一键
+                if QqOneKeyLogin.isGraphOAuthPage(wv.url) {
+                    if let target = await eval(QqOneKeyLogin.jsFindLoginTarget, in: wv) as? String,
+                       let u = URL(string: target), u.host?.contains("ptlogin") == true {
+                        wv.load(URLRequest(url: u))
+                    } else {
+                        _ = await eval(QqOneKeyLogin.jsClickOneKeyButton, in: wv)
+                    }
+                }
+                try? await Task.sleep(nanoseconds: 400_000_000)
                 continue
             }
 
-            // 已在 xlogin / ptlogin：直接取票（不依赖 pt.hasInit）
-            if isLoginShell(url) {
-                onEvent(.status("一键登录：生成授权串…(\(round))"))
+            onEvent(.status("一键登录：生成授权并跳转 QQ…"))
+            if lastOpenedQr.isEmpty || QqOneKeyLogin.qrLikelyExpired {
                 if QqOneKeyLogin.qrLikelyExpired {
                     _ = await eval(QqOneKeyLogin.jsResetQr, in: wv)
-                    QqOneKeyLogin.clearLaunchStamp()
                     lastOpenedQr = ""
                 }
-                _ = await eval(QqOneKeyLogin.jsRequestQrLoose, in: wv)
-                try? await Task.sleep(nanoseconds: 400_000_000)
+                _ = await eval(QqOneKeyLogin.jsRequestQr, in: wv)
+            }
 
-                if let qr = await pollQr(in: wv), !qr.isEmpty {
-                    if qr == lastOpenedQr, !QqOneKeyLogin.qrLikelyExpired {
-                        _ = await eval(QqOneKeyLogin.jsKeepPolling, in: wv)
-                        let header = await CookieBridge.readCookieHeader(from: wv)
-                        if LoginURLs.hasRealSkey(header) {
-                            finished = true
-                            onEvent(.loggedIn(cookieHeader: header))
-                            return
-                        }
-                        continue
-                    }
-                    lastOpenedQr = qr
-                    let cookies = await CookieBridge.snapshotQQCookies(from: wv)
-                    QqOneKeyLogin.rememberAuthorization(loginURL: wv.url, cookies: cookies)
-                    let ok = QqOneKeyLogin.openWithQrAuthorization(qr, force: true)
-                    if ok {
-                        onEvent(.openedQQ)
-                        onEvent(.status("已跳转 QQ，请在 QQ 内切换账号并确认…"))
-                    } else {
-                        onEvent(.status("无法打开 QQ，请确认已安装手机 QQ"))
-                    }
+            try? await Task.sleep(nanoseconds: 450_000_000)
+
+            guard let raw = await eval(QqOneKeyLogin.jsPollStatus, in: wv) as? String,
+                  let data = raw.data(using: .utf8),
+                  let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let status = obj["status"] as? String else { continue }
+
+            if status == "failed" {
+                _ = await eval(QqOneKeyLogin.jsResetQr, in: wv)
+                lastOpenedQr = ""
+                onEvent(.status("取票失败，重试中（仍可页内切号）…"))
+                continue
+            }
+
+            if status == "ready", let qr = obj["url"] as? String, !qr.isEmpty {
+                if qr == lastOpenedQr, !QqOneKeyLogin.qrLikelyExpired {
+                    _ = await eval(QqOneKeyLogin.jsKeepPolling, in: wv)
                     continue
                 }
-                continue
-            }
-
-            if QqOneKeyLogin.isGraphOAuthPage(url) {
-                onEvent(.status("一键登录：解析授权页…"))
-                if let target = await eval(QqOneKeyLogin.jsFindLoginTarget, in: wv) as? String,
-                   !target.isEmpty,
-                   let turl = URL(string: target) {
-                    if QqOneKeyLogin.isWtloginScheme(turl.scheme) {
-                        await openQQ(with: turl, from: wv)
-                        continue
-                    }
-                    if turl.host?.contains("ptlogin") == true {
-                        if target != lastLoadedTarget {
-                            lastLoadedTarget = target
-                            onEvent(.status("一键登录：进入登录页…"))
-                            await loadAndWait(turl)
-                        }
-                        continue
-                    }
+                lastOpenedQr = qr
+                let cookies = await CookieBridge.snapshotQQCookies(from: wv)
+                QqOneKeyLogin.rememberAuthorization(loginURL: wv.url, cookies: cookies)
+                let ok = QqOneKeyLogin.openWithQrAuthorization(qr, force: true)
+                if ok {
+                    onEvent(.openedQQ)
+                    onEvent(.status("已跳转 QQ；若 QQ 提示失败，请回本页用「切换账号」"))
+                    // 跳转成功后继续 keep-alive，等回壳
+                } else {
+                    onEvent(.status("未能打开 QQ，请在本页切换账号或扫码"))
                 }
-                _ = await eval(QqOneKeyLogin.jsClickOneKeyButton, in: wv)
-                // 仍停在 graph：也试松弛取票（少数页顶层就有 pt）
-                _ = await eval(QqOneKeyLogin.jsRequestQrLoose, in: wv)
-                if let qr = await pollQr(in: wv), !qr.isEmpty {
-                    lastOpenedQr = qr
-                    let cookies = await CookieBridge.snapshotQQCookies(from: wv)
-                    QqOneKeyLogin.rememberAuthorization(loginURL: wv.url, cookies: cookies)
-                    if QqOneKeyLogin.openWithQrAuthorization(qr, force: true) {
-                        onEvent(.openedQQ)
-                        onEvent(.status("已跳转 QQ，请在 QQ 内切换账号并确认…"))
-                    }
-                }
-                try? await Task.sleep(nanoseconds: 500_000_000)
-                continue
-            }
-
-            onEvent(.status("一键登录：等待跳转… \(hostPath)"))
-            try? await Task.sleep(nanoseconds: 500_000_000)
-        }
-        if !finished {
-            onEvent(.failed("一键登录超时，请重试或改用扫码/Cookie"))
-        }
-    }
-
-    private func isLoginShell(_ url: URL?) -> Bool {
-        guard let u = url, let host = u.host?.lowercased() else { return false }
-        if host.contains("ptlogin2.qq.com") { return true }
-        if host.contains("ui.ptlogin2") { return true }
-        return QqOneKeyLogin.isXloginPage(u)
-    }
-
-    private func pollQr(in wv: WKWebView) async -> String? {
-        guard let raw = await eval(QqOneKeyLogin.jsPollStatusLoose, in: wv) as? String,
-              let data = raw.data(using: .utf8),
-              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let status = obj["status"] as? String else { return nil }
-        if status == "failed" {
-            _ = await eval(QqOneKeyLogin.jsResetQr, in: wv)
-            onEvent(.status("授权串失败，重试…"))
-            return nil
-        }
-        if status == "ready", let qr = obj["url"] as? String, !qr.isEmpty {
-            return qr
-        }
-        return nil
-    }
-
-    private func loadAndWait(_ url: URL) async {
-        guard let wv = webView else { return }
-        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
-            navContinuations.append(cont)
-            wv.load(URLRequest(url: url))
-            // 兜底：最多等 8s
-            Task { @MainActor in
-                try? await Task.sleep(nanoseconds: 8_000_000_000)
-                self.finishNavWaiters()
             }
         }
-        try? await Task.sleep(nanoseconds: 250_000_000)
-    }
-
-    private func finishNavWaiters() {
-        let list = navContinuations
-        navContinuations.removeAll()
-        list.forEach { $0.resume() }
-    }
-
-    private func openQQ(with url: URL, from wv: WKWebView) async {
-        let cookies = await CookieBridge.snapshotQQCookies(from: wv)
-        QqOneKeyLogin.rememberAuthorization(loginURL: wv.url, cookies: cookies)
-        let ok = QqOneKeyLogin.openInQQ(url)
-        if ok {
-            onEvent(.openedQQ)
-            onEvent(.status("已跳转 QQ，请在 QQ 内切换账号并确认…"))
+        if !stopped {
+            onEvent(.failed("未自动跳转 QQ。请在本页点「切换账号」完成登录，或用扫码/Cookie"))
         }
     }
 
@@ -236,60 +128,5 @@ final class OneKeyTicketFetcher: NSObject, WKNavigationDelegate, WKUIDelegate {
                 cont.resume(returning: result)
             }
         }
-    }
-
-    // MARK: - WKNavigationDelegate
-
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        finishNavWaiters()
-    }
-
-    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-        finishNavWaiters()
-    }
-
-    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-        finishNavWaiters()
-    }
-
-    func webView(
-        _ webView: WKWebView,
-        decidePolicyFor navigationAction: WKNavigationAction,
-        decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
-    ) {
-        guard let url = navigationAction.request.url else {
-            decisionHandler(.allow)
-            return
-        }
-        let scheme = (url.scheme ?? "").lowercased()
-        if QqOneKeyLogin.isWtloginScheme(scheme) {
-            decisionHandler(.cancel)
-            Task { @MainActor in
-                await self.openQQ(with: url, from: webView)
-            }
-            return
-        }
-        if LoginURLs.isCallbackScheme(scheme) {
-            decisionHandler(.cancel)
-            resumeAfterQQ()
-            return
-        }
-        decisionHandler(.allow)
-    }
-
-    func webView(
-        _ webView: WKWebView,
-        createWebViewWith configuration: WKWebViewConfiguration,
-        for navigationAction: WKNavigationAction,
-        windowFeatures: WKWindowFeatures
-    ) -> WKWebView? {
-        if let url = navigationAction.request.url {
-            if QqOneKeyLogin.isWtloginScheme(url.scheme) {
-                Task { @MainActor in await self.openQQ(with: url, from: webView) }
-            } else if url.scheme == "http" || url.scheme == "https" {
-                webView.load(URLRequest(url: url))
-            }
-        }
-        return nil
     }
 }
