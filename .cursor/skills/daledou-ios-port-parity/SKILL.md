@@ -61,15 +61,13 @@ Extract from screenshots: color, type size, spacing, radius, animation ms → to
 
 | Approach | iOS result | Verdict |
 |----------|------------|---------|
-| `graph.oauth` **直接唤 QQ / 页内 p=** | 「网页申请使用」授权失败、无切号 | **FORBIDDEN** |
-| 写死 `xlogin?h5sig=…` 入口 | 授权失败、无切号 | **FORBIDDEN**（饭点无 h5sig） |
-| Page `wtlogin?p=` → QQ | 同上或丢 Safari | **FORBIDDEN** as primary |
-| **Macintosh UA + `graph.../authorize` → 新鲜 xlogin → ptqrshow → `wtloginmqq3?qrcode=`** | QQ 原生确认可切号；回壳 restore Cookie + qlogin_submit | **PRIMARY（一键，对齐饭点）** |
-| Desktop UA xlogin 留在壳内扫页内码 | 不跳 QQ | 兜底 / 调试 |
+| 写死 `xlogin?h5sig=…` / 过期安卓字面量 `p=` | 「网页申请」授权失败、无切号 | **FORBIDDEN** |
+| **Desktop UA** authorize → show/style=33 扫码框 + 等 `pt.hasInit` | 永久 `no-init`（页内已无该 API） | **FORBIDDEN** |
+| **iPhone UA** authorize → 新鲜 style=35+h5sig → 点「一键登录」→ `wtloginmqq?p=`（live jump）+ `schemacallback=daledoulogin://` | QQ 原生确认可切号；对齐饭点 | **PRIMARY** |
 | 扫码 `graph show` display=pc | 壳内跟完 | OK backup |
 | 粘贴 Cookie | 总兜底 | OK |
 
-**Primary one-key on iOS:** open `oneKeyLogin`=`graph.../authorize` (Macintosh UA) → land on live xlogin → ptqrshow → remember Cookie → `open` QQ with `qrcode` + `schemacallback=daledoulogin://` → restore + resume. Never hardcode xlogin h5sig; never open Android `p=` jump.
+**Primary one-key on iOS:** URLSession with **iPhone UA** on `graph.../authorize` → parse meta/JS for live `xui.../xlogin?style=35&h5sig=…` → load in WK → wait/click `#onekey` → open QQ with **live** `p=` jump (reject stale h5sig) + `schemacallback=daledoulogin://`. Never hardcode h5sig; never use desktop UA for one-key resolve.
 
 ### 6. Evidence habit
 

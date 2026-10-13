@@ -25,9 +25,13 @@ enum LoginURLs {
     /// 兼容旧名
     static var xloginHome: String { oneKeyLogin }
 
-    /// 用桌面 UA 跟随 authorize → graph/show，从页面脚本拼出新鲜 xlogin（不经 WK，避免「APP网页申请」）
-    /// 实测：authorize 302 到 show，xlogin 在 iframe 里由 JS 拼装，最终 URL 不是 xlogin。
+    /// 手机 UA 拉 authorize → HTML 里带 **新鲜 h5sig** 的 style=35 xlogin（饭点/安卓一键同源）。
+    /// 禁止用桌面 UA：会 302 到 show/style=33 扫码框，页内已无 `pt.hasInit`，会永久 no-init。
     static func resolveLiveXloginURL() async -> URL? {
+        if let mobile = await resolveMobileAuthorizeXlogin() {
+            return mobile
+        }
+        // 兜底：桌面 show 拼装（仅扫码框，无「一键登录」按钮）
         guard let start = URL(string: oneKeyLogin) else { return nil }
         var req = URLRequest(url: start)
         req.setValue(desktopUA, forHTTPHeaderField: "User-Agent")
@@ -47,11 +51,73 @@ enum LoginURLs {
             if let parsed = xloginURL(fromShowHTML: html, pageURL: final) {
                 return parsed
             }
-            // show 页配方固定：即使正则漏了也能拼出可用 xlogin
             return assembleShowXloginURL(clientId: clientId(from: final) ?? qqAppId)
         } catch {
             return assembleShowXloginURL(clientId: qqAppId)
         }
+    }
+
+    /// iPhone UA：authorize 不 HTTP 跳转，而是 meta/JS 指向带 time+h5sig 的 style=35 xlogin
+    private static func resolveMobileAuthorizeXlogin() async -> URL? {
+        guard let start = URL(string: oneKeyLogin) else { return nil }
+        var req = URLRequest(url: start)
+        req.setValue(iphoneUA, forHTTPHeaderField: "User-Agent")
+        req.setValue("text/html,application/xhtml+xml", forHTTPHeaderField: "Accept")
+        req.httpMethod = "GET"
+        do {
+            let (data, resp) = try await URLSession.shared.data(for: req)
+            if let final = resp.url,
+               (final.host ?? "").lowercased().contains("ptlogin2.qq.com"),
+               final.path.lowercased().contains("xlogin"),
+               final.absoluteString.contains("style=35") {
+                return final
+            }
+            let html = String(data: data, encoding: .utf8)
+                ?? String(data: data, encoding: .isoLatin1)
+                ?? ""
+            return extractXloginURL(fromAuthorizeHTML: html)
+        } catch {
+            return nil
+        }
+    }
+
+    /// 从 authorize 中间页抠 xlogin（支持 `\x3A`、`&#61;`）
+    static func extractXloginURL(fromAuthorizeHTML html: String) -> URL? {
+        var text = html
+            .replacingOccurrences(of: "&#61;", with: "=")
+            .replacingOccurrences(of: "&amp;", with: "&")
+        text = decodeJSHexEscapes(text)
+        let pat = #"https://xui\.ptlogin2\.qq\.com/cgi-bin/xlogin\?[^\s\"'<>]+"#
+        guard let r = try? NSRegularExpression(pattern: pat, options: .caseInsensitive) else { return nil }
+        let ns = NSRange(text.startIndex..., in: text)
+        let matches = r.matches(in: text, range: ns)
+        // 优先 style=35 + h5sig（一键）；否则任意 xlogin
+        var fallback: URL?
+        for m in matches {
+            guard let range = Range(m.range, in: text) else { continue }
+            var raw = String(text[range])
+            if raw.hasSuffix("\\") { raw = String(raw.dropLast()) }
+            guard let u = URL(string: raw), u.path.lowercased().contains("xlogin") else { continue }
+            let s = u.absoluteString
+            if s.contains("style=35"), s.contains("h5sig") {
+                return u
+            }
+            if fallback == nil { fallback = u }
+        }
+        return fallback
+    }
+
+    private static func decodeJSHexEscapes(_ s: String) -> String {
+        guard let r = try? NSRegularExpression(pattern: #"\\x([0-9A-Fa-f]{2})"#) else { return s }
+        let ns = NSMutableString(string: s)
+        let matches = r.matches(in: s, range: NSRange(location: 0, length: ns.length)).reversed()
+        for m in matches {
+            guard m.numberOfRanges > 1 else { continue }
+            let hex = ns.substring(with: m.range(at: 1))
+            guard let val = UInt32(hex, radix: 16), let scalar = UnicodeScalar(val) else { continue }
+            ns.replaceCharacters(in: m.range, with: String(Character(scalar)))
+        }
+        return ns as String
     }
 
     /// graph oauth2.0/show 内 `Q.ptlogin2()` 等价拼装（无写死 h5sig）
@@ -139,6 +205,11 @@ enum LoginURLs {
     /// 饭点二进制字面量（勿加减字段）
     static let desktopUA =
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120 Safari/537.36"
+
+    /// 一键登录解析/壳内加载用：手机 UA 才会下发带新鲜 h5sig 的 style=35
+    static let iphoneUA =
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 "
+            + "(KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
 
     static let waitingHTML = """
     <!doctype html><html><head><meta charset="utf-8"/>

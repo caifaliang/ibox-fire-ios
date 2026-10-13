@@ -178,7 +178,12 @@ struct GameWebView: UIViewRepresentable {
         init(vm: AppViewModel) { self.vm = vm }
 
         func applyUA(_ webView: WKWebView, desktop: Bool) {
-            webView.customUserAgent = desktop ? LoginURLs.desktopUA : defaultUA
+            // 一键必须手机 UA：桌面 UA 会把 authorize 赶到无「一键登录」的扫码框
+            if vm.loginMode == .oneKey {
+                webView.customUserAgent = LoginURLs.iphoneUA
+            } else {
+                webView.customUserAgent = desktop ? LoginURLs.desktopUA : defaultUA
+            }
         }
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
@@ -247,28 +252,29 @@ struct GameWebView: UIViewRepresentable {
                 return
             }
 
-            // ② wtlogin / mqq：只允许合法 qrcode；p= / 网页授权一律不打开（否则「登录授权失败」）
+            // ② wtlogin / mqq：qrcode 或新鲜 p= jump（饭点主路径）；拒绝过期字面量 h5sig
             if QqOneKeyLogin.isWtloginScheme(scheme) {
                 decisionHandler(.cancel)
-                if let ticket = QqOneKeyLogin.qrcodeTicket(fromWtlogin: url) {
-                    Task { @MainActor in
-                        if let wv = self.webView {
-                            let cookies = await CookieBridge.snapshotQQCookies(from: wv)
-                            QqOneKeyLogin.rememberAuthorization(loginURL: wv.url, cookies: cookies)
-                        }
-                        let ok = QqOneKeyLogin.openWithQrAuthorization(ticket, force: true)
-                        self.vm.loginMode = .oneKey
-                        self.vm.statusText = ok
-                            ? "已用 qrcode 打开 QQ，请确认…"
-                            : "票据无效，已拦截（请用页内切换账号）"
+                Task { @MainActor in
+                    if let wv = self.webView {
+                        let cookies = await CookieBridge.snapshotQQCookies(from: wv)
+                        QqOneKeyLogin.rememberAuthorization(loginURL: wv.url, cookies: cookies)
                     }
-                } else {
-                    Task { @MainActor in
-                        self.vm.statusText = "已拦截网页授权跳转（会失败无切号），改走安全取票…"
-                        self.vm.loginMode = .oneKey
+                    self.vm.loginMode = .oneKey
+                    if let ticket = QqOneKeyLogin.qrcodeTicket(fromWtlogin: url) {
+                        let ok = QqOneKeyLogin.openWithQrAuthorization(ticket, force: true)
+                        self.vm.statusText = ok ? "已跳转 QQ，请确认…" : "票据无效，请重试一键登录"
+                        if ok { self.vm.oneKeyFetcherMarkOpened() }
+                    } else if QqOneKeyLogin.openWithLivePJump(fromWtlogin: url) {
+                        self.vm.statusText = "已跳转 QQ，请确认登录（可切号）…"
+                        self.vm.oneKeyFetcherMarkOpened()
+                    } else if QqOneKeyLogin.isBrokenPageOneClick(url) {
+                        self.vm.statusText = "已拦截过期授权链，请重新点一键登录…"
                         if let wv = self.webView {
                             self.vm.attachOneKeyFetcher(to: wv)
                         }
+                    } else {
+                        self.vm.statusText = "未能打开 QQ，请点页内「一键登录」重试"
                     }
                 }
                 return

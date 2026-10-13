@@ -44,6 +44,7 @@ enum QqOneKeyLogin {
         return host.contains("graph.qq.com") && u.path.lowercased().contains("oauth2.0")
     }
 
+    /// 写死旧 h5sig 的 p=（安卓字面量）→ 失败页；新鲜 h5sig 的 p= 是饭点主路径，不算 broken
     static func isBrokenPageOneClick(_ url: URL) -> Bool {
         guard isWtloginScheme(url.scheme) else { return false }
         guard let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems else {
@@ -51,7 +52,24 @@ enum QqOneKeyLogin {
         }
         let hasP = items.contains { $0.name == "p" && !($0.value ?? "").isEmpty }
         let hasQr = items.contains { $0.name == "qrcode" && !($0.value ?? "").isEmpty }
-        return hasP && !hasQr
+        if hasQr { return false }
+        guard hasP, let p = items.first(where: { $0.name == "p" })?.value else { return false }
+        let jump = p.removingPercentEncoding ?? p
+        // 过期字面量 h5sig → broken；含新鲜 h5sig 的 live jump → 可用
+        if jump.contains("iQmvZ8eG78Q1LOs5DoTzZ2CIxslpZAZ8SJomWZgzgh4") { return true }
+        return !isLiveJumpURL(jump)
+    }
+
+    /// 饭点校验：ssl.ptlogin2 /jump + 互联参数 + 含 h5sig（拒绝过期安卓字面量）
+    static func isLiveJumpURL(_ raw: String) -> Bool {
+        let s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard s.hasPrefix("https://"), s.contains("ptlogin2.qq.com"), s.contains("/jump") else {
+            return false
+        }
+        if s.contains("iQmvZ8eG78Q1LOs5DoTzZ2CIxslpZAZ8SJomWZgzgh4") { return false }
+        let need = ["pt_aid=716027609", "daid=383", "pt_3rd_aid=102067279", "h5sig"]
+        let decoded = s.removingPercentEncoding ?? s
+        return need.allSatisfy { decoded.contains($0) || s.contains($0) }
     }
 
     static var qrLikelyExpired: Bool {
@@ -86,13 +104,20 @@ enum QqOneKeyLogin {
     })();
     """
 
-    /// 无遮罩：点「一键登录 / QQ手机版」
+    /// 点页内「一键登录」(#onekey，style=35)。hidden/disabled 时返回状态供重试。
     static let jsClickOneKeyButton = """
     (() => {
+        var b = document.getElementById('onekey');
+        if (b) {
+            var st = window.getComputedStyle(b);
+            if (st.display === 'none' || st.visibility === 'hidden' || b.classList.contains('disabled')
+                || b.classList.contains('loading')) return 'hidden';
+            try { b.click(); return 'clicked'; } catch (e) { return 'err'; }
+        }
         var nodes = document.querySelectorAll('a,button,div,span,li');
         for (var i = 0; i < nodes.length; i++) {
             var t = (nodes[i].innerText || nodes[i].textContent || '').replace(/\\s+/g, '');
-            if (t.indexOf('一键登录') >= 0 || t.indexOf('QQ手机版') >= 0 || t.indexOf('手机QQ') >= 0) {
+            if (t === '一键登录' || t.indexOf('一键登录') >= 0) {
                 try { nodes[i].click(); return 'clicked'; } catch (e) {}
             }
         }
@@ -178,7 +203,7 @@ enum QqOneKeyLogin {
         bar.setAttribute('style',
             'position:fixed;left:0;right:0;top:0;z-index:2147483647;padding:10px 12px;' +
             'background:#0b57d0;color:#fff;font:14px/1.4 -apple-system,sans-serif;text-align:center;');
-        bar.textContent = '一键登录：请先点本页「切换账号」选号；选好后等自动跳转 QQ 确认（不要点网页授权失败页）';
+        bar.textContent = '一键登录：可先切换账号，随后自动点「一键登录」跳转 QQ 确认';
         document.documentElement.appendChild(bar);
         document.documentElement.style.scrollPaddingTop = '48px';
         return 'ok';
@@ -326,11 +351,43 @@ enum QqOneKeyLogin {
         return true
     }
 
-    /// 仅当 URL 含合法 qrcode 时打开 QQ；`p=` / 网页授权一律拒绝（否则「登录授权失败」且无切号）
+    /// 打开 QQ：优先合法 qrcode；否则接受**新鲜** p= jump（饭点主路径）
     @discardableResult
     static func openInQQ(_ raw: URL) -> Bool {
-        guard let ticket = qrcodeTicket(fromWtlogin: raw) else { return false }
-        return openWithQrAuthorization(ticket, force: true)
+        if let ticket = qrcodeTicket(fromWtlogin: raw) {
+            return openWithQrAuthorization(ticket, force: true)
+        }
+        return openWithLivePJump(fromWtlogin: raw)
+    }
+
+    /// 饭点：`wtloginmqq://ptlogin/qlogin?p=` + 新鲜 jump + schemacallback 回壳
+    @discardableResult
+    static func openWithLivePJump(fromWtlogin url: URL) -> Bool {
+        guard isWtloginScheme(url.scheme),
+              let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems,
+              let pRaw = items.first(where: { $0.name == "p" })?.value,
+              !pRaw.isEmpty else { return false }
+        let jump = pRaw.removingPercentEncoding ?? pRaw
+        guard isLiveJumpURL(jump) else { return false }
+        let enc = jump.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? pRaw
+        let cb = callbackURLString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)
+            ?? "daledoulogin://"
+        let s = "wtloginmqq3://ptlogin/qlogin?p=\(enc)&schemacallback=\(cb)"
+        guard let launch = URL(string: s) ?? (NSURL(string: s) as URL?) else { return false }
+        awaitingReturn = true
+        pendingJumpURL = savedLoginURL
+        launchedAt = Date()
+        var candidates = [launch]
+        if var c = URLComponents(url: launch, resolvingAgainstBaseURL: false) {
+            c.scheme = "wtloginmqq"
+            if let u = c.url { candidates.append(u) }
+        }
+        for u in candidates where UIApplication.shared.canOpenURL(u) {
+            UIApplication.shared.open(u, options: [:], completionHandler: nil)
+            return true
+        }
+        UIApplication.shared.open(launch, options: [:], completionHandler: nil)
+        return true
     }
 
     static func markReturned() { awaitingReturn = false }

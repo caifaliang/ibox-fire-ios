@@ -61,11 +61,10 @@ final class AppViewModel: ObservableObject {
         }
     }
 
-    /// 一键登录：URLSession 解析新鲜 xlogin → 主壳打开（可切号）→ pt 就绪后仅 qrcode 跳 QQ。
-    /// 禁止直接打开 graph authorize（会唤起「APP网页申请」授权失败页）。
+    /// 一键登录：手机 UA 解析带新鲜 h5sig 的 style=35 → 壳内切号 → 点「一键登录」→ wtlogin?p= 跳 QQ。
     func openOneKeyLogin() {
         loginMode = .oneKey
-        preferDesktopUA = true
+        preferDesktopUA = false
         didEnterGameFromCapture = false
         QqOneKeyLogin.clearPending()
         session.clear()
@@ -75,10 +74,9 @@ final class AppViewModel: ObservableObject {
         clearWebEpoch &+= 1
         Task { @MainActor in
             let live = await LoginURLs.resolveLiveXloginURL()
-                ?? LoginURLs.assembleShowXloginURL(clientId: LoginURLs.qqAppId)
             guard loginMode == .oneKey else { return }
             if let live {
-                statusText = "一键登录：请先点「切换账号」，随后自动跳 QQ…"
+                statusText = "一键登录：请先切换账号，随后自动跳 QQ…"
                 pendingURL = live
             } else {
                 statusText = "解析失败，请用扫码登陆或 Cookie"
@@ -96,6 +94,10 @@ final class AppViewModel: ObservableObject {
         }
         oneKeyFetcher = fetcher
         fetcher.start()
+    }
+
+    func oneKeyFetcherMarkOpened() {
+        oneKeyFetcher?.markOpenedQQ()
     }
 
     private func handleOneKeyEvent(_ event: OneKeyTicketFetcher.Event) {
