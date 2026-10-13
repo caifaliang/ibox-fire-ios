@@ -56,7 +56,6 @@ final class OneKeyTicketFetcher: NSObject {
     private func run() async {
         guard let wv = webView else { return }
         onEvent(.status("一键登录：准备跳转 QQ…"))
-        _ = await eval(QqOneKeyLogin.jsOneKeyPageHint, in: wv)
 
         for _ in 0..<90 {
             if stopped || Task.isCancelled { return }

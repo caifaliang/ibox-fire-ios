@@ -193,7 +193,6 @@ struct GameWebView: UIViewRepresentable {
                 if LoginURLs.isConnectMarketing(webView.url) {
                     vm.bounceOneKeyToPhonepk(reason: "离开营销页")
                 } else if QqOneKeyLogin.isXloginPage(webView.url) {
-                    webView.evaluateJavaScript(QqOneKeyLogin.jsOneKeyPageHint, completionHandler: nil)
                     vm.attachOneKeyFetcher(to: webView)
                 }
             }

@@ -145,22 +145,10 @@ enum QqOneKeyLogin {
     })();
     """
 
-    /// 藏起页内「一键登录」（点了会走 p= → 授权失败）；提示等自动跳 QQ
+    /// 不再藏 #onekey / 不再盖蓝条（会闪一下消失，体验差）。
+    /// 用户点页内按钮若走 p=，原生拦截后改 qrcode 取票；Fetcher 也会自动跳 QQ。
     static let jsOneKeyPageHint = """
-    (() => {
-        var b = document.getElementById('onekey');
-        if (b) { b.style.display = 'none'; b.style.pointerEvents = 'none'; }
-        if (document.getElementById('dld-onekey-hint')) return 'ok';
-        var bar = document.createElement('div');
-        bar.id = 'dld-onekey-hint';
-        bar.setAttribute('style',
-            'position:fixed;left:0;right:0;top:0;z-index:2147483647;padding:10px 12px;' +
-            'background:#0b57d0;color:#fff;font:14px/1.4 -apple-system,sans-serif;text-align:center;');
-        bar.textContent = '一键登录：即将跳转 QQ，请点「同意」；返回后会自动刷新';
-        document.documentElement.appendChild(bar);
-        document.documentElement.style.scrollPaddingTop = '48px';
-        return 'ok';
-    })();
+    (() => { return 'ok'; })();
     """
 
     // MARK: - Launch
