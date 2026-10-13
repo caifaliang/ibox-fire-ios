@@ -28,6 +28,13 @@ final class NativeQqLogin {
     private var loginSig = ""
     private var qrcode = ""
     private var opened = false
+    private var bgTask: UIBackgroundTaskIdentifier = .invalid
+    private var burstRunning = false
+
+    /// 取票成功后的 xlogin，供 WebView 双路径 resume（竞品回壳靠页内 polling）
+    private(set) var backupXloginURL: URL?
+    /// 跳 QQ 前的 pt 登录 Cookie（含 qrsig），注入 WKWebView
+    private(set) var ticketCookies: [HTTPCookie] = []
 
     private let waitQQSeconds: TimeInterval = 120
     private let maxTicketAttempts = 3
@@ -40,11 +47,14 @@ final class NativeQqLogin {
         cancel()
         stopped = false
         opened = false
+        burstRunning = false
         jar.removeAll()
         jarCookies.removeAll()
         qrsig = ""
         loginSig = ""
         qrcode = ""
+        backupXloginURL = nil
+        ticketCookies = []
 
         let cfg = URLSessionConfiguration.ephemeral
         cfg.httpCookieAcceptPolicy = .always
@@ -60,12 +70,15 @@ final class NativeQqLogin {
 
     func cancel() {
         stopped = true
+        burstRunning = false
+        endBackgroundPoll()
         task?.cancel()
         task = nil
         session?.invalidateAndCancel()
         session = nil
     }
 
+    /// 单次补轮询
     func nudgePoll() {
         guard !stopped, opened, !qrsig.isEmpty else { return }
         Task { @MainActor [weak self] in
@@ -74,6 +87,73 @@ final class NativeQqLogin {
                 await self.handlePollOutcome(outcome)
             }
         }
+    }
+
+    /// 回壳后密集轮询 ~12s：后台挂起时容易错过唯一的 code=0
+    func burstPollOnReturn() {
+        guard !stopped, opened, !qrsig.isEmpty, !burstRunning else {
+            nudgePoll()
+            return
+        }
+        burstRunning = true
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { self.burstRunning = false }
+            let deadline = Date().addingTimeInterval(12)
+            var lastCode = -999
+            while Date() < deadline, !self.stopped {
+                if let outcome = await self.pollOnce() {
+                    let code: Int
+                    switch outcome {
+                    case .waiting: code = 66
+                    case .confirming: code = 67
+                    case .expired: code = 65
+                    case .success: code = 0
+                    case .other(let c): code = c
+                    }
+                    if code != lastCode {
+                        lastCode = code
+                        AppViewModel.logOneKey("native_burst", "code=\(code)")
+                        if code == 67 {
+                            self.onEvent(.status("QQ 确认中…"))
+                        } else if code == 66 {
+                            self.onEvent(.status("已回 App，等待授权生效…"))
+                        }
+                    }
+                    switch outcome {
+                    case .success(let jump):
+                        await self.finishSuccess(jumpURL: jump)
+                        return
+                    case .expired:
+                        // 票可能已在后台被消费且我们错过了 0 → 交给 WebView resume
+                        AppViewModel.logOneKey("native_burst", "code=65 miss_zero")
+                        self.onEvent(.status("票已消费，尝试页内续票…"))
+                        return
+                    case .other(let c) where c != 66 && c != 67:
+                        await self.handlePollOutcome(outcome)
+                        return
+                    case .waiting, .confirming, .other:
+                        break
+                    }
+                }
+                try? await Task.sleep(nanoseconds: 400_000_000)
+            }
+        }
+    }
+
+    private func beginBackgroundPoll() {
+        endBackgroundPoll()
+        bgTask = UIApplication.shared.beginBackgroundTask(withName: "daledou-qq-poll") { [weak self] in
+            self?.endBackgroundPoll()
+        }
+        AppViewModel.logOneKey("native_bg", "begin")
+    }
+
+    private func endBackgroundPoll() {
+        guard bgTask != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(bgTask)
+        bgTask = .invalid
+        AppViewModel.logOneKey("native_bg", "end")
     }
 
     // MARK: - Main
@@ -109,26 +189,58 @@ final class NativeQqLogin {
                 continue
             }
 
+            // 跳 QQ 前快照，供 WebView 双路径
+            ticketCookies = snapshotCookies()
+            beginBackgroundPoll()
             guard openQQ(with: qrcode) else {
+                endBackgroundPoll()
                 onEvent(.failed("无法打开 QQ，请确认已安装后用扫码或 Cookie"))
                 return
             }
             opened = true
             onEvent(.openedQQ)
-            onEvent(.status("已跳转 QQ，请点「同意」…"))
+            onEvent(.status("已跳转 QQ，请点「同意」后返回…"))
             AppViewModel.logOneKey("native_opened_qq", "qr_host=\(qrHostForLog(qrcode))")
 
             let deadline = Date().addingTimeInterval(waitQQSeconds)
+            var lastLogged = -999
             while Date() < deadline {
-                if stopped || Task.isCancelled { return }
-                try? await Task.sleep(nanoseconds: 1_500_000_000)
-                if stopped || Task.isCancelled { return }
+                if stopped || Task.isCancelled {
+                    endBackgroundPoll()
+                    return
+                }
+                try? await Task.sleep(nanoseconds: 800_000_000)
+                if stopped || Task.isCancelled {
+                    endBackgroundPoll()
+                    return
+                }
                 guard let outcome = await pollOnce() else { continue }
+                let code: Int = {
+                    switch outcome {
+                    case .waiting: return 66
+                    case .confirming: return 67
+                    case .expired: return 65
+                    case .success: return 0
+                    case .other(let c): return c
+                    }
+                }()
+                if code != lastLogged {
+                    lastLogged = code
+                    AppViewModel.logOneKey("native_poll", "code=\(code)")
+                }
                 switch outcome {
-                case .waiting, .confirming:
+                case .waiting:
+                    continue
+                case .confirming:
+                    onEvent(.status("QQ 确认中，请保持或返回 App…"))
                     continue
                 case .expired:
-                    AppViewModel.logOneKey("native_poll", "code=65")
+                    endBackgroundPoll()
+                    // 若曾出现 67，多半已同意但错过了 0 → 不重取票，交给 WebView resume
+                    if lastLogged == 67 || lastLogged == 0 {
+                        onEvent(.status("授权可能已完成，正在页内续票…"))
+                        return
+                    }
                     if attempt < maxTicketAttempts {
                         onEvent(.status("二维码已失效，重新取票…"))
                         break
@@ -138,13 +250,14 @@ final class NativeQqLogin {
                 case .success(let jump):
                     await finishSuccess(jumpURL: jump)
                     return
-                case .other(let code):
-                    AppViewModel.logOneKey("native_poll", "code=\(code)")
-                    onEvent(.failed("登录失败（\(code)），请用扫码或 Cookie"))
+                case .other(let c):
+                    endBackgroundPoll()
+                    onEvent(.failed("登录失败（\(c)），请用扫码或 Cookie"))
                     return
                 }
                 if case .expired = outcome { break }
             }
+            endBackgroundPoll()
             if Date() >= deadline {
                 onEvent(.failed("一键登录超时，请用扫码或 Cookie 登录"))
                 return
@@ -169,15 +282,22 @@ final class NativeQqLogin {
     private func finishSuccess(jumpURL: URL?) async {
         guard !stopped else { return }
         stopped = true
+        endBackgroundPoll()
         onEvent(.status("授权成功，正在同步 Cookie…"))
         AppViewModel.logOneKey("native_poll", "code=0")
         if let jump = jumpURL {
             AppViewModel.logOneKey("native_check_sig", AppViewModel.sanitizeURLLog(jump))
+            // 跟完重定向，吃下 skey / p_skey
             _ = try? await data(for: jump, referer: "https://xui.ptlogin2.qq.com/")
+        }
+        // 再走一遍 authorize，让 connect 侧带上登录态
+        if let auth = URL(string: LoginURLs.oneKeyLogin) {
+            _ = try? await data(for: auth, referer: "https://xui.ptlogin2.qq.com/")
         }
         let cookies = snapshotCookies()
         let names = cookies.map(\.name).sorted().joined(separator: ",")
-        AppViewModel.logOneKey("native_cookies", "names=\(names)")
+        let hasSkey = jar.keys.contains { $0.lowercased() == "skey" || $0.lowercased() == "p_skey" }
+        AppViewModel.logOneKey("native_cookies", "names=\(names) has_skey=\(hasSkey)")
         if cookies.isEmpty {
             onEvent(.failed("未拿到登录 Cookie，请用扫码或 Cookie"))
             return
@@ -216,6 +336,7 @@ final class NativeQqLogin {
         }
 
         let (_, xResp) = try await data(for: xlogin, referer: "https://graph.qq.com/")
+        backupXloginURL = xlogin
         AppViewModel.logOneKey(
             "native_xlogin",
             "\(AppViewModel.sanitizeURLLog(xlogin)) status=\(xResp.statusCode) jar=\(jarNames())"
@@ -247,15 +368,11 @@ final class NativeQqLogin {
         }
         qrcode = parsed.qrcode
 
-        // qrsig：优先手动罐；没有则再打一次 PNG ptqrshow（同样 Set-Cookie）
-        if let sig = jar["qrsig"], !sig.isEmpty {
-            qrsig = sig
-        } else {
-            try await fetchQrsigViaPNG(referer: xlogin.absoluteString)
-        }
-        guard !qrsig.isEmpty else {
+        // 禁止用 PNG 另取 qrsig：会与 type=1 的 qrcode 票不匹配
+        guard let sig = jar["qrsig"], !sig.isEmpty else {
             throw TicketError.noQrsig
         }
+        qrsig = sig
         if loginSig.isEmpty, let s = jar["pt_login_sig"], !s.isEmpty {
             loginSig = s
         }
@@ -263,22 +380,6 @@ final class NativeQqLogin {
             "native_ticket",
             "ec=0 qr_host=\(qrHostForLog(qrcode)) has_qrsig=1 jar=\(jarNames())"
         )
-    }
-
-    /// PNG 接口也会种 qrsig；JSONP 路径 cookie 丢失时的兜底
-    private func fetchQrsigViaPNG(referer: String) async throws {
-        let t = String(format: "%.16f", Double.random(in: 0..<1))
-        let png = "https://ssl.ptlogin2.qq.com/ptqrshow?appid=716027609&e=2&l=M&s=3&d=72&v=4"
-            + "&t=\(t)&daid=383&pt_3rd_aid=102067279"
-        guard let url = URL(string: png) else { return }
-        let (data, resp) = try await data(for: url, referer: referer)
-        AppViewModel.logOneKey(
-            "native_ptqr_png",
-            "status=\(resp.statusCode) len=\(data.count) jar=\(jarNames())"
-        )
-        if let sig = jar["qrsig"], !sig.isEmpty {
-            qrsig = sig
-        }
     }
 
     // MARK: - Poll
