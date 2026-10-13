@@ -35,7 +35,13 @@ enum QqOneKeyLogin {
 
     static func isXloginPage(_ url: URL?) -> Bool {
         guard let u = url, let host = u.host?.lowercased() else { return false }
-        return host.contains("xui.ptlogin2.qq.com") && u.path.contains("xlogin")
+        return host.contains("ptlogin2.qq.com") && u.path.lowercased().contains("xlogin")
+    }
+
+    /// graph authorize / show：桌面 UA 下像扫码页，一键模式要遮罩并催向 QQ
+    static func isGraphOAuthPage(_ url: URL?) -> Bool {
+        guard let u = url, let host = u.host?.lowercased() else { return false }
+        return host.contains("graph.qq.com") && u.path.lowercased().contains("oauth2.0")
     }
 
     static func isBrokenPageOneClick(_ url: URL) -> Bool {
@@ -55,11 +61,38 @@ enum QqOneKeyLogin {
 
     // MARK: - 注入脚本
 
-    /// 申请 QR 授权串。onload 勿立刻判 failed（CB 可能晚于 onload）。
+    /// graph 页遮罩 + 点「一键登录」，避免被当成扫码页
+    static let jsAssistGraphOneKey = """
+    (() => {
+        if (!/graph\\.qq\\.com$/i.test(location.hostname)) return 'skip';
+        if (!document.getElementById('dld-onekey-mask')) {
+            var mask = document.createElement('div');
+            mask.id = 'dld-onekey-mask';
+            mask.setAttribute('style',
+                'position:fixed;inset:0;z-index:2147483647;background:#111;color:#fff;' +
+                'display:flex;align-items:center;justify-content:center;font:16px/1.5 -apple-system,sans-serif;' +
+                'text-align:center;padding:24px;');
+            mask.textContent = '一键登录：正在唤起手机 QQ（可在 QQ 内切号），不是扫码…';
+            document.documentElement.appendChild(mask);
+        }
+        var nodes = document.querySelectorAll('a,button,div,span,li');
+        for (var i = 0; i < nodes.length; i++) {
+            var t = (nodes[i].innerText || nodes[i].textContent || '').replace(/\\s+/g, '');
+            if (t.indexOf('一键登录') >= 0 || t.indexOf('QQ手机版') >= 0 || t.indexOf('手机QQ') >= 0) {
+                try { nodes[i].click(); return 'clicked'; } catch (e) {}
+            }
+        }
+        var links = document.querySelectorAll('a[href*=\"wtlogin\"],a[href*=\"xlogin\"]');
+        if (links.length) { location.href = links[0].href; return 'href'; }
+        return 'masked';
+    })();
+    """
+
+    /// 申请 QR 授权串（任意 *.ptlogin2.qq.com/xlogin，不限 xui）
     static let jsRequestQr = """
     (() => {
-        if (location.protocol !== 'https:' || location.hostname !== 'xui.ptlogin2.qq.com' ||
-            location.pathname !== '/cgi-bin/xlogin') return 'waiting';
+        if (location.protocol !== 'https:' || !/\\.ptlogin2\\.qq\\.com$/i.test(location.hostname) ||
+            location.pathname.indexOf('xlogin') < 0) return 'waiting';
         if (typeof pt === 'undefined' || !pt.hasInit || !pt.qrcode ||
             pt.loginUrl !== 'https://ssl.ptlogin2.qq.com/' || typeof pt.qrcode.polling !== 'function') return 'waiting';
         if (window.__dldQrRequested) return window.__dldQrStatus === 'ready' ? 'ready' : 'requested';
@@ -85,7 +118,6 @@ enum QqOneKeyLogin {
         request.onerror = () => { window.__dldQrStatus = 'failed'; try { request.remove(); } catch (e) {} };
         request.onload = () => {
             try { request.remove(); } catch (e) {}
-            // CB 偶发晚于 onload：再等 1.5s 才判失败
             setTimeout(() => {
                 if (window.__dldQrStatus === 'waiting') window.__dldQrStatus = 'failed';
             }, 1500);
@@ -97,9 +129,9 @@ enum QqOneKeyLogin {
 
     static let jsPollStatus = """
     (() => {
-        if (location.protocol !== 'https:' || location.hostname !== 'xui.ptlogin2.qq.com' ||
-            location.pathname !== '/cgi-bin/xlogin') {
-            return JSON.stringify({status:'waiting',url:'',qrsig:false});
+        if (location.protocol !== 'https:' || !/\\.ptlogin2\\.qq\\.com$/i.test(location.hostname) ||
+            location.pathname.indexOf('xlogin') < 0) {
+            return JSON.stringify({status:'waiting',url:'',qrsig:false,page:location.hostname+location.pathname});
         }
         var hasSig = document.cookie.split(';').some(function(v){ return v.trim().indexOf('qrsig=')===0; });
         return JSON.stringify({
@@ -122,8 +154,8 @@ enum QqOneKeyLogin {
     /// QQ 已确认 / 回壳之后再 submit（对齐饭点：polling + qlogin_submit，勿跳 p= jump）
     static let jsResumeAfterQQ = """
     (() => {
-        if (location.protocol !== 'https:' || location.hostname !== 'xui.ptlogin2.qq.com' ||
-            location.pathname !== '/cgi-bin/xlogin') return 'other-page';
+        if (location.protocol !== 'https:' || !/\\.ptlogin2\\.qq\\.com$/i.test(location.hostname) ||
+            location.pathname.indexOf('xlogin') < 0) return 'other-page';
         if (typeof pt === 'undefined' || pt.loginUrl !== 'https://ssl.ptlogin2.qq.com/' ||
             !pt.qrcode || typeof pt.qrcode.polling !== 'function') return 'waiting';
         if (!document.cookie.split(';').some(value => value.trim().startsWith('qrsig='))) return 'missing-session';

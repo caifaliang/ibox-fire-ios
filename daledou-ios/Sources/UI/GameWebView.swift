@@ -182,7 +182,12 @@ struct GameWebView: UIViewRepresentable {
             Task { @MainActor in vm.onNavigated(to: webView.url) }
             webView.evaluateJavaScript(stayJS, completionHandler: nil)
             scheduleCookieCapture(webView)
-            if vm.loginMode == .oneKey, QqOneKeyLogin.isXloginPage(webView.url) {
+            // 一键：graph 页会像扫码，遮罩并点「一键登录」；任意页都跑 pipeline，等到 xlogin 再跳 QQ
+            if vm.loginMode == .oneKey {
+                if QqOneKeyLogin.isGraphOAuthPage(webView.url) {
+                    webView.evaluateJavaScript(QqOneKeyLogin.jsAssistGraphOneKey, completionHandler: nil)
+                    vm.statusText = "一键登录：正在唤起 QQ（不是扫码）…"
+                }
                 startOneKeyQrPipeline(webView, forceRefresh: QqOneKeyLogin.qrLikelyExpired)
             }
             // 已登录却仍停在 QQ「一键登录」页 → 强制进 phonepk
