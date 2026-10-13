@@ -371,7 +371,7 @@ final class NativeQqLogin {
         return s
     }
 
-    static func parsePtuiCB(_ text: String) -> PollOutcome {
+    private static func parsePtuiCB(_ text: String) -> PollOutcome {
         // ptuiCB('66','0','','0','…', '')
         let pat = #"ptuiCB\(\s*'(\d+)'\s*,\s*'[^']*'\s*,\s*'([^']*)'"#
         guard let r = try? NSRegularExpression(pattern: pat),
