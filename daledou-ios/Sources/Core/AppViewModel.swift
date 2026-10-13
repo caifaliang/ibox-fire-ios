@@ -76,6 +76,7 @@ final class AppViewModel: ObservableObject {
         stopNativeOneKey()
         oneKeyReturnBusy = false
         oneKeyRecoverAttempted = false
+        oneKeyWebResumeBusy = false
         oneKeyPhase = .preflight
         oneKeyStartURLLog = "native"
         Self.logOneKey("start", "native_qrcode")
@@ -147,8 +148,9 @@ final class AppViewModel: ObservableObject {
             }
         case .openedQQ:
             oneKeyPhase = .waitingQQConfirm
-            statusText = "已跳转 QQ，请点「同意」后返回…"
-            Task { @MainActor in await seedOneKeyWebBackup() }
+            // 禁止在此加载 xlogin：页内会重新 ptqrshow，把 QQ 里正在授权的票作废 →「二维码已过期」
+            statusText = "QQ：等倒计时→继续→同意，然后立刻返回"
+            Task { @MainActor in await seedOneKeyCookiesOnly() }
         case .succeeded(let cookies):
             let cookiesCopy = cookies
             stopNativeOneKey()
@@ -160,22 +162,16 @@ final class AppViewModel: ObservableObject {
         }
     }
 
-    /// 跳 QQ 前：把 qrsig 等注入 WKWebView 并打开 xlogin，回壳可页内 polling（竞品同款兜底）
-    private func seedOneKeyWebBackup() async {
-        guard let native = nativeQqLogin,
-              let xlogin = native.backupXloginURL else {
-            Self.logOneKey("web_backup", "skip_no_xlogin")
-            return
-        }
-        guard let wv = gameWebView else { return }
+    /// 只注入 Cookie，不打开 xlogin（避免页内重新取票作废当前 QQ 授权）
+    private func seedOneKeyCookiesOnly() async {
+        guard let native = nativeQqLogin, let wv = gameWebView else { return }
         let cookies = native.ticketCookies
+        guard !cookies.isEmpty else { return }
         Self.logOneKey(
             "web_backup",
-            "seed \(Self.sanitizeURLLog(xlogin)) cookies=\(cookies.map(\.name).sorted().joined(separator: ","))"
+            "cookies_only names=\(cookies.map(\.name).sorted().joined(separator: ","))"
         )
         await CookieBridge.restore(cookies, into: wv)
-        preferDesktopUA = false
-        pendingURL = xlogin
     }
 
     /// 回壳：在 xlogin 上执行 resume（polling + qlogin_submit）

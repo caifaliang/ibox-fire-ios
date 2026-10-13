@@ -36,7 +36,9 @@ final class NativeQqLogin {
     /// 跳 QQ 前的 pt 登录 Cookie（含 qrsig），注入 WKWebView
     private(set) var ticketCookies: [HTTPCookie] = []
 
-    private let waitQQSeconds: TimeInterval = 120
+    /// 含 QQ 安全确认倒计时（约 7s）+ 操作余量
+    private let waitQQSeconds: TimeInterval = 180
+    /// 取票网络失败可重试；一旦已打开 QQ 则不再取新票
     private let maxTicketAttempts = 3
 
     init(onEvent: @escaping (Event) -> Void) {
@@ -199,11 +201,13 @@ final class NativeQqLogin {
             }
             opened = true
             onEvent(.openedQQ)
-            onEvent(.status("已跳转 QQ，请点「同意」后返回…"))
+            onEvent(.status("QQ：等倒计时→继续→同意，然后立刻返回"))
             AppViewModel.logOneKey("native_opened_qq", "qr_host=\(qrHostForLog(qrcode))")
 
+            // 同一轮只开一次 QQ；等待期间绝不重新 ptqrshow（会作废 QQ 里那张票）
             let deadline = Date().addingTimeInterval(waitQQSeconds)
             var lastLogged = -999
+            var sawConfirm = false
             while Date() < deadline {
                 if stopped || Task.isCancelled {
                     endBackgroundPoll()
@@ -232,20 +236,18 @@ final class NativeQqLogin {
                 case .waiting:
                     continue
                 case .confirming:
-                    onEvent(.status("QQ 确认中，请保持或返回 App…"))
+                    sawConfirm = true
+                    onEvent(.status("QQ 确认中…同意后请立刻返回"))
                     continue
                 case .expired:
                     endBackgroundPoll()
-                    // 若曾出现 67，多半已同意但错过了 0 → 不重取票，交给 WebView resume
-                    if lastLogged == 67 || lastLogged == 0 {
+                    // 已确认过：多半同意成功但错过 0 → 回壳页内续票，禁止重开 QQ
+                    if sawConfirm {
                         onEvent(.status("授权可能已完成，正在页内续票…"))
                         return
                     }
-                    if attempt < maxTicketAttempts {
-                        onEvent(.status("二维码已失效，重新取票…"))
-                        break
-                    }
-                    onEvent(.failed("二维码已失效，请用扫码或 Cookie 登录"))
+                    // 未确认就 65：常见于别处重新取票；提示用户回 App 重试，勿在旧 QQ 页再点同意
+                    onEvent(.failed("授权票已失效，请回 App 重新点一键登录"))
                     return
                 case .success(let jump):
                     await finishSuccess(jumpURL: jump)
@@ -255,13 +257,10 @@ final class NativeQqLogin {
                     onEvent(.failed("登录失败（\(c)），请用扫码或 Cookie"))
                     return
                 }
-                if case .expired = outcome { break }
             }
             endBackgroundPoll()
-            if Date() >= deadline {
-                onEvent(.failed("一键登录超时，请用扫码或 Cookie 登录"))
-                return
-            }
+            onEvent(.failed("一键登录超时，请用扫码或 Cookie 登录"))
+            return
         }
         onEvent(.failed("取票失败，请用扫码或 Cookie 登录"))
     }
