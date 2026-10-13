@@ -17,20 +17,20 @@ final class NativeQqLogin {
 
     private let onEvent: (Event) -> Void
     private var session: URLSession!
-    private var cookieStorage: HTTPCookieStorage!
     private var task: Task<Void, Never>?
     private var stopped = false
+
+    /// 手动 Cookie 罐（不依赖 ephemeral storage 是否真写回）
+    private var jar: [String: String] = [:]
+    private var jarCookies: [HTTPCookie] = []
 
     private var qrsig = ""
     private var loginSig = ""
     private var qrcode = ""
     private var opened = false
-    private var startedAt = Date()
 
-    /// 等 QQ 同意上限
     private let waitQQSeconds: TimeInterval = 120
-    /// 取票最多次数（含失效重取）
-    private let maxTicketAttempts = 2
+    private let maxTicketAttempts = 3
 
     init(onEvent: @escaping (Event) -> Void) {
         self.onEvent = onEvent
@@ -40,15 +40,18 @@ final class NativeQqLogin {
         cancel()
         stopped = false
         opened = false
-        startedAt = Date()
-        let store = HTTPCookieStorage()
-        store.cookieAcceptPolicy = .always
+        jar.removeAll()
+        jarCookies.removeAll()
+        qrsig = ""
+        loginSig = ""
+        qrcode = ""
+
         let cfg = URLSessionConfiguration.ephemeral
-        cfg.httpCookieStorage = store
         cfg.httpCookieAcceptPolicy = .always
         cfg.httpShouldSetCookies = true
-        cfg.timeoutIntervalForRequest = 20
-        cookieStorage = store
+        cfg.timeoutIntervalForRequest = 25
+        cfg.timeoutIntervalForResource = 40
+        // 不用自定义 HTTPCookieStorage()：部分系统上 session 写入与读取容器不一致
         session = URLSession(configuration: cfg)
         task = Task { @MainActor [weak self] in
             await self?.run()
@@ -63,7 +66,6 @@ final class NativeQqLogin {
         session = nil
     }
 
-    /// 回壳 / schemacallback：立刻再轮询一次（后台时 Timer 会停）
     func nudgePoll() {
         guard !stopped, opened, !qrsig.isEmpty else { return }
         Task { @MainActor [weak self] in
@@ -88,10 +90,20 @@ final class NativeQqLogin {
             if stopped || Task.isCancelled { return }
             do {
                 try await fetchTicket()
-            } catch {
-                AppViewModel.logOneKey("native_ticket_fail", "attempt=\(attempt)")
+            } catch let err as TicketError {
+                AppViewModel.logOneKey("native_ticket_fail", "attempt=\(attempt) \(err.code)")
                 if attempt >= maxTicketAttempts {
-                    onEvent(.failed("取票失败，请用扫码或 Cookie 登录"))
+                    onEvent(.failed("取票失败（\(err.code)），请用扫码或 Cookie"))
+                    return
+                }
+                onEvent(.status("取票重试 \(attempt)/\(maxTicketAttempts)…"))
+                try? await Task.sleep(nanoseconds: 600_000_000)
+                continue
+            } catch {
+                let msg = (error as NSError).localizedDescription
+                AppViewModel.logOneKey("native_ticket_fail", "attempt=\(attempt) net=\(msg)")
+                if attempt >= maxTicketAttempts {
+                    onEvent(.failed("取票失败（网络），请用扫码或 Cookie"))
                     return
                 }
                 continue
@@ -131,7 +143,6 @@ final class NativeQqLogin {
                     onEvent(.failed("登录失败（\(code)），请用扫码或 Cookie"))
                     return
                 }
-                // expired → retry outer loop
                 if case .expired = outcome { break }
             }
             if Date() >= deadline {
@@ -186,7 +197,10 @@ final class NativeQqLogin {
         let authHTML = String(data: authData, encoding: .utf8)
             ?? String(data: authData, encoding: .isoLatin1)
             ?? ""
-        AppViewModel.logOneKey("native_auth", AppViewModel.sanitizeURLLog(authResp.url))
+        AppViewModel.logOneKey(
+            "native_auth",
+            "\(AppViewModel.sanitizeURLLog(authResp.url)) status=\(authResp.statusCode) html=\(authHTML.count)"
+        )
 
         let xlogin: URL
         if let u = authResp.url,
@@ -201,10 +215,12 @@ final class NativeQqLogin {
             throw TicketError.noXlogin
         }
 
-        _ = try await data(for: xlogin, referer: "https://graph.qq.com/")
-        AppViewModel.logOneKey("native_xlogin", AppViewModel.sanitizeURLLog(xlogin))
-
-        if let sig = cookieValue("pt_login_sig") {
+        let (_, xResp) = try await data(for: xlogin, referer: "https://graph.qq.com/")
+        AppViewModel.logOneKey(
+            "native_xlogin",
+            "\(AppViewModel.sanitizeURLLog(xlogin)) status=\(xResp.statusCode) jar=\(jarNames())"
+        )
+        if let sig = jar["pt_login_sig"], !sig.isEmpty {
             loginSig = sig
         }
 
@@ -212,28 +228,57 @@ final class NativeQqLogin {
         let show = "https://xui.ptlogin2.qq.com/ssl/ptqrshow?s=8&e=0&appid=716027609&type=1"
             + "&u1=https%3A%2F%2Fconnect.qq.com&daid=383&pt_3rd_aid=102067279&t=\(t)"
         guard let showURL = URL(string: show) else { throw TicketError.badURL }
-        let (showData, _) = try await data(for: showURL, referer: xlogin.absoluteString)
+        let (showData, showResp) = try await data(for: showURL, referer: xlogin.absoluteString)
         let body = String(data: showData, encoding: .utf8)
             ?? String(data: showData, encoding: .isoLatin1)
             ?? ""
 
-        guard let parsed = Self.parsePtqrshowJSONP(body),
-              parsed.ec == 0,
-              !parsed.qrcode.isEmpty else {
+        AppViewModel.logOneKey(
+            "native_ptqrshow",
+            "status=\(showResp.statusCode) len=\(body.count) jar=\(jarNames()) head=\(sanitizeBodyHead(body))"
+        )
+
+        guard let parsed = Self.parsePtqrshowJSONP(body) else {
+            throw TicketError.badTicket
+        }
+        AppViewModel.logOneKey("native_ptqr_parsed", "ec=\(parsed.ec) qr_len=\(parsed.qrcode.count)")
+        guard parsed.ec == 0, !parsed.qrcode.isEmpty else {
             throw TicketError.badTicket
         }
         qrcode = parsed.qrcode
-        guard let sig = cookieValue("qrsig"), !sig.isEmpty else {
+
+        // qrsig：优先手动罐；没有则再打一次 PNG ptqrshow（同样 Set-Cookie）
+        if let sig = jar["qrsig"], !sig.isEmpty {
+            qrsig = sig
+        } else {
+            try await fetchQrsigViaPNG(referer: xlogin.absoluteString)
+        }
+        guard !qrsig.isEmpty else {
             throw TicketError.noQrsig
         }
-        qrsig = sig
-        if loginSig.isEmpty, let s = cookieValue("pt_login_sig") {
+        if loginSig.isEmpty, let s = jar["pt_login_sig"], !s.isEmpty {
             loginSig = s
         }
         AppViewModel.logOneKey(
             "native_ticket",
-            "ec=0 qr_host=\(qrHostForLog(qrcode)) has_qrsig=1"
+            "ec=0 qr_host=\(qrHostForLog(qrcode)) has_qrsig=1 jar=\(jarNames())"
         )
+    }
+
+    /// PNG 接口也会种 qrsig；JSONP 路径 cookie 丢失时的兜底
+    private func fetchQrsigViaPNG(referer: String) async throws {
+        let t = String(format: "%.16f", Double.random(in: 0..<1))
+        let png = "https://ssl.ptlogin2.qq.com/ptqrshow?appid=716027609&e=2&l=M&s=3&d=72&v=4"
+            + "&t=\(t)&daid=383&pt_3rd_aid=102067279"
+        guard let url = URL(string: png) else { return }
+        let (data, resp) = try await data(for: url, referer: referer)
+        AppViewModel.logOneKey(
+            "native_ptqr_png",
+            "status=\(resp.statusCode) len=\(data.count) jar=\(jarNames())"
+        )
+        if let sig = jar["qrsig"], !sig.isEmpty {
+            qrsig = sig
+        }
     }
 
     // MARK: - Poll
@@ -309,32 +354,109 @@ final class NativeQqLogin {
         return true
     }
 
-    // MARK: - HTTP
+    // MARK: - HTTP + Cookie jar
 
     private func data(for url: URL, referer: String?) async throws -> (Data, HTTPURLResponse) {
+        guard let session else { throw TicketError.badURL }
         var req = URLRequest(url: url)
         req.httpMethod = "GET"
         req.setValue(LoginURLs.iphoneUA, forHTTPHeaderField: "User-Agent")
-        req.setValue("text/html,application/xhtml+xml,application/javascript,*/*;q=0.8", forHTTPHeaderField: "Accept")
+        req.setValue(
+            "text/html,application/xhtml+xml,application/javascript,*/*;q=0.8",
+            forHTTPHeaderField: "Accept"
+        )
         if let referer, !referer.isEmpty {
             req.setValue(referer, forHTTPHeaderField: "Referer")
+        }
+        if !jar.isEmpty {
+            let header = jar.map { "\($0.key)=\($0.value)" }.sorted().joined(separator: "; ")
+            req.setValue(header, forHTTPHeaderField: "Cookie")
         }
         let (data, resp) = try await session.data(for: req)
         guard let http = resp as? HTTPURLResponse else {
             throw TicketError.badURL
         }
+        ingestCookies(from: http, pageURL: http.url ?? url)
         return (data, http)
     }
 
-    private func cookieValue(_ name: String) -> String? {
-        cookieStorage.cookies?.first { $0.name == name }?.value
+    private func ingestCookies(from http: HTTPURLResponse, pageURL: URL) {
+        var fields: [String: String] = [:]
+        for (k, v) in http.allHeaderFields {
+            fields["\(k)"] = "\(v)"
+        }
+        let parsed = HTTPCookie.cookies(withResponseHeaderFields: fields, for: pageURL)
+        for c in parsed {
+            jar[c.name] = c.value
+            upsertJarCookie(c)
+        }
+        // 再从 session 自带 storage 拉一次（若系统有写入）
+        if let store = session?.configuration.httpCookieStorage {
+            let urls = [
+                pageURL,
+                URL(string: "https://ptlogin2.qq.com/")!,
+                URL(string: "https://xui.ptlogin2.qq.com/")!,
+                URL(string: "https://ssl.ptlogin2.qq.com/")!,
+                URL(string: "https://qq.com/")!,
+            ]
+            for u in urls {
+                if let list = store.cookies(for: u) {
+                    for c in list {
+                        jar[c.name] = c.value
+                        upsertJarCookie(c)
+                    }
+                }
+            }
+            if let all = store.cookies {
+                for c in all where c.domain.lowercased().contains("qq.com") {
+                    jar[c.name] = c.value
+                    upsertJarCookie(c)
+                }
+            }
+        }
+    }
+
+    private func upsertJarCookie(_ c: HTTPCookie) {
+        jarCookies.removeAll { $0.name == c.name && $0.domain == c.domain }
+        jarCookies.append(c)
     }
 
     private func snapshotCookies() -> [HTTPCookie] {
-        (cookieStorage.cookies ?? []).filter {
-            let d = $0.domain.lowercased()
-            return d.contains("qq.com") || d.contains("gtimg.cn")
+        // 优先完整 HTTPCookie；若只有 jar 字典则合成 .qq.com
+        if !jarCookies.isEmpty {
+            return jarCookies.filter {
+                let d = $0.domain.lowercased()
+                return d.contains("qq.com") || d.contains("gtimg.cn")
+            }
         }
+        var out: [HTTPCookie] = []
+        for (name, value) in jar {
+            let props: [HTTPCookiePropertyKey: Any] = [
+                .name: name,
+                .value: value,
+                .domain: ".qq.com",
+                .path: "/",
+                .secure: "TRUE",
+            ]
+            if let c = HTTPCookie(properties: props) {
+                out.append(c)
+            }
+        }
+        return out
+    }
+
+    private func jarNames() -> String {
+        jar.keys.sorted().joined(separator: ",")
+    }
+
+    private func sanitizeBodyHead(_ body: String) -> String {
+        let head = String(body.prefix(80))
+            .replacingOccurrences(of: "\n", with: " ")
+        // 去掉可能的票面内容，只留结构
+        if let r = head.range(of: "qrcode") {
+            return String(head[..<r.lowerBound]) + "qrcode=…"
+        }
+        return head
     }
 
     // MARK: - Parse
@@ -345,7 +467,6 @@ final class NativeQqLogin {
     }
 
     static func parsePtqrshowJSONP(_ body: String) -> PtqrshowResult? {
-        // ptui_qrcode_CB({"em":"...","qrcode":"...","ec":0})
         guard let qr = extractJSONString(body, key: "qrcode") else { return nil }
         let ecPat = #""ec"\s*:\s*(\d+)"#
         var ec = -1
@@ -372,7 +493,6 @@ final class NativeQqLogin {
     }
 
     private static func parsePtuiCB(_ text: String) -> PollOutcome {
-        // ptuiCB('66','0','','0','…', '')
         let pat = #"ptuiCB\(\s*'(\d+)'\s*,\s*'[^']*'\s*,\s*'([^']*)'"#
         guard let r = try? NSRegularExpression(pattern: pat),
               let m = r.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
@@ -395,7 +515,6 @@ final class NativeQqLogin {
         }
     }
 
-    /// 与腾讯前端一致：`ptqrtoken = hash33(qrsig)`
     static func hash33(_ qrsig: String) -> Int {
         var e = 0
         for ch in qrsig.utf16 {
@@ -413,5 +532,14 @@ final class NativeQqLogin {
 
     private enum TicketError: Error {
         case noXlogin, badURL, badTicket, noQrsig
+
+        var code: String {
+            switch self {
+            case .noXlogin: return "noXlogin"
+            case .badURL: return "badURL"
+            case .badTicket: return "badTicket"
+            case .noQrsig: return "noQrsig"
+            }
+        }
     }
 }

@@ -230,6 +230,21 @@ final class AppViewModel: ObservableObject {
         #endif
         // Release 也写一行短状态，便于真机侧载排查（不含密钥）
         NSLog("[OneKey] %@ %@", event, detail)
+        // 落盘 Documents，文件 App / iTunes 可取 onekey_last.txt
+        let line = "\(ISO8601DateFormatter().string(from: Date())) \(event) \(detail)\n"
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let url = docs.appendingPathComponent("onekey_last.txt")
+        if let data = line.data(using: .utf8) {
+            if FileManager.default.fileExists(atPath: url.path) {
+                if let handle = try? FileHandle(forWritingTo: url) {
+                    defer { try? handle.close() }
+                    try? handle.seekToEnd()
+                    try? handle.write(contentsOf: data)
+                }
+            } else {
+                try? data.write(to: url, options: .atomic)
+            }
+        }
     }
 
     /// GameWebView 主框架导航时调用（脱敏）
