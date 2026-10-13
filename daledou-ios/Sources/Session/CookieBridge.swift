@@ -76,6 +76,29 @@ enum CookieBridge {
         }
     }
 
+    /// 跳转 QQ 前快照（对齐饭点 rememberAuthorization）
+    static func snapshotQQCookies(from webView: WKWebView) async -> [HTTPCookie] {
+        let store = webView.configuration.websiteDataStore.httpCookieStore
+        let cookies: [HTTPCookie] = await withCheckedContinuation { cont in
+            store.getAllCookies { cont.resume(returning: $0) }
+        }
+        return cookies.filter {
+            let d = $0.domain.lowercased()
+            return d.contains("qq.com") || d.contains("gtimg.cn")
+        }
+    }
+
+    /// 回壳后写回（对齐饭点 restoreQqAuthorization）
+    static func restore(_ cookies: [HTTPCookie], into webView: WKWebView) async {
+        guard !cookies.isEmpty else { return }
+        let store = webView.configuration.websiteDataStore.httpCookieStore
+        for c in cookies {
+            await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+                store.setCookie(c) { cont.resume() }
+            }
+        }
+    }
+
     static func clearAll(from webView: WKWebView) async {
         let store = webView.configuration.websiteDataStore.httpCookieStore
         let cookies: [HTTPCookie] = await withCheckedContinuation { cont in

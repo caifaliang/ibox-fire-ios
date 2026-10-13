@@ -15,6 +15,9 @@ enum QqOneKeyLogin {
     private(set) static var awaitingReturn = false
     private(set) static var launchedQrcode: String?
     private(set) static var launchedAt: Date?
+    /// 跳 QQ 前 Cookie 快照（qrsig 等）；回壳 restore 后再 qlogin_submit
+    private(set) static var savedCookies: [HTTPCookie] = []
+    private(set) static var savedLoginURL: URL?
 
     static func isWtloginScheme(_ scheme: String?) -> Bool {
         guard let s = scheme?.lowercased(), !s.isEmpty else { return false }
@@ -64,14 +67,10 @@ enum QqOneKeyLogin {
         window.__dldQrStatus = 'waiting';
         window.__dldQrAuthorization = '';
         window.ptui_qrcode_CB = response => {
-            if (response && response.ec === 0 && typeof response.qrcode === 'string' && response.qrcode.length > 8) {
+            if (response && response.ec === 0 && typeof response.qrcode === 'string' && response.qrcode.length > 0) {
                 window.__dldQrAuthorization = response.qrcode;
                 window.__dldQrStatus = 'ready';
-                try {
-                    pt.qrcode.used = true;
-                    pt.qrcode.done = false;
-                    pt.qrcode.polling();
-                } catch (e) {}
+                try { pt.qrcode.used = true; pt.qrcode.polling(); } catch (e) {}
             } else {
                 window.__dldQrStatus = 'failed';
             }
@@ -211,14 +210,29 @@ enum QqOneKeyLogin {
         return nil
     }
 
+    /// 饭点 `isAuthorizationQR`：拒 HTML/空白；票据可能含 URL 安全字符
+    static func isAuthorizationQR(_ raw: String) -> Bool {
+        let s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard s.count >= 8 else { return false }
+        if s.contains("<") || s.contains(">") || s.contains(" ") || s.contains("\n") { return false }
+        return true
+    }
+
+    /// 跳转前记住 xlogin URL + Cookie
+    static func rememberAuthorization(loginURL: URL?, cookies: [HTTPCookie]) {
+        savedLoginURL = loginURL
+        savedCookies = cookies
+    }
+
     @discardableResult
     static func openWithQrAuthorization(_ qr: String, force: Bool = false) -> Bool {
-        guard !qr.isEmpty, let launch = launchURL(qrAuthorization: qr) else { return false }
-        if !force, launchedQrcode == qr { return true }
-        launchedQrcode = qr
+        let ticket = qr.removingPercentEncoding ?? qr
+        guard isAuthorizationQR(ticket), let launch = launchURL(qrAuthorization: ticket) else { return false }
+        if !force, launchedQrcode == ticket { return true }
+        launchedQrcode = ticket
         launchedAt = Date()
-        // 回壳后留在 xlogin 做 qlogin_submit；禁止把 pending 设成 oneClickJumpURL(p=)
-        pendingJumpURL = URL(string: LoginURLs.xloginHome)
+        // 回壳后应留在原 xlogin；丢页时重走开 graph authorize（不是死 h5sig）
+        pendingJumpURL = savedLoginURL ?? URL(string: LoginURLs.oneKeyLogin)
         awaitingReturn = true
         var candidates = [launch]
         if var c = URLComponents(url: launch, resolvingAgainstBaseURL: false) {
@@ -262,5 +276,7 @@ enum QqOneKeyLogin {
         awaitingReturn = false
         launchedQrcode = nil
         launchedAt = nil
+        savedCookies = []
+        savedLoginURL = nil
     }
 }

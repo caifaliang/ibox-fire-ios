@@ -246,9 +246,11 @@ struct GameWebView: UIViewRepresentable {
                             continue
                         }
                         lastOpenedQr = qr
+                        let cookies = await CookieBridge.snapshotQQCookies(from: webView)
+                        QqOneKeyLogin.rememberAuthorization(loginURL: webView.url, cookies: cookies)
                         let ok = QqOneKeyLogin.openWithQrAuthorization(qr, force: true)
                         self.vm.statusText = ok
-                            ? "已跳转 QQ，请尽快确认登录…"
+                            ? "已跳转 QQ，可在 QQ 内切换账号后确认…"
                             : "无法打开 QQ，请确认已安装手机 QQ"
                     }
                 }
@@ -309,10 +311,14 @@ struct GameWebView: UIViewRepresentable {
                     }
                     return
                 }
-                let ok = QqOneKeyLogin.openInQQ(url)
                 Task { @MainActor in
+                    if let wv = self.webView {
+                        let cookies = await CookieBridge.snapshotQQCookies(from: wv)
+                        QqOneKeyLogin.rememberAuthorization(loginURL: wv.url, cookies: cookies)
+                    }
+                    let ok = QqOneKeyLogin.openInQQ(url)
                     self.vm.loginMode = .oneKey
-                    self.vm.statusText = ok ? "已打开 QQ，请确认登录…" : "无法打开 QQ，请确认已安装"
+                    self.vm.statusText = ok ? "已打开 QQ，可在 QQ 内切换账号后确认…" : "无法打开 QQ，请确认已安装"
                 }
                 return
             }
@@ -332,7 +338,7 @@ struct GameWebView: UIViewRepresentable {
                             if let wv = self.webView, QqOneKeyLogin.isXloginPage(wv.url) {
                                 wv.evaluateJavaScript(QqOneKeyLogin.jsResumeAfterQQ, completionHandler: nil)
                             } else {
-                                self.vm.pendingURL = URL(string: LoginURLs.xloginHome)
+                                self.vm.pendingURL = URL(string: LoginURLs.oneKeyLogin)
                             }
                         }
                         return

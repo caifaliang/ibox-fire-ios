@@ -12,18 +12,18 @@ enum LoginURLs {
     /// 已在腾讯侧登记的回调（与安卓扫码/一键同源），用于落地写 Cookie
     static let oauthRedirect = "https://dld.qzapp.z.qq.com/index.php"
 
-    /// 带「一键登录 / 切换账号」的 xlogin 页（对齐 Android `XLOGIN_HOME`；勿用 graph oauth）
-    static let xloginHome =
-        "https://xui.ptlogin2.qq.com/cgi-bin/xlogin?appid=716027609"
-            + "&pt_3rd_aid=\(qqAppId)&daid=383&pt_skey_valid=0&style=35"
-            + "&s_url=https%3A%2F%2Fconnect.qq.com&refer_cgi=authorize&which="
-            + "&sdkp=pcweb&sdkv=v1.0&time=1789995681&loginty=3"
-            + "&h5sig=iQmvZ8eG78Q1LOs5DoTzZ2CIxslpZAZ8SJomWZgzgh4"
-            + "&response_type=code&client_id=\(qqAppId)"
-            + "&redirect_uri=https%3A%2F%2Fdld.qzapp.z.qq.com%2Findex.php&scope=all"
+    /// 饭点 `AppURLs.oneKeyLogin`：壳内开 graph authorize → 腾讯跳转新鲜 xlogin（禁止写死 h5sig）
+    static let oneKeyLogin =
+        "https://graph.qq.com/oauth2.0/authorize?response_type=code"
+            + "&client_id=\(qqAppId)"
+            + "&redirect_uri=https%3A%2F%2Fdld.qzapp.z.qq.com%2Findex.php"
+            + "&scope=all"
 
-    /// 壳内一键入口（= xlogin，保留旧名避免散落引用）
-    static var oneClickAuthorize: String { xloginHome }
+    /// 壳内一键入口
+    static var oneClickAuthorize: String { oneKeyLogin }
+
+    /// 已废弃：写死 h5sig/time 的 xlogin（会「授权失败」）；仅兼容旧引用
+    static var xloginHome: String { oneKeyLogin }
 
     /// Android 直唤 `wtlogin?p=`（iOS 一键 **禁止** 用此路径，会「授权失败」；仅作对照保留）
     static let oneClickWtLaunch =
@@ -46,8 +46,9 @@ enum LoginURLs {
             + "&redirect_uri=https%3A%2F%2Fdld.qzapp.z.qq.com%2Findex.php"
             + "&scope=all"
 
+    /// 饭点桌面 UA（Macintosh）；Windows UA 易落到无切号的失败授权页
     static let desktopUA =
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
             + "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
     static let waitingHTML = """
