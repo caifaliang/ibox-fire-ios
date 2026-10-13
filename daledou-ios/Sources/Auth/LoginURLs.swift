@@ -12,16 +12,31 @@ enum LoginURLs {
     /// 已在腾讯侧登记的回调（与安卓扫码/一键同源），用于落地写 Cookie
     static let oauthRedirect = "https://dld.qzapp.z.qq.com/index.php"
 
-    /// 壳内一键：WebView 加载授权页，禁止唤起系统 QQ / Safari
-    static var oneClickAuthorize: String {
-        let redirect = oauthRedirect.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? oauthRedirect
-        return "https://graph.qq.com/oauth2.0/authorize"
-            + "?response_type=code"
-            + "&client_id=\(qqAppId)"
-            + "&redirect_uri=\(redirect)"
-            + "&state=daledou_ios"
-            + "&scope=all"
-            + "&display=mobile"
+    /// 带「一键登录 / 切换账号」的 xlogin 页（对齐 Android `XLOGIN_HOME`；勿用 graph oauth）
+    static let xloginHome =
+        "https://xui.ptlogin2.qq.com/cgi-bin/xlogin?appid=716027609"
+            + "&pt_3rd_aid=\(qqAppId)&daid=383&pt_skey_valid=0&style=35"
+            + "&s_url=https%3A%2F%2Fconnect.qq.com&refer_cgi=authorize&which="
+            + "&sdkp=pcweb&sdkv=v1.0&time=1789995681&loginty=3"
+            + "&h5sig=iQmvZ8eG78Q1LOs5DoTzZ2CIxslpZAZ8SJomWZgzgh4"
+            + "&response_type=code&client_id=\(qqAppId)"
+            + "&redirect_uri=https%3A%2F%2Fdld.qzapp.z.qq.com%2Findex.php&scope=all"
+
+    /// 壳内一键入口（= xlogin，保留旧名避免散落引用）
+    static var oneClickAuthorize: String { xloginHome }
+
+    /// 直接唤 QQ 的 wtlogin（h5sig/time 须与 xloginHome 成对；对齐 Android `ONE_CLICK_WT`）
+    static let oneClickWtLaunch =
+        "wtloginmqq://ptlogin/qlogin?p=https%3A%2F%2Fssl.ptlogin2.qq.com%2Fjump%3Fu1%3Dhttps%253A%252F%252Fconnect.qq.com%26pt_report%3D1%26pt_aid%3D716027609%26daid%3D383%26style%3D35%26pt_ua%3D0D2AA61C2D48B97B53FFF65BB61E76F4%26pt_browser%3DChrome%26pt_3rd_aid%3D102067279%26pt_openlogin_data%3Dappid%253D716027609%2526pt_3rd_aid%253D102067279%2526daid%253D383%2526pt_skey_valid%253D0%2526style%253D35%2526s_url%253Dhttps%25253A%25252F%25252Fconnect.qq.com%2526refer_cgi%253Dauthorize%2526which%253D%2526sdkp%253Dpcweb%2526sdkv%253Dv1.0%2526time%253D1789995681%2526loginty%253D3%2526h5sig%253DiQmvZ8eG78Q1LOs5DoTzZ2CIxslpZAZ8SJomWZgzgh4%2526response_type%253Dcode%2526client_id%253D102067279%2526redirect_uri%253Dhttps%25253A%25252F%25252Fdld.qzapp.z.qq.com%25252Findex.php%2526scope%253Dall%2526pt_flex%253D1%2526loginfrom%253D&schemacallback=daledouapp%3A%2F%2F"
+
+    /// QQ 回壳后在 WebView 打开的 jump（Android `oneClickJumpUrl()`）
+    static var oneClickJumpURL: URL? {
+        guard let raw = URL(string: oneClickWtLaunch),
+              let comps = URLComponents(url: raw, resolvingAgainstBaseURL: false),
+              let p = comps.queryItems?.first(where: { $0.name == "p" })?.value?
+                .removingPercentEncoding,
+              p.hasPrefix("http") else { return nil }
+        return URL(string: p)
     }
 
     /// 扫码（大乐斗）· 桌面 UA

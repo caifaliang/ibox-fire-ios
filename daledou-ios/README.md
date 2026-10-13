@@ -9,7 +9,7 @@
 | **扫码登陆（推荐）** | 壳内 `graph.qq.com` + 桌面 UA，写游戏 Cookie |
 | **Cookie 登陆** | 粘贴含 `skey` 的 Cookie 字符串 → Keychain + WKWebView |
 
-**一键登陆不可用**：AppID `102067279` 非本包开放平台应用，无法合规完成 QQ 一键回 App 并换游戏会话（详见讨论结论）。
+**一键登陆**：走 `xui.ptlogin2` + `wtloginmqq`（与 Android 同款），QQ 确认后 `daledouapp://` 回壳写 Cookie。若失败请用扫码或粘贴 Cookie。
 
 ## 出包
 

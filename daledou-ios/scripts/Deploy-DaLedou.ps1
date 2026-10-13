@@ -3,6 +3,8 @@ param(
     [switch]$WaitCi,
     [string]$IpaPath = "",
     [switch]$SkipInstall,
+    [switch]$InstallOnly,
+    [string]$ExpectedBuild = "",
     [int]$WaitTimeoutMin = 25
 )
 
@@ -22,6 +24,36 @@ if (-not $IpaCacheDir) {
     $IpaCacheDir = Join-Path $ScriptDir "..\..\_ipa_cache"
 }
 New-Item -ItemType Directory -Force -Path $IpaCacheDir | Out-Null
+
+function Stop-IpasideStaleProcesses {
+    Get-Process python -ErrorAction SilentlyContinue |
+        Where-Object { $_.Path -like '*iPASide*' } |
+        ForEach-Object {
+            Write-Host ("Kill stale iPASide python pid={0}" -f $_.Id) -ForegroundColor DarkYellow
+            Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue
+        }
+}
+
+function Get-PhoneAppBuild {
+    param([string]$BundleId = "com.daledou.app")
+    $py = Find-IpasideEngine
+    $json = & $py -m ipaside_engine apps --json 2>$null | Out-String
+    if ($json -match ('"' + [regex]::Escape($BundleId) + '".*?"build"\s*:\s*"([^"]+)"')) {
+        return $Matches[1]
+    }
+    return $null
+}
+
+function Test-PhoneHasBuild {
+    param([string]$WantBuild)
+    if (-not $WantBuild) { return $false }
+    $got = Get-PhoneAppBuild
+    if ($got -and $got -eq $WantBuild) {
+        Write-Host ("[OK] Phone already has build {0} (PC may hang at 80% — install succeeded)" -f $got) -ForegroundColor Green
+        return $true
+    }
+    return $false
+}
 
 function Get-GhHeaders {
     if (-not $GitHubToken -or $GitHubToken -like "ghp_xxx*") {
@@ -156,6 +188,22 @@ if ($SkipInstall) {
     exit 0
 }
 
+Stop-IpasideStaleProcesses
+
+# Parse build from inspect output for post-install verify
+$targetBuild = $ExpectedBuild
+if (-not $targetBuild) {
+    try {
+        $insp2 = & (Find-IpasideEngine) -m ipaside_engine inspect $IpaPath --json 2>$null | Out-String
+        if ($insp2 -match '"build"\s*:\s*"([^"]+)"') { $targetBuild = $Matches[1] }
+    } catch {}
+}
+if ($targetBuild -and (Test-PhoneHasBuild -WantBuild $targetBuild)) {
+    Write-Host "Skip reinstall — open DaLedou on phone and test." -ForegroundColor Cyan
+    try { & (Join-Path $ScriptDir "Push-DebugLogUrl.ps1") } catch {}
+    exit 0
+}
+
 Write-Host ""
 Write-Host "=== Connected devices ===" -ForegroundColor Cyan
 [void](Invoke-IpasideEngine -EngineArgs @("devices"))
@@ -172,19 +220,35 @@ if ($raw -notmatch '"authenticated"\s*:\s*true') {
 }
 
 $conn = if ($PreferUsb -ne $false) { "usb" } else { "auto" }
-$sideArgs = @(
-    "sideload", $IpaPath,
-    "--connection", $conn,
-    "--enable-file-sharing",
-    "--name", "DaLedou"
-)
-if ($BundleIdOverride) {
-    $sideArgs += @("--bundle-id", $BundleIdOverride)
+
+if ($InstallOnly) {
+    $signedDir = Join-Path $env:LOCALAPPDATA "iPASide\signed"
+    $signed = Get-ChildItem $signedDir -Filter "*_Signed.ipa" -ErrorAction SilentlyContinue |
+        Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if (-not $signed) { throw "InstallOnly: no *_Signed.ipa in $signedDir — run full sideload once first" }
+    Write-Host ("InstallOnly: {0}" -f $signed.FullName) -ForegroundColor Cyan
+    $sideArgs = @("install", $signed.FullName, "--connection", $conn)
+} else {
+    $sideArgs = @(
+        "sideload", $IpaPath,
+        "--connection", $conn,
+        "--keep-signed",
+        "--enable-file-sharing",
+        "--name", "DaLedou"
+    )
+    if ($BundleIdOverride) {
+        $sideArgs += @("--bundle-id", $BundleIdOverride)
+    }
 }
 
 Write-Host ""
 Write-Host "=== Resign + install (1-3 min) ===" -ForegroundColor Cyan
+Write-Host "If stuck at 80% Finalizing: unlock phone, wait 2 min, then check home screen for DaLedou." -ForegroundColor DarkYellow
 $rc = Invoke-IpasideEngine -EngineArgs $sideArgs
+if ($rc -ne 0 -and $targetBuild -and (Test-PhoneHasBuild -WantBuild $targetBuild)) {
+    Write-Host "[OK] Install reported failure but phone has target build — treating as success." -ForegroundColor Green
+    $rc = 0
+}
 if ($rc -ne 0) {
     Write-Host ""
     Write-Host ("Install failed (exit={0}). Common fixes:" -f $rc) -ForegroundColor Red
@@ -192,6 +256,7 @@ if ($rc -ne 0) {
     Write-Host "  - Weekly App ID limit - change BundleIdOverride or use another Apple ID"
     Write-Host "  - Trust developer: Settings -> General -> VPN & Device Management"
     Write-Host "  - Enable Developer Mode (iOS 16+)"
+    Write-Host "  - Stuck at 80%: Ctrl+C then run .\Deploy-DaLedou.ps1 -InstallOnly"
     exit $rc
 }
 

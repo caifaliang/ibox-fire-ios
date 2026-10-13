@@ -53,23 +53,22 @@ async def main():
     from pymobiledevice3.lockdown import create_using_usbmux
     from pymobiledevice3.services.house_arrest import HouseArrestService
     ld = await create_using_usbmux()
-    ha = HouseArrestService(ld, BUNDLE)
-    # Documents is always available with file sharing / house_arrest
-    for folder in ("/Documents", "/Library/Application Support/DaLedou"):
-        try:
-            parts = folder.strip("/").split("/")
-            cur = ""
-            for p in parts:
-                cur = f"{cur}/{p}"
-                try:
-                    ha.makedirs(cur)
-                except Exception:
-                    pass
-            path = f"{folder}/debug_log_url.txt"
-            ha.set_file_contents(path, URL.encode("utf-8"))
-            print(f"wrote {path}")
-        except Exception as e:
-            print(f"skip {folder}: {e}")
+    async with await HouseArrestService.create(ld, BUNDLE) as ha:
+        for folder in ("/Documents", "/Library/Application Support/DaLedou"):
+            try:
+                parts = folder.strip("/").split("/")
+                cur = ""
+                for p in parts:
+                    cur = f"{cur}/{p}"
+                    try:
+                        await ha.makedirs(cur)
+                    except Exception:
+                        pass
+                path = f"{folder}/debug_log_url.txt"
+                await ha.set_file_contents(path, URL.encode("utf-8"))
+                print(f"wrote {path}")
+            except Exception as e:
+                print(f"skip {folder}: {e}")
 
 asyncio.run(main())
 "@

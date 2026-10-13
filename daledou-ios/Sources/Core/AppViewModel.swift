@@ -59,7 +59,7 @@ final class AppViewModel: ObservableObject {
         }
     }
 
-    /// QQ App 一键登录：跳转 QQ → schemacallback 回壳（对齐安卓 / 竞品）
+    /// QQ App 一键登录：优先直接唤 QQ；失败则打开 xlogin（含切换账号）
     func openOneKeyLogin() {
         loginMode = .oneKey
         preferDesktopUA = false
@@ -67,8 +67,13 @@ final class AppViewModel: ObservableObject {
         QqOneKeyLogin.clearPending()
         session.clear()
         clearWebEpoch &+= 1
-        statusText = "一键登录：打开授权页，将跳转手机 QQ…"
-        pendingURL = URL(string: LoginURLs.oneClickAuthorize)
+        if QqOneKeyLogin.wakeDirect() {
+            statusText = "已打开手机 QQ，请确认登录；完成后自动回壳…"
+            pendingURL = nil
+        } else {
+            statusText = "无法直接唤起 QQ，已打开网页登录页…"
+            pendingURL = URL(string: LoginURLs.xloginHome)
+        }
     }
 
     /// 扫码登陆
@@ -149,20 +154,21 @@ final class AppViewModel: ObservableObject {
             return
         }
         statusText = "已从 QQ 返回（\(reason)），正在写入会话…"
-        if let jump = QqOneKeyLogin.takePendingJump() {
+        if let jump = QqOneKeyLogin.takePendingJump() ?? LoginURLs.oneClickJumpURL {
             pendingURL = jump
         } else {
-            pendingURL = URL(string: LoginURLs.oneClickAuthorize)
+            pendingURL = URL(string: LoginURLs.xloginHome)
         }
     }
 
     func onNavigated(to url: URL?) {
         currentURLString = url?.absoluteString ?? ""
 
-        if loginMode == .scan, let s = url?.absoluteString,
+        if loginMode == .oneKey || loginMode == .scan,
+           let s = url?.absoluteString,
            let cont = LoginURLs.continueAuthorizeUrl(xloginUrl: s),
            let u = URL(string: cont) {
-            statusText = "扫码已确认，继续授权…"
+            statusText = loginMode == .scan ? "扫码已确认，继续授权…" : "一键已确认，继续授权…"
             pendingURL = u
             return
         }

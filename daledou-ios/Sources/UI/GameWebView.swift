@@ -297,18 +297,18 @@ struct GameWebView: UIViewRepresentable {
                 if vm.session.isLoggedIn, vm.loginMode == .idle {
                     return
                 }
-                if vm.loginMode == .scan,
+                if vm.loginMode == .scan || vm.loginMode == .oneKey,
                    let s = webView.url?.absoluteString,
                    let cont = LoginURLs.continueAuthorizeUrl(xloginUrl: s),
                    cont != lastContinueURL,
                    let u = URL(string: cont) {
                     lastContinueURL = cont
-                    vm.statusText = "扫码已确认，继续授权…"
+                    vm.statusText = vm.loginMode == .scan ? "扫码已确认，继续授权…" : "一键已确认，继续授权…"
                     webView.load(URLRequest(url: u))
                     return
                 }
                 let url = webView.url
-                let shouldWait = vm.loginMode == .scan
+                let shouldWait = vm.loginMode == .scan || vm.loginMode == .oneKey
                     || LoginURLs.isGameHost(url)
                     || LoginURLs.isOauthLanding(url)
                 let header: String
