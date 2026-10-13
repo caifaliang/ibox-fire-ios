@@ -170,10 +170,11 @@ enum QqOneKeyLogin {
         return false
     }
 
-    /// 只编码一层：`&` `?` `=` 必须编码，否则 `f=` 会截断 query。
-    private static let qrQueryAllowed: CharacterSet = {
+    /// 对齐 JS `encodeURIComponent`：保留 `*` `!` `~` `'` `(` `)`。
+    /// 之前把 `*` 编成 `%2A` 会导致 QQ 校验票失败 → 倒计时后点同意报「二维码已过期」。
+    private static let jsEncodeURIComponentAllowed: CharacterSet = {
         var s = CharacterSet.alphanumerics
-        s.insert(charactersIn: "-._~")
+        s.insert(charactersIn: "-_.!~*'()")
         return s
     }()
 
@@ -181,11 +182,22 @@ enum QqOneKeyLogin {
         let ticket = qrAuthorization.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !ticket.isEmpty else { return nil }
         let decoded = ticket.removingPercentEncoding ?? ticket
-        let qrEnc = decoded.addingPercentEncoding(withAllowedCharacters: qrQueryAllowed) ?? decoded
-        let cb = callbackURLString.addingPercentEncoding(withAllowedCharacters: qrQueryAllowed)
+        let qrEnc = decoded.addingPercentEncoding(withAllowedCharacters: jsEncodeURIComponentAllowed)
+            ?? decoded
+        let cb = callbackURLString.addingPercentEncoding(withAllowedCharacters: jsEncodeURIComponentAllowed)
             ?? "daledoulogin%3A%2F%2F"
         let s = "wtloginmqq3://ptlogin/qlogin?qrcode=\(qrEnc)&schemacallback=\(cb)"
         return URL(string: s) ?? (NSURL(string: s) as URL?)
+    }
+
+    /// 从 txz URL 抽出 k=，作备用拉起参数
+    static func qrcodeKValue(from ticket: String) -> String? {
+        let raw = (ticket.removingPercentEncoding ?? ticket).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let u = URL(string: raw),
+              let items = URLComponents(url: u, resolvingAgainstBaseURL: false)?.queryItems,
+              let k = items.first(where: { $0.name == "k" })?.value,
+              k.count >= 16 else { return nil }
+        return k
     }
 
     /// 原生路径：标记已拉起，供回壳判定（不经 WebView）

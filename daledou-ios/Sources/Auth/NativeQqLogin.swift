@@ -439,18 +439,32 @@ final class NativeQqLogin {
     }
 
     private func openQQ(with ticket: String) -> Bool {
-        guard let launch = QqOneKeyLogin.launchURL(qrAuthorization: ticket) else { return false }
+        // 优先完整 txz URL；再试仅 k=（部分 QQ 版本更认）
+        var tickets = [ticket]
+        if let k = QqOneKeyLogin.qrcodeKValue(from: ticket) {
+            tickets.append(k)
+        }
+        var urls: [URL] = []
+        for t in tickets {
+            guard let launch = QqOneKeyLogin.launchURL(qrAuthorization: t) else { continue }
+            urls.append(launch)
+            if var c = URLComponents(url: launch, resolvingAgainstBaseURL: false) {
+                c.scheme = "wtloginmqq"
+                if let u = c.url { urls.append(u) }
+            }
+        }
+        guard let first = urls.first else { return false }
         QqOneKeyLogin.markNativeLaunch(qrAuthorization: ticket)
-        var candidates = [launch]
-        if var c = URLComponents(url: launch, resolvingAgainstBaseURL: false) {
-            c.scheme = "wtloginmqq"
-            if let u = c.url { candidates.append(u) }
-        }
-        for u in candidates where UIApplication.shared.canOpenURL(u) {
-            UIApplication.shared.open(u, options: [:], completionHandler: nil)
-            return true
-        }
-        UIApplication.shared.open(launch, options: [:], completionHandler: nil)
+        // 只 open 一次，避免二次拉起作废票
+        let target = urls.first(where: { UIApplication.shared.canOpenURL($0) }) ?? first
+        let encSample = target.absoluteString
+        let starOk = !encSample.contains("%2A") || ticket.removingPercentEncoding?.contains("*") != true
+        AppViewModel.logOneKey(
+            "native_open_url",
+            "host=\(target.host ?? "?") star_raw=\(ticket.contains("*")) enc_has_%2A=\(encSample.contains("%2A"))"
+        )
+        _ = starOk
+        UIApplication.shared.open(target, options: [:], completionHandler: nil)
         return true
     }
 
