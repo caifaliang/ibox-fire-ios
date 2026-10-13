@@ -46,10 +46,9 @@ enum LoginURLs {
             + "&redirect_uri=https%3A%2F%2Fdld.qzapp.z.qq.com%2Findex.php"
             + "&scope=all"
 
-    /// 饭点桌面 UA（Macintosh）；Windows UA 易落到无切号的失败授权页
+    /// 饭点二进制字面量（勿加减字段）
     static let desktopUA =
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
-            + "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120 Safari/537.36"
 
     static let waitingHTML = """
     <!doctype html><html><head><meta charset="utf-8"/>

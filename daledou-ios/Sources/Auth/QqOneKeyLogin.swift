@@ -61,20 +61,34 @@ enum QqOneKeyLogin {
 
     // MARK: - 注入脚本
 
-    /// graph 页遮罩 + 点「一键登录」，避免被当成扫码页
-    static let jsAssistGraphOneKey = """
+    /// 从 graph/authorize 页抠出 iframe/a 的 xlogin 或 wtlogin（饭点同款入口落地后的真登录框）
+    static let jsFindLoginTarget = """
     (() => {
-        if (!/graph\\.qq\\.com$/i.test(location.hostname)) return 'skip';
-        if (!document.getElementById('dld-onekey-mask')) {
-            var mask = document.createElement('div');
-            mask.id = 'dld-onekey-mask';
-            mask.setAttribute('style',
-                'position:fixed;inset:0;z-index:2147483647;background:#111;color:#fff;' +
-                'display:flex;align-items:center;justify-content:center;font:16px/1.5 -apple-system,sans-serif;' +
-                'text-align:center;padding:24px;');
-            mask.textContent = '一键登录：正在唤起手机 QQ（可在 QQ 内切号），不是扫码…';
-            document.documentElement.appendChild(mask);
+        function pick(u) {
+            if (!u || typeof u !== 'string') return '';
+            var s = u.trim();
+            if (!s) return '';
+            if (/^wtlogin/i.test(s) || /^mqq/i.test(s)) return s;
+            if (/ptlogin2\\.qq\\.com/i.test(s) && /xlogin/i.test(s)) return s;
+            return '';
         }
+        var ifr = document.querySelectorAll('iframe');
+        for (var i = 0; i < ifr.length; i++) {
+            var a = pick(ifr[i].src || '');
+            if (a) return a;
+        }
+        var links = document.querySelectorAll('a[href]');
+        for (var j = 0; j < links.length; j++) {
+            var b = pick(links[j].href || '');
+            if (b) return b;
+        }
+        return '';
+    })();
+    """
+
+    /// 无遮罩：点「一键登录 / QQ手机版」
+    static let jsClickOneKeyButton = """
+    (() => {
         var nodes = document.querySelectorAll('a,button,div,span,li');
         for (var i = 0; i < nodes.length; i++) {
             var t = (nodes[i].innerText || nodes[i].textContent || '').replace(/\\s+/g, '');
@@ -82,9 +96,7 @@ enum QqOneKeyLogin {
                 try { nodes[i].click(); return 'clicked'; } catch (e) {}
             }
         }
-        var links = document.querySelectorAll('a[href*=\"wtlogin\"],a[href*=\"xlogin\"]');
-        if (links.length) { location.href = links[0].href; return 'href'; }
-        return 'masked';
+        return 'none';
     })();
     """
 

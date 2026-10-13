@@ -182,13 +182,12 @@ struct GameWebView: UIViewRepresentable {
             Task { @MainActor in vm.onNavigated(to: webView.url) }
             webView.evaluateJavaScript(stayJS, completionHandler: nil)
             scheduleCookieCapture(webView)
-            // 一键：graph 页会像扫码，遮罩并点「一键登录」；任意页都跑 pipeline，等到 xlogin 再跳 QQ
+            // 一键：graph → 抠 iframe xlogin（新鲜 h5sig）→ ptqrshow → 跳 QQ；禁止黑屏遮罩卡死
             if vm.loginMode == .oneKey {
-                if QqOneKeyLogin.isGraphOAuthPage(webView.url) {
-                    webView.evaluateJavaScript(QqOneKeyLogin.jsAssistGraphOneKey, completionHandler: nil)
-                    vm.statusText = "一键登录：正在唤起 QQ（不是扫码）…"
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    await self.driveOneKey(from: webView)
                 }
-                startOneKeyQrPipeline(webView, forceRefresh: QqOneKeyLogin.qrLikelyExpired)
             }
             // 已登录却仍停在 QQ「一键登录」页 → 强制进 phonepk
             webView.evaluateJavaScript(LoginURLs.qqLoginProbeJS) { [weak self] result, _ in
@@ -202,6 +201,60 @@ struct GameWebView: UIViewRepresentable {
                     self.vm.recoverIfStuckOnQqLoginPage()
                 }
             }
+        }
+
+        /// graph/oauth 落地 → 顶层打开 xlogin → pipeline 跳 QQ
+        private func driveOneKey(from webView: WKWebView) async {
+            guard vm.loginMode == .oneKey, !vm.session.isLoggedIn else { return }
+            let url = webView.url
+
+            // 误入无 Cookie 的 index.php：别报「缺 skey」，拉回 authorize
+            if let url, LoginURLs.isOauthLanding(url), LoginURLs.oauthCode(from: url) == nil {
+                vm.statusText = "一键登录：重新进入授权…"
+                vm.pendingURL = URL(string: LoginURLs.oneKeyLogin)
+                return
+            }
+
+            if QqOneKeyLogin.isXloginPage(url) {
+                vm.statusText = "一键登录：生成授权并跳转 QQ…"
+                startOneKeyQrPipeline(webView, forceRefresh: QqOneKeyLogin.qrLikelyExpired)
+                return
+            }
+
+            if QqOneKeyLogin.isGraphOAuthPage(url) {
+                vm.statusText = "一键登录：定位登录框…"
+                if let target = await evalJS(QqOneKeyLogin.jsFindLoginTarget, in: webView) as? String,
+                   !target.isEmpty {
+                    if QqOneKeyLogin.isWtloginScheme(URL(string: target)?.scheme) {
+                        if let u = URL(string: target) {
+                            let cookies = await CookieBridge.snapshotQQCookies(from: webView)
+                            QqOneKeyLogin.rememberAuthorization(loginURL: webView.url, cookies: cookies)
+                            _ = QqOneKeyLogin.openInQQ(u)
+                            vm.statusText = "已跳转 QQ，可在 QQ 内切换账号后确认…"
+                        }
+                        return
+                    }
+                    if let u = URL(string: target), u.host?.contains("ptlogin") == true {
+                        vm.statusText = "一键登录：打开登录页并跳转 QQ…"
+                        webView.load(URLRequest(url: u))
+                        return
+                    }
+                }
+                _ = await evalJS(QqOneKeyLogin.jsClickOneKeyButton, in: webView)
+                // 仍停在 graph：继续 pipeline（等跳到 xlogin）；同时稍后重试找 iframe
+                startOneKeyQrPipeline(webView, forceRefresh: false)
+                try? await Task.sleep(nanoseconds: 1_200_000_000)
+                guard vm.loginMode == .oneKey, !vm.session.isLoggedIn else { return }
+                if QqOneKeyLogin.isGraphOAuthPage(webView.url),
+                   let target = await evalJS(QqOneKeyLogin.jsFindLoginTarget, in: webView) as? String,
+                   let u = URL(string: target), u.host?.contains("ptlogin") == true {
+                    webView.load(URLRequest(url: u))
+                }
+                return
+            }
+
+            // 其它页也跑 pipeline，万一已是隐藏 xlogin
+            startOneKeyQrPipeline(webView, forceRefresh: false)
         }
 
         /// ptqrshow → wtloginmqq3?qrcode=… → 跳转 QQ（确认前不 submit，到期换新码）
@@ -435,7 +488,9 @@ struct GameWebView: UIViewRepresentable {
                 }
                 if LoginURLs.hasRealSkey(header) {
                     vm.onCookiesCaptured(header)
-                } else if LoginURLs.isGameHost(url), !vm.session.isLoggedIn {
+                } else if LoginURLs.isGameHost(url), !vm.session.isLoggedIn,
+                          vm.loginMode == .idle {
+                    // 一键/扫码进行中勿刷这条（会误导成「已进游戏」且盖住跳转 QQ 状态）
                     vm.statusText = "已进游戏页，但未读到 skey。可试 Cookie 登陆备份"
                 }
             }
