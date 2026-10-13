@@ -59,16 +59,16 @@ final class AppViewModel: ObservableObject {
         }
     }
 
-    /// QQ App 一键登录：先开 xlogin（可切换账号），页内点一键 → wtloginmqq3+qrcode 回壳
-    /// （勿直接用安卓 `p=` 唤 QQ：iOS 上 QQ 会把 jump 丢给 Safari）
+    /// QQ App 一键登录：桌面 UA 打开 xlogin（亿万用户/切换账号），页内点一键唤 QQ。
+    /// 仅改 schemacallback→daledoulogin，保留页内原始 p/qrcode（勿改名，否则 QQ 授权失败）。
     func openOneKeyLogin() {
         loginMode = .oneKey
-        preferDesktopUA = false
+        preferDesktopUA = true
         didEnterGameFromCapture = false
         QqOneKeyLogin.clearPending()
         session.clear()
         clearWebEpoch &+= 1
-        statusText = "一键登录：在页内点「一键登录」，确认后自动回壳…"
+        statusText = "一键登录：页内可切号，点「一键登录」后确认回壳…"
         pendingURL = URL(string: LoginURLs.xloginHome)
     }
 
