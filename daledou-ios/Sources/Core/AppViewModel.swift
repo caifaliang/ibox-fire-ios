@@ -59,8 +59,8 @@ final class AppViewModel: ObservableObject {
         }
     }
 
-    /// QQ 一键：桌面 UA 开 xlogin → 取 ptqrshow 授权串 → wtloginmqq3?qrcode=… 唤 QQ（竞品同款）。
-    /// 勿走页内 `p=` 一键（iOS QQ 会「网页申请使用 / 授权失败」）。
+    /// iOS 主路径：桌面 UA 开 xlogin，登录全程留在 WKWebView。
+    /// 页内可「切换账号」/ 密码 / 扫页内二维码；禁止自动唤起 QQ（会授权失败且无切号）。
     func openOneKeyLogin() {
         loginMode = .oneKey
         preferDesktopUA = true
@@ -68,7 +68,7 @@ final class AppViewModel: ObservableObject {
         QqOneKeyLogin.clearPending()
         session.clear()
         clearWebEpoch &+= 1
-        statusText = "一键登录：准备 QQ 授权（可先在页内切换账号）…"
+        statusText = "登录页：请点「切换账号」，或用手机 QQ 扫本页二维码…"
         pendingURL = URL(string: LoginURLs.xloginHome)
     }
 
@@ -142,29 +142,17 @@ final class AppViewModel: ObservableObject {
         }
     }
 
-    /// QQ 确认后回 App：先 resume/submit；若仍未登录（码过期）则换新码再开 QQ
+    /// 壳内一键：从后台回前台时继续等 Cookie（用户可能刚用 QQ 扫完页内码）
     func onAppBecameActive() {
         guard loginMode == .oneKey, !session.isLoggedIn else { return }
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 400_000_000)
             guard loginMode == .oneKey, !session.isLoggedIn else { return }
-            guard let wv = gameWebView, QqOneKeyLogin.isXloginPage(wv.url) else { return }
-            wv.evaluateJavaScript(QqOneKeyLogin.jsResumeAfterQQ) { [weak self] result, _ in
-                Task { @MainActor in
-                    guard let self, self.loginMode == .oneKey, !self.session.isLoggedIn else { return }
-                    let flag = (result as? String) ?? ""
-                    // 仍无会话：多半是二维码过期 / 未同意 → 换新码
-                    if flag == "missing-session" || flag == "waiting" || QqOneKeyLogin.qrLikelyExpired
-                        || QqOneKeyLogin.awaitingReturn {
-                        self.statusText = "未登录成功（可能码已过期），正在换新码…"
-                        // 由 WebView Coordinator 的 pipeline 负责；触发一次 reload 级刷新
-                        self.webReloadToken &+= 1
-                    } else {
-                        self.statusText = "已回到 App，正在完成登录…"
-                    }
-                    QqOneKeyLogin.markReturned()
-                }
+            if let wv = gameWebView, QqOneKeyLogin.isXloginPage(wv.url) {
+                wv.evaluateJavaScript(QqOneKeyLogin.jsKeepPolling, completionHandler: nil)
+                statusText = "若已扫码，正在写入会话…"
             }
+            QqOneKeyLogin.markReturned()
         }
     }
 

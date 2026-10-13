@@ -145,6 +145,22 @@ enum QqOneKeyLogin {
     })();
     """
 
+    /// 壳内登录提示：切号 / 扫页内码（不跳转 QQ 授权页）
+    static let jsShellLoginHint = """
+    (() => {
+        if (document.getElementById('dld-shell-login-hint')) return 'ok';
+        var bar = document.createElement('div');
+        bar.id = 'dld-shell-login-hint';
+        bar.setAttribute('style',
+            'position:fixed;left:0;right:0;top:0;z-index:2147483647;padding:10px 12px;' +
+            'background:#1a1a1a;color:#fff;font:14px/1.4 -apple-system,sans-serif;text-align:center;');
+        bar.textContent = '请在本页点「切换账号」，或用手机 QQ 扫描本页二维码（勿跳到 QQ 授权页）';
+        document.documentElement.appendChild(bar);
+        document.documentElement.style.scrollPaddingTop = '48px';
+        return 'ok';
+    })();
+    """
+
     static func launchURL(qrAuthorization: String) -> URL? {
         // 手工拼 query，避免 URLQueryItem 对已编码票据二次编码
         let cb = callbackURLString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? callbackURLString
