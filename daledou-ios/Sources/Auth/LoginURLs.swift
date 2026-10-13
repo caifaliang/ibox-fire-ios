@@ -1,28 +1,26 @@
 import Foundation
 
-/// 登录常量：一键 = 壳内 QQ 互联 authorize；扫码 = graph show。
+/// 登录常量：一键 = 饭点 QQ_ONE_KEY（phonepk→style=35→wtlogin p=）；扫码 = graph show。
 enum LoginURLs {
     static let qqAppId = "102067279"
     /// QQ 互联 iOS 惯例：tencent + AppID
     static let tencentScheme = "tencent102067279"
 
+    /// 饭点 QQ_ONE_KEY 入口（ordinal==0 字面量）
     static let ledouEntry =
         "https://dld.qzapp.z.qq.com/qpet/cgi-bin/phonepk?cmd=index&channel=0"
 
     /// 已在腾讯侧登记的回调（与安卓扫码/一键同源），用于落地写 Cookie
     static let oauthRedirect = "https://dld.qzapp.z.qq.com/index.php"
 
-    /// 饭点 `AppURLs.oneKeyLogin`：仅用于 URLSession 跟跳拿新鲜 xlogin（勿直接在 WK 打开，易唤起「APP网页申请」失败页）
+    /// 备用：直接 authorize（正常一键不走这条，入口是 phonepk）
     static let oneKeyLogin =
         "https://graph.qq.com/oauth2.0/authorize?response_type=code"
             + "&client_id=\(qqAppId)"
             + "&redirect_uri=https%3A%2F%2Fdld.qzapp.z.qq.com%2Findex.php"
             + "&scope=all"
 
-    /// 壳内一键入口（运行时解析后的 xlogin；解析前勿当最终 URL）
     static var oneClickAuthorize: String { oneKeyLogin }
-
-    /// 兼容旧名
     static var xloginHome: String { oneKeyLogin }
 
     /// 手机 UA 拉 authorize → HTML 里带 **新鲜 h5sig** 的 style=35 xlogin（饭点/安卓一键同源）。
@@ -179,20 +177,6 @@ enum LoginURLs {
             .queryItems?
             .first(where: { $0.name == "client_id" })?
             .value
-    }
-
-    /// Android 直唤 `wtlogin?p=`（iOS 一键 **禁止** 用此路径，会「授权失败」；仅作对照保留）
-    static let oneClickWtLaunch =
-        "wtloginmqq3://ptlogin/qlogin?p=https%3A%2F%2Fssl.ptlogin2.qq.com%2Fjump%3Fu1%3Dhttps%253A%252F%252Fconnect.qq.com%26pt_report%3D1%26pt_aid%3D716027609%26daid%3D383%26style%3D35%26pt_ua%3D0D2AA61C2D48B97B53FFF65BB61E76F4%26pt_browser%3DChrome%26pt_3rd_aid%3D102067279%26pt_openlogin_data%3Dappid%253D716027609%2526pt_3rd_aid%253D102067279%2526daid%253D383%2526pt_skey_valid%253D0%2526style%253D35%2526s_url%253Dhttps%25253A%25252F%25252Fconnect.qq.com%2526refer_cgi%253Dauthorize%2526which%253D%2526sdkp%253Dpcweb%2526sdkv%253Dv1.0%2526time%253D1789995681%2526loginty%253D3%2526h5sig%253DiQmvZ8eG78Q1LOs5DoTzZ2CIxslpZAZ8SJomWZgzgh4%2526response_type%253Dcode%2526client_id%253D102067279%2526redirect_uri%253Dhttps%25253A%25252F%25252Fdld.qzapp.z.qq.com%25252Findex.php%2526scope%253Dall%2526pt_flex%253D1%2526loginfrom%253D&schemacallback=daledoulogin%3A%2F%2F"
-
-    /// Android `oneClickJumpUrl()`；iOS 回壳勿打开（FORBIDDEN →「授权失败」）
-    static var oneClickJumpURL: URL? {
-        guard let raw = URL(string: oneClickWtLaunch),
-              let comps = URLComponents(url: raw, resolvingAgainstBaseURL: false),
-              let p = comps.queryItems?.first(where: { $0.name == "p" })?.value?
-                .removingPercentEncoding,
-              p.hasPrefix("http") else { return nil }
-        return URL(string: p)
     }
 
     /// 扫码（大乐斗）· 桌面 UA
@@ -361,6 +345,6 @@ enum LoginURLs {
 enum LoginMode: String {
     case idle
     case scan
-    /// QQ App 一键（wtlogin + schemacallback 回壳）
+    /// QQ App 一键（饭点：phonepk → wtlogin p= → https 回跳）
     case oneKey
 }

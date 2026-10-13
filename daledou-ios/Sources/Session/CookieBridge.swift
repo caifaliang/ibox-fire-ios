@@ -100,7 +100,8 @@ enum CookieBridge {
     }
 
     static func clearAll(from webView: WKWebView) async {
-        let store = webView.configuration.websiteDataStore.httpCookieStore
+        let dataStore = webView.configuration.websiteDataStore
+        let store = dataStore.httpCookieStore
         let cookies: [HTTPCookie] = await withCheckedContinuation { cont in
             store.getAllCookies { cont.resume(returning: $0) }
         }
@@ -109,7 +110,26 @@ enum CookieBridge {
                 store.delete(c) { cont.resume() }
             }
         }
-        let types: Set<String> = [WKWebsiteDataTypeCookies]
+        // 饭点登录前清 QQ 域会话：Cookie + 本地存储，避免 xlogin 自动落到 connect 营销页
+        let types: Set<String> = [
+            WKWebsiteDataTypeCookies,
+            WKWebsiteDataTypeLocalStorage,
+            WKWebsiteDataTypeSessionStorage,
+            WKWebsiteDataTypeIndexedDBDatabases,
+            WKWebsiteDataTypeWebSQLDatabases,
+        ]
+        let records: [WKWebsiteDataRecord] = await withCheckedContinuation { cont in
+            dataStore.fetchDataRecords(ofTypes: types) { cont.resume(returning: $0) }
+        }
+        let qqRecords = records.filter { rec in
+            let d = rec.displayName.lowercased()
+            return d.contains("qq.com") || d.contains("gtimg.cn") || d.contains("qlogo.cn")
+        }
+        if !qqRecords.isEmpty {
+            await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+                dataStore.removeData(ofTypes: types, for: qqRecords) { cont.resume() }
+            }
+        }
         await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
             WKWebsiteDataStore.default().removeData(
                 ofTypes: types,

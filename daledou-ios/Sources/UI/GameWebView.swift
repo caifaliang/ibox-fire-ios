@@ -149,18 +149,14 @@ struct GameWebView: UIViewRepresentable {
         private var lastHandledCode = ""
         private var lastStuckRecoverAt: TimeInterval = 0
 
-        /// 把 _blank / window.open 留在壳内；wtlogin 交给原生拦截
+        /// 把 _blank / window.open 留在壳内；wtlogin（含 p=）交给原生拦截后开 QQ（饭点同款）
         private let stayJS = """
         (function(){
-          if (window.__dldStay2) return; window.__dldStay2=1;
+          if (window.__dldStay3) return; window.__dldStay3=1;
           window.open=function(u){
             try{
               var s=String(u||'');
-              // 带 p= 的 wtlogin 会进「APP网页申请」失败页：打回 location 让原生拦截丢弃
-              if(/^(wtlogin|mqq)/i.test(s)){
-                if(/[?&]p=/i.test(s) && !/[?&]qrcode=/i.test(s)){ return null; }
-                location.href=s; return null;
-              }
+              if(/^(wtlogin|mqq)/i.test(s)){ location.href=s; return null; }
               if(/^https?:/i.test(s)){ location.href=s; return null; }
             }catch(e){}
             return null;
@@ -191,14 +187,15 @@ struct GameWebView: UIViewRepresentable {
             webView.evaluateJavaScript(stayJS, completionHandler: nil)
             scheduleCookieCapture(webView)
             if vm.loginMode == .oneKey {
-                webView.evaluateJavaScript(QqOneKeyLogin.jsOneKeyPageHint, completionHandler: nil)
-                if QqOneKeyLogin.isXloginPage(webView.url) {
-                    vm.attachOneKeyFetcher(to: webView)
-                } else if LoginURLs.isConnectMarketing(webView.url) {
-                    vm.bounceOneKeyToLiveXlogin(reason: "离开营销页")
+                if LoginURLs.isConnectMarketing(webView.url) {
+                    vm.bounceOneKeyToPhonepk(reason: "离开营销页")
+                } else if QqOneKeyLogin.isXloginPage(webView.url) {
+                    Task { @MainActor in
+                        self.vm.statusText = "请切换账号后点页内「一键登录」"
+                    }
                 }
             }
-            // 「亿万用户已选择」= connect 营销页：一键模式必须拉回 xlogin；已登录则进游戏
+            // 「亿万用户已选择」= connect 营销页
             webView.evaluateJavaScript(LoginURLs.qqLoginProbeJS) { [weak self] result, _ in
                 guard let self else { return }
                 let flag = (result as? String) ?? ""
@@ -207,7 +204,7 @@ struct GameWebView: UIViewRepresentable {
                     guard now - self.lastStuckRecoverAt > 2.5 else { return }
                     if flag == "qq", self.vm.loginMode == .oneKey, !self.vm.session.isLoggedIn {
                         self.lastStuckRecoverAt = now
-                        self.vm.bounceOneKeyToLiveXlogin(reason: "离开营销页")
+                        self.vm.bounceOneKeyToPhonepk(reason: "离开营销页")
                         return
                     }
                     guard self.vm.session.isLoggedIn, flag == "qq" else { return }
@@ -258,59 +255,48 @@ struct GameWebView: UIViewRepresentable {
                 return
             }
 
-            // ② wtlogin / mqq：iOS **只允许 qrcode=**。任何 p= →「网页申请使用」授权失败无切号
+            // ② wtlogin / mqq：饭点 1:1 — 校验 p= 后打开 `wtloginmqq://…?p=`（无 schemacallback）
             if QqOneKeyLogin.isWtloginScheme(scheme) {
                 decisionHandler(.cancel)
                 Task { @MainActor in
                     self.vm.loginMode = .oneKey
-                    if let ticket = QqOneKeyLogin.qrcodeTicket(fromWtlogin: url) {
-                        if let wv = self.webView {
-                            let cookies = await CookieBridge.snapshotQQCookies(from: wv)
-                            QqOneKeyLogin.rememberAuthorization(loginURL: wv.url, cookies: cookies)
-                        }
-                        let ok = QqOneKeyLogin.openWithQrAuthorization(ticket, force: true)
-                        self.vm.statusText = ok ? "已跳转 QQ，请确认（可切号）…" : "票据无效，请重试"
-                        if ok { self.vm.oneKeyFetcherMarkOpened() }
-                    } else if let wv = self.webView, QqOneKeyLogin.isXloginPage(wv.url) {
-                        self.vm.statusText = "已拦截网页授权，改走安全取票…"
-                        self.vm.attachOneKeyFetcher(to: wv)
+                    if let enc = QqOneKeyLogin.encodedPJump(fromWtlogin: url) {
+                        let ok = QqOneKeyLogin.openWithEncodedP(enc)
+                        self.vm.statusText = ok
+                            ? "已跳转 QQ，请确认登录…"
+                            : "QQ 登录链接校验失败，请刷新后重试"
                     } else {
-                        self.vm.bounceOneKeyToLiveXlogin(reason: "拦截网页授权后重进登录页")
+                        self.vm.statusText = "QQ 登录链接校验失败，请刷新后重试"
                     }
                 }
                 return
             }
 
             if scheme == "http" || scheme == "https" {
-                // 一键期间禁止掉进 connect「亿万用户」营销页（无切号、无法取票）
+                // 一键期间禁止掉进 connect「亿万用户」营销页
                 if vm.loginMode == .oneKey, LoginURLs.isConnectMarketing(url) {
                     decisionHandler(.cancel)
                     Task { @MainActor in
-                        self.vm.bounceOneKeyToLiveXlogin(reason: "离开营销页")
+                        self.vm.bounceOneKeyToPhonepk(reason: "离开营销页")
                     }
                     return
                 }
-                // 一键：仅允许扫码确认后的 jump（openlogin 含 pt_skey_valid=1）
+                // 一键：放行带 clientuin 的回壳 jump；拦无凭证的空 jump（会落到营销页）
                 if vm.loginMode == .oneKey,
-                   (url.host ?? "").lowercased().contains("ptlogin2.qq.com"),
+                   (url.host ?? "").lowercased() == "ssl.ptlogin2.qq.com",
                    url.path.lowercased().contains("jump") {
-                    let raw = url.absoluteString
-                    let decoded = raw.removingPercentEncoding ?? raw
-                    let skeyOk = decoded.contains("pt_skey_valid=1")
-                    if !skeyOk {
-                        decisionHandler(.cancel)
+                    if QqOneKeyLogin.isValidReturnJump(url) {
+                        decisionHandler(.allow)
                         Task { @MainActor in
-                            self.vm.statusText = "已拦下失败授权页，留在登录页完成确认…"
-                            if let wv = self.webView, QqOneKeyLogin.isXloginPage(wv.url) {
-                                wv.evaluateJavaScript(QqOneKeyLogin.jsResumeAfterQQ, completionHandler: nil)
-                            } else if let live = await LoginURLs.resolveLiveXloginURL() {
-                                self.vm.pendingURL = live
-                            }
+                            self.vm.statusText = "一键已确认，正在写入会话…"
                         }
                         return
                     }
+                    // 出站 jump 不应在 WK 里打开（应由 wtlogin p= 走 QQ）
+                    decisionHandler(.cancel)
+                    return
                 }
-                // 扫码落地 index.php?code=…：只提示一次，进游戏后由 Cookie 捕获改成「已登录」
+                // 扫码落地 index.php?code=…
                 if vm.loginMode == .scan,
                    LoginURLs.isOauthLanding(url),
                    LoginURLs.oauthCode(from: url) != nil,
@@ -343,17 +329,13 @@ struct GameWebView: UIViewRepresentable {
             guard let url = navigationAction.request.url else { return nil }
             let scheme = (url.scheme ?? "").lowercased()
             if QqOneKeyLogin.isWtloginScheme(scheme) {
-                if let ticket = QqOneKeyLogin.qrcodeTicket(fromWtlogin: url) {
-                    _ = QqOneKeyLogin.openWithQrAuthorization(ticket, force: true)
-                    Task { @MainActor in
-                        self.vm.loginMode = .oneKey
-                        self.vm.statusText = "已用 qrcode 打开 QQ，请确认…"
-                    }
-                } else {
-                    Task { @MainActor in
-                        self.vm.statusText = "已拦截网页授权（p=），改安全取票…"
-                        self.vm.loginMode = .oneKey
-                        if let wv = self.webView { self.vm.attachOneKeyFetcher(to: wv) }
+                Task { @MainActor in
+                    self.vm.loginMode = .oneKey
+                    if let enc = QqOneKeyLogin.encodedPJump(fromWtlogin: url),
+                       QqOneKeyLogin.openWithEncodedP(enc) {
+                        self.vm.statusText = "已跳转 QQ，请确认登录…"
+                    } else {
+                        self.vm.statusText = "QQ 登录链接校验失败，请刷新后重试"
                     }
                 }
                 return nil
@@ -373,13 +355,14 @@ struct GameWebView: UIViewRepresentable {
                 if vm.session.isLoggedIn, vm.loginMode == .idle {
                     return
                 }
-                if vm.loginMode == .scan || vm.loginMode == .oneKey,
+                // 扫码确认后的 continue；一键走 QQ p= 回跳，不在此拼 jump
+                if vm.loginMode == .scan,
                    let s = webView.url?.absoluteString,
                    let cont = LoginURLs.continueAuthorizeUrl(xloginUrl: s),
                    cont != lastContinueURL,
                    let u = URL(string: cont) {
                     lastContinueURL = cont
-                    vm.statusText = vm.loginMode == .scan ? "扫码已确认，继续授权…" : "一键已确认，继续授权…"
+                    vm.statusText = "扫码已确认，继续授权…"
                     webView.load(URLRequest(url: u))
                     return
                 }

@@ -1,23 +1,20 @@
 import Foundation
 import UIKit
 
-/// QQ 一键登录（对齐竞品：ptqrshow 授权串 + wtloginmqq3?qrcode=）。
-/// 注意：确认前不要调 `qlogin_submit`，否则 QQ 里会「二维码已过期」。
+/// QQ 一键登录 — 饭点 QQ_ONE_KEY 行为规格落地（非源码搬运）。
+///
+/// 竞品路径：清 Cookie → 打开 phonepk → 腾讯跳 authorize→style=35 →
+/// 用户点页内「一键登录」→ 拦截 `wtloginmqq://ptlogin/qlogin?p=` →
+/// 原生打开 `wtloginmqq://ptlogin/qlogin?p=<已编码jump>`（**不带** schemacallback）→
+/// QQ 确认后 https 回跳（clientuin/clientkey/keyindex）写 Cookie。
 enum QqOneKeyLogin {
     static let callbackScheme = "daledoulogin"
     static let callbackURLString = "daledoulogin://"
     static let callbackSchemeAlt = "com.daledou.ioslogin"
 
-    /// QR 约 60s 过期；到点前主动换新并重开 QQ
-    static let qrRefreshSeconds: TimeInterval = 40
-
-    private(set) static var pendingJumpURL: URL?
     private(set) static var awaitingReturn = false
-    private(set) static var launchedQrcode: String?
-    private(set) static var launchedAt: Date?
-    /// 跳 QQ 前 Cookie 快照（qrsig 等）；回壳 restore 后再 qlogin_submit
-    private(set) static var savedCookies: [HTTPCookie] = []
-    private(set) static var savedLoginURL: URL?
+    private(set) static var lastOpenedPEncoded: String?
+    private(set) static var lastOpenedAt: Date?
 
     static func isWtloginScheme(_ scheme: String?) -> Bool {
         guard let s = scheme?.lowercased(), !s.isEmpty else { return false }
@@ -38,243 +35,146 @@ enum QqOneKeyLogin {
         return host.contains("ptlogin2.qq.com") && u.path.lowercased().contains("xlogin")
     }
 
-    /// graph authorize / show：桌面 UA 下像扫码页，一键模式要遮罩并催向 QQ
-    static func isGraphOAuthPage(_ url: URL?) -> Bool {
-        guard let u = url, let host = u.host?.lowercased() else { return false }
-        return host.contains("graph.qq.com") && u.path.lowercased().contains("oauth2.0")
-    }
+    // MARK: - Jump 校验（对齐饭点 V1.m.k）
 
-    /// 写死旧 h5sig 的 p=（安卓字面量）→ 失败页；新鲜 h5sig 的 p= 是饭点主路径，不算 broken
-    static func isBrokenPageOneClick(_ url: URL) -> Bool {
-        guard isWtloginScheme(url.scheme) else { return false }
-        guard let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems else {
+    /// 出站 jump：ssl.ptlogin2/jump + 互联参数，尚无 clientuin（给 p= 用）
+    static func isValidOutboundJump(_ raw: String) -> Bool {
+        guard let parsed = parseJump(raw) else { return false }
+        guard parsed.clientuin == nil, parsed.clientkey == nil, parsed.keyindex == nil else {
             return false
         }
-        let hasP = items.contains { $0.name == "p" && !($0.value ?? "").isEmpty }
-        let hasQr = items.contains { $0.name == "qrcode" && !($0.value ?? "").isEmpty }
-        if hasQr { return false }
-        guard hasP, let p = items.first(where: { $0.name == "p" })?.value else { return false }
-        let jump = p.removingPercentEncoding ?? p
-        // 过期字面量 h5sig → broken；含新鲜 h5sig 的 live jump → 可用
-        if jump.contains("iQmvZ8eG78Q1LOs5DoTzZ2CIxslpZAZ8SJomWZgzgh4") { return true }
-        return !isLiveJumpURL(jump)
+        return true
     }
 
-    /// 饭点校验：ssl.ptlogin2 /jump + 互联参数 + 含 h5sig（拒绝过期安卓字面量）
-    static func isLiveJumpURL(_ raw: String) -> Bool {
+    /// 回壳 jump：同上参数 + clientuin/clientkey/keyindex
+    static func isValidReturnJump(_ url: URL) -> Bool {
+        guard let parsed = parseJump(url.absoluteString) else { return false }
+        guard let uin = parsed.clientuin, let key = parsed.clientkey, let idx = parsed.keyindex else {
+            return false
+        }
+        guard uin.range(of: #"^[1-9][0-9]{4,19}$"#, options: .regularExpression) != nil else {
+            return false
+        }
+        guard idx.range(of: #"^[0-9]{1,3}$"#, options: .regularExpression) != nil else {
+            return false
+        }
+        return !key.isEmpty && key.count <= 1024
+    }
+
+    private struct JumpParts {
+        var clientuin: String?
+        var clientkey: String?
+        var keyindex: String?
+    }
+
+    private static func parseJump(_ raw: String) -> JumpParts? {
         let s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard s.hasPrefix("https://"), s.contains("ptlogin2.qq.com"), s.contains("/jump") else {
-            return false
+        guard let url = URL(string: s) ?? URL(string: s.removingPercentEncoding ?? s) else {
+            return nil
         }
-        if s.contains("iQmvZ8eG78Q1LOs5DoTzZ2CIxslpZAZ8SJomWZgzgh4") { return false }
-        let need = ["pt_aid=716027609", "daid=383", "pt_3rd_aid=102067279", "h5sig"]
-        let decoded = s.removingPercentEncoding ?? s
-        return need.allSatisfy { decoded.contains($0) || s.contains($0) }
+        guard (url.scheme ?? "").lowercased() == "https",
+              (url.host ?? "").lowercased() == "ssl.ptlogin2.qq.com",
+              url.path == "/jump" else {
+            return nil
+        }
+        guard let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems else {
+            return nil
+        }
+        func v(_ name: String) -> String? {
+            items.first(where: { $0.name == name })?.value
+        }
+        guard v("pt_report") == "1",
+              v("pt_aid") == "716027609",
+              v("daid") == "383",
+              v("style") == "35",
+              v("pt_3rd_aid") == LoginURLs.qqAppId else {
+            return nil
+        }
+        guard let u1 = v("u1"), let u1url = URL(string: u1),
+              (u1url.scheme ?? "").lowercased() == "https",
+              (u1url.host ?? "").lowercased() == "connect.qq.com" else {
+            return nil
+        }
+        let path = u1url.path
+        if !path.isEmpty, path != "/" { return nil }
+        if u1url.query != nil || u1url.fragment != nil { return nil }
+        return JumpParts(
+            clientuin: v("clientuin"),
+            clientkey: v("clientkey"),
+            keyindex: v("keyindex")
+        )
     }
 
-    static var qrLikelyExpired: Bool {
-        guard let t = launchedAt else { return false }
-        return Date().timeIntervalSince(t) >= qrRefreshSeconds
-    }
+    // MARK: - 从 wtlogin URL 取 p=
 
-    // MARK: - 注入脚本
-
-    /// 从 graph/authorize 页抠出 iframe/a 的 xlogin 或 wtlogin（饭点同款入口落地后的真登录框）
-    static let jsFindLoginTarget = """
-    (() => {
-        function pick(u) {
-            if (!u || typeof u !== 'string') return '';
-            var s = u.trim();
-            if (!s) return '';
-            if (/^wtlogin/i.test(s) || /^mqq/i.test(s)) return s;
-            if (/ptlogin2\\.qq\\.com/i.test(s) && /xlogin/i.test(s)) return s;
-            return '';
+    /// 饭点 `V1.m.h`：仅允许 query 键 p / schemacallback；返回 **原始编码** 的 p 值
+    static func encodedPJump(fromWtlogin url: URL) -> String? {
+        guard isWtloginScheme(url.scheme) else { return nil }
+        guard let comps = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            return nil
         }
-        var ifr = document.querySelectorAll('iframe');
-        for (var i = 0; i < ifr.length; i++) {
-            var a = pick(ifr[i].src || '');
-            if (a) return a;
-        }
-        var links = document.querySelectorAll('a[href]');
-        for (var j = 0; j < links.length; j++) {
-            var b = pick(links[j].href || '');
-            if (b) return b;
-        }
-        return '';
-    })();
-    """
-
-    /// 点页内「一键登录」(#onekey，style=35)。hidden/disabled 时返回状态供重试。
-    static let jsClickOneKeyButton = """
-    (() => {
-        var b = document.getElementById('onekey');
-        if (b) {
-            var st = window.getComputedStyle(b);
-            if (st.display === 'none' || st.visibility === 'hidden' || b.classList.contains('disabled')
-                || b.classList.contains('loading')) return 'hidden';
-            try { b.click(); return 'clicked'; } catch (e) { return 'err'; }
-        }
-        var nodes = document.querySelectorAll('a,button,div,span,li');
-        for (var i = 0; i < nodes.length; i++) {
-            var t = (nodes[i].innerText || nodes[i].textContent || '').replace(/\\s+/g, '');
-            if (t === '一键登录' || t.indexOf('一键登录') >= 0) {
-                try { nodes[i].click(); return 'clicked'; } catch (e) {}
+        // 手工拆 rawQuery，保留 p 的已编码形态（饭点用 substring 不二次 decode 再 encode）
+        guard let rawQuery = comps.percentEncodedQuery ?? comps.query else { return nil }
+        var pEncoded: String?
+        var keys = Set<String>()
+        for part in rawQuery.split(separator: "&") {
+            let pair = part.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
+            guard pair.count == 2 else { continue }
+            let name = String(pair[0]).removingPercentEncoding ?? String(pair[0])
+            keys.insert(name)
+            if name == "p" {
+                pEncoded = String(pair[1])
             }
         }
-        return 'none';
-    })();
-    """
-
-    /// 申请 QR 授权串：不依赖已消失的 pt.hasInit；直接挂 ptui_qrcode_CB + 拉 ptqrshow。
-    /// iOS 必须走 qrcode=（p= 会进「网页申请使用」授权失败且无切号）。
-    static let jsRequestQr = """
-    (() => {
-        if (location.protocol !== 'https:' || !/\\.ptlogin2\\.qq\\.com$/i.test(location.hostname) ||
-            location.pathname.indexOf('xlogin') < 0) return 'waiting';
-        if (window.__dldQrRequested) return window.__dldQrStatus === 'ready' ? 'ready' : 'requested';
-        window.__dldQrRequested = true;
-        window.__dldQrStatus = 'waiting';
-        window.__dldQrAuthorization = '';
-        window.ptui_qrcode_CB = response => {
-            if (response && response.ec === 0 && typeof response.qrcode === 'string' && response.qrcode.length > 0) {
-                window.__dldQrAuthorization = response.qrcode;
-                window.__dldQrStatus = 'ready';
-                try {
-                    if (typeof pt !== 'undefined' && pt.qrcode) {
-                        pt.qrcode.used = true;
-                        if (typeof pt.qrcode.polling === 'function') pt.qrcode.polling();
-                    }
-                } catch (e) {}
-            } else {
-                window.__dldQrStatus = 'failed';
-            }
-        };
-        try {
-            if (typeof pt !== 'undefined' && pt.qrcode) {
-                pt.qrcode.used = true;
-                pt.qrcode.done = false;
-            }
-        } catch (e) {}
-        const request = document.createElement('script');
-        request.src = 'https://xui.ptlogin2.qq.com/ssl/ptqrshow?s=8&e=0&appid=716027609&type=1' +
-            '&u1=https%3A%2F%2Fconnect.qq.com&daid=383&pt_3rd_aid=102067279&t=' + Math.random();
-        request.onerror = () => { window.__dldQrStatus = 'failed'; try { request.remove(); } catch (e) {} };
-        request.onload = () => {
-            try { request.remove(); } catch (e) {}
-            setTimeout(() => {
-                if (window.__dldQrStatus === 'waiting') window.__dldQrStatus = 'failed';
-            }, 2500);
-        };
-        document.head.appendChild(request);
-        return 'requested';
-    })();
-    """
-
-    /// 诊断：仅确认在 xlogin；取票不再要求 hasInit
-    static let jsPtDiag = """
-    (() => {
-        if (location.protocol !== 'https:' || !/\\.ptlogin2\\.qq\\.com$/i.test(location.hostname) ||
-            location.pathname.indexOf('xlogin') < 0) {
-            return 'page:' + location.hostname + location.pathname;
+        guard keys.isSubset(of: ["p", "schemacallback"]), let enc = pEncoded, !enc.isEmpty else {
+            return nil
         }
-        return 'ready';
-    })();
-    """
-
-    static let jsPollStatus = """
-    (() => {
-        if (location.protocol !== 'https:' || !/\\.ptlogin2\\.qq\\.com$/i.test(location.hostname) ||
-            location.pathname.indexOf('xlogin') < 0) {
-            return JSON.stringify({status:'waiting',url:'',qrsig:false,page:location.hostname+location.pathname});
-        }
-        var hasSig = document.cookie.split(';').some(function(v){ return v.trim().indexOf('qrsig=')===0; });
-        return JSON.stringify({
-            status: window.__dldQrStatus || 'waiting',
-            url: window.__dldQrAuthorization || '',
-            qrsig: hasSig
-        });
-    })();
-    """
-
-    /// 页内提示 + 藏起网页「一键登录」（点了会进 iOS 授权失败页）
-    static let jsOneKeyPageHint = """
-    (() => {
-        var b = document.getElementById('onekey');
-        if (b) { b.style.display = 'none'; b.style.pointerEvents = 'none'; }
-        if (document.getElementById('dld-onekey-hint')) return 'ok';
-        var bar = document.createElement('div');
-        bar.id = 'dld-onekey-hint';
-        bar.setAttribute('style',
-            'position:fixed;left:0;right:0;top:0;z-index:2147483647;padding:10px 12px;' +
-            'background:#0b57d0;color:#fff;font:14px/1.4 -apple-system,sans-serif;text-align:center;');
-        bar.textContent = '一键登录：请在本页切换 QQ 账号；几秒后自动跳转 QQ 确认（可切号）';
-        document.documentElement.appendChild(bar);
-        document.documentElement.style.scrollPaddingTop = '48px';
-        return 'ok';
-    })();
-    """
-
-    /// 仅 keep-alive polling，不要 qlogin_submit（确认前 submit 会弄死未确认的码）
-    static let jsKeepPolling = """
-    (() => {
-        if (typeof pt === 'undefined' || !pt.qrcode || typeof pt.qrcode.polling !== 'function') return 'no';
-        try { pt.qrcode.used = true; pt.qrcode.polling(); } catch (e) { return 'err'; }
-        return 'ok';
-    })();
-    """
-
-    /// QQ 已确认 / 回壳之后再 submit（对齐饭点：polling + qlogin_submit，勿跳 p= jump）
-    static let jsResumeAfterQQ = """
-    (() => {
-        if (location.protocol !== 'https:' || !/\\.ptlogin2\\.qq\\.com$/i.test(location.hostname) ||
-            location.pathname.indexOf('xlogin') < 0) return 'other-page';
-        if (typeof pt === 'undefined' || pt.loginUrl !== 'https://ssl.ptlogin2.qq.com/' ||
-            !pt.qrcode || typeof pt.qrcode.polling !== 'function') return 'waiting';
-        if (!document.cookie.split(';').some(value => value.trim().startsWith('qrsig='))) return 'missing-session';
-        pt.qrcode.used = true;
-        pt.qrcode.polling();
-        try { $.http.loadScript(pt.qlogin_submit(pt.qrcode.CGI)); } catch (e) { return 'submit-err'; }
-        return 'resumed';
-    })();
-    """
-
-    static let jsResetQr = """
-    (() => {
-        window.__dldQrRequested = false;
-        window.__dldQrStatus = 'waiting';
-        window.__dldQrAuthorization = '';
-        try { if (pt && pt.qrcode) { pt.qrcode.done = false; pt.qrcode.used = false; } } catch (e) {}
-        return 'ok';
-    })();
-    """
-
-    static func launchURL(qrAuthorization: String) -> URL? {
-        // 饭点：qrcode= 原样拼接；schemacallback 编码。字母数字票据勿二次编码。
-        let ticket = qrAuthorization.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !ticket.isEmpty else { return nil }
-        let cb = callbackURLString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)
-            ?? "daledoulogin://"
-        let qrEnc: String
-        if ticket.rangeOfCharacter(from: CharacterSet.alphanumerics.inverted) == nil {
-            qrEnc = ticket
-        } else if ticket.removingPercentEncoding != ticket {
-            qrEnc = ticket.replacingOccurrences(of: "&", with: "%26")
-        } else {
-            qrEnc = ticket.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ticket
-        }
-        let s = "wtloginmqq3://ptlogin/qlogin?qrcode=\(qrEnc)&schemacallback=\(cb)"
-        if let u = URL(string: s) { return u }
-        return NSURL(string: s) as URL?
+        let jump = enc.removingPercentEncoding ?? enc
+        guard isValidOutboundJump(jump) else { return nil }
+        return enc
     }
 
-    static func buildLaunchURL(from raw: URL) -> URL? {
-        guard let comps = URLComponents(url: raw, resolvingAgainstBaseURL: false),
-              let qr = comps.queryItems?.first(where: { $0.name == "qrcode" })?.value,
-              !qr.isEmpty else { return nil }
-        return launchURL(qrAuthorization: qr)
+    /// 饭点：`wtloginmqq://ptlogin/qlogin?p=` + 已编码 jump，**不加** schemacallback
+    @discardableResult
+    static func openWithEncodedP(_ pEncoded: String) -> Bool {
+        let enc = pEncoded.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !enc.isEmpty else { return false }
+        let jump = enc.removingPercentEncoding ?? enc
+        guard isValidOutboundJump(jump) else { return false }
+
+        if lastOpenedPEncoded == enc,
+           let t = lastOpenedAt,
+           Date().timeIntervalSince(t) < 1.5 {
+            return true
+        }
+
+        let s = "wtloginmqq://ptlogin/qlogin?p=\(enc)"
+        guard let launch = URL(string: s) ?? (NSURL(string: s) as URL?) else { return false }
+
+        lastOpenedPEncoded = enc
+        lastOpenedAt = Date()
+        awaitingReturn = true
+
+        var candidates = [launch]
+        if var c = URLComponents(url: launch, resolvingAgainstBaseURL: false) {
+            c.scheme = "wtloginmqq3"
+            if let u = c.url { candidates.insert(u, at: 0) }
+        }
+        for u in candidates where UIApplication.shared.canOpenURL(u) {
+            UIApplication.shared.open(u, options: [:], completionHandler: nil)
+            return true
+        }
+        UIApplication.shared.open(launch, options: [:], completionHandler: nil)
+        return true
     }
 
-    /// schemacallback 体里若带 https 落地 URL 则返回；空/`?` 回调 **不要** 落到 Android `p=` jump（iOS 会「授权失败」）。
+    @discardableResult
+    static func openInQQ(_ raw: URL) -> Bool {
+        guard let enc = encodedPJump(fromWtlogin: raw) else { return false }
+        return openWithEncodedP(enc)
+    }
+
+    /// schemacallback 体里若带 https 则返回（饭点也可走 https returnRoute）
     static func continueURL(fromCallback url: URL) -> URL? {
         let abs = url.absoluteString
         let prefixes = [
@@ -302,117 +202,11 @@ enum QqOneKeyLogin {
         return nil
     }
 
-    /// 饭点 `isAuthorizationQR`：仅字母数字（拒 https/p= 垃圾串，否则 QQ 会进「APP网页申请」失败页）
-    static func isAuthorizationQR(_ raw: String) -> Bool {
-        let s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard s.count >= 16 else { return false }
-        return s.unicodeScalars.allSatisfy { CharacterSet.alphanumerics.contains($0) }
-    }
-
-    /// 从 wtlogin URL 提取合法 qrcode；带 `p=` 或无票据 → nil（禁止打开）
-    static func qrcodeTicket(fromWtlogin url: URL) -> String? {
-        guard isWtloginScheme(url.scheme) else { return nil }
-        guard let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems else {
-            return nil
-        }
-        if items.contains(where: { $0.name == "p" && !($0.value ?? "").isEmpty }) {
-            return nil
-        }
-        guard let raw = items.first(where: { $0.name == "qrcode" })?.value else { return nil }
-        let ticket = raw.removingPercentEncoding ?? raw
-        return isAuthorizationQR(ticket) ? ticket : nil
-    }
-
-    /// 跳转前记住 xlogin URL + Cookie
-    static func rememberAuthorization(loginURL: URL?, cookies: [HTTPCookie]) {
-        savedLoginURL = loginURL
-        savedCookies = cookies
-    }
-
-    @discardableResult
-    static func openWithQrAuthorization(_ qr: String, force: Bool = false) -> Bool {
-        let ticket = (qr.removingPercentEncoding ?? qr).trimmingCharacters(in: .whitespacesAndNewlines)
-        guard isAuthorizationQR(ticket), let launch = launchURL(qrAuthorization: ticket) else { return false }
-        // 双保险：最终 URL 不得含 p=
-        if launch.absoluteString.contains("?p=") || launch.absoluteString.contains("&p=") {
-            return false
-        }
-        if !force, launchedQrcode == ticket { return true }
-        launchedQrcode = ticket
-        launchedAt = Date()
-        pendingJumpURL = savedLoginURL
-        awaitingReturn = true
-        var candidates = [launch]
-        if var c = URLComponents(url: launch, resolvingAgainstBaseURL: false) {
-            c.scheme = "wtloginmqq"
-            if let u = c.url { candidates.append(u) }
-        }
-        for u in candidates where UIApplication.shared.canOpenURL(u) {
-            UIApplication.shared.open(u, options: [:], completionHandler: nil)
-            return true
-        }
-        UIApplication.shared.open(launch, options: [:], completionHandler: nil)
-        return true
-    }
-
-    /// 打开 QQ：优先合法 qrcode；否则接受**新鲜** p= jump（饭点主路径）
-    @discardableResult
-    static func openInQQ(_ raw: URL) -> Bool {
-        if let ticket = qrcodeTicket(fromWtlogin: raw) {
-            return openWithQrAuthorization(ticket, force: true)
-        }
-        return openWithLivePJump(fromWtlogin: raw)
-    }
-
-    /// 饭点：`wtloginmqq://ptlogin/qlogin?p=` + 新鲜 jump + schemacallback 回壳
-    @discardableResult
-    static func openWithLivePJump(fromWtlogin url: URL) -> Bool {
-        guard isWtloginScheme(url.scheme),
-              let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems,
-              let pRaw = items.first(where: { $0.name == "p" })?.value,
-              !pRaw.isEmpty else { return false }
-        let jump = pRaw.removingPercentEncoding ?? pRaw
-        guard isLiveJumpURL(jump) else { return false }
-        let enc = jump.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? pRaw
-        let cb = callbackURLString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)
-            ?? "daledoulogin://"
-        let s = "wtloginmqq3://ptlogin/qlogin?p=\(enc)&schemacallback=\(cb)"
-        guard let launch = URL(string: s) ?? (NSURL(string: s) as URL?) else { return false }
-        awaitingReturn = true
-        pendingJumpURL = savedLoginURL
-        launchedAt = Date()
-        var candidates = [launch]
-        if var c = URLComponents(url: launch, resolvingAgainstBaseURL: false) {
-            c.scheme = "wtloginmqq"
-            if let u = c.url { candidates.append(u) }
-        }
-        for u in candidates where UIApplication.shared.canOpenURL(u) {
-            UIApplication.shared.open(u, options: [:], completionHandler: nil)
-            return true
-        }
-        UIApplication.shared.open(launch, options: [:], completionHandler: nil)
-        return true
-    }
-
     static func markReturned() { awaitingReturn = false }
 
-    static func clearLaunchStamp() {
-        launchedQrcode = nil
-        launchedAt = nil
-    }
-
-    static func takePendingJump() -> URL? {
-        let u = pendingJumpURL
-        pendingJumpURL = nil
-        return u
-    }
-
     static func clearPending() {
-        pendingJumpURL = nil
         awaitingReturn = false
-        launchedQrcode = nil
-        launchedAt = nil
-        savedCookies = []
-        savedLoginURL = nil
+        lastOpenedPEncoded = nil
+        lastOpenedAt = nil
     }
 }

@@ -21,7 +21,7 @@ description: >-
 2. **Rewrite against the spec** with own assets. Do not ship competitor art/binary blobs.
 3. **One screen or one feature per change.** Verify before stacking more.
 4. **Log timeline + falsify.** Record what was tried and ruled out; do not re-try a killed approach without new evidence.
-5. **iOS ≠ Android for QQ login.** Never assume `wtlogin` + `p=` + default-browser capture works on iPhone.
+5. **One-key follows Fandian QQ_ONE_KEY** (`phonepk` + live `p=`). Do not reintroduce ptqrshow/qrcode one-key without new evidence + user ask.
 
 ## Workflow
 
@@ -57,17 +57,22 @@ Extract from screenshots: color, type size, spacing, radius, animation ms → to
 - **Behavior:** same inputs → compare request sequence, key logs, state transitions.
 - **Perf budget:** memory / jetsam / fps written in the spec.
 
-### 5. Login (known traps — do not regress)
+### 5. Login (饭点 QQ_ONE_KEY 1:1 — current)
 
-| Approach | iOS result | Verdict |
-|----------|------------|---------|
-| 任何 `wtlogin?p=`（含页内「一键登录」、新鲜/过期 h5sig） | 「网页申请使用」→ 授权失败、**无切号** | **FORBIDDEN on iOS**（安卓饭点可用，iOS 不行） |
-| **Desktop UA** authorize → style=33 + 等 `pt.hasInit` | 永久 `no-init` | **FORBIDDEN** |
-| **iPhone UA** authorize → 新鲜 style=35 → **ptqrshow（不依赖 hasInit）** → `wtloginmqq3?qrcode=` + `schemacallback=daledoulogin://` | QQ 原生确认**可切号** | **PRIMARY** |
-| 扫码 `graph show` display=pc | 壳内跟完 | OK backup |
-| 粘贴 Cookie | 总兜底 | OK |
+| Step | Behavior |
+|------|----------|
+| Entry | Clear QQ WK data → iPhone UA → `phonepk?cmd=index&channel=0` |
+| Page | Tencent → authorize → live `style=35` xlogin（可切号；用户点页内「一键登录」） |
+| Jump QQ | Intercept `wtloginmqq://…?p=` → open `wtloginmqq://ptlogin/qlogin?p=<encoded>` **without** schemacallback（`returnRoute=https`） |
+| Return | Allow `ssl.ptlogin2/jump` **with** clientuin/clientkey/keyindex；connect「亿万用户」→ bounce phonepk |
+| Non-goals | No ptqrshow / qrcode / hide `#onekey` / blue banner / Desktop-UA for one-key |
 
-**Primary one-key on iOS (饭点 QQ_ONE_KEY 入口 + iOS 取票):** iPhone UA load `phonepk` → authorize → live `style=35` xlogin → user may switch → `ptqrshow` → `wtloginmqq3?qrcode=` only. Bounce off connect「亿万用户」marketing. Never open `p=`; never click page「一键登录」.
+| Forbidden | Why |
+|-----------|-----|
+| Desktop UA for one-key | style=33 / no `#onekey` |
+| Stale hardcoded h5sig in p= | 「授权失败」 |
+
+扫码 `graph show` + Cookie 粘贴仍为备份。官方动画（Ruffle）与一键无关，勿回退。
 
 ### 6. Evidence habit
 
