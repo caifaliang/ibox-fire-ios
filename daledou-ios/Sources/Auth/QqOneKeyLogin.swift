@@ -137,11 +137,62 @@ enum QqOneKeyLogin {
 
     static let jsResetQr = """
     (() => {
+        if (window.__dldQrFrozen) return 'frozen';
         window.__dldQrRequested = false;
         window.__dldQrStatus = 'waiting';
         window.__dldQrAuthorization = '';
         try { if (pt && pt.qrcode) { pt.qrcode.done = false; pt.qrcode.used = false; } } catch (e) {}
         return 'ok';
+    })();
+    """
+
+    /// 打开 QQ 后冻结：拦截后续 ptqrshow，避免票被刷新导致「二维码已过期」
+    static let jsFreezeQr = """
+    (() => {
+        window.__dldQrFrozen = true;
+        try {
+            if (pt && pt.qrcode) {
+                pt.qrcode.used = true;
+                pt.qrcode.done = false;
+            }
+        } catch (e) {}
+        if (!window.__dldPtqrHooked) {
+            window.__dldPtqrHooked = true;
+            const ce = document.createElement.bind(document);
+            document.createElement = function(tag) {
+                const el = ce(tag);
+                try {
+                    if (String(tag).toLowerCase() === 'script') {
+                        const sa = el.setAttribute.bind(el);
+                        el.setAttribute = function(name, value) {
+                            if (window.__dldQrFrozen && String(name).toLowerCase() === 'src' &&
+                                String(value).indexOf('ptqrshow') >= 0) {
+                                return;
+                            }
+                            return sa(name, value);
+                        };
+                        try {
+                            Object.defineProperty(el, 'src', {
+                                configurable: true,
+                                set: function(v) {
+                                    if (window.__dldQrFrozen && String(v).indexOf('ptqrshow') >= 0) return;
+                                    sa('src', v);
+                                },
+                                get: function() { return el.getAttribute('src'); }
+                            });
+                        } catch (e2) {}
+                    }
+                } catch (e3) {}
+                return el;
+            };
+        }
+        // 撤掉页面上尚未执行的 ptqrshow script
+        try {
+            document.querySelectorAll('script[src*="ptqrshow"]').forEach(function(n) {
+                try { n.remove(); } catch (e) {}
+            });
+        } catch (e) {}
+        return 'frozen';
     })();
     """
 

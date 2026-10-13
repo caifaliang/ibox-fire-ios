@@ -189,10 +189,18 @@ struct GameWebView: UIViewRepresentable {
             Task { @MainActor in vm.onNavigated(to: webView.url) }
             webView.evaluateJavaScript(stayJS, completionHandler: nil)
             scheduleCookieCapture(webView)
-            // 一键已改原生取票：WebView 不挂 Fetcher、不因营销页打断 waitingQQ
-            if vm.loginMode == .oneKey, LoginURLs.isConnectMarketing(webView.url) {
-                AppViewModel.logOneKey("webview_marketing", AppViewModel.sanitizeURLLog(webView.url))
-                vm.markOneKeyUnsupportedQuickLogin()
+            if vm.loginMode == .oneKey {
+                if LoginURLs.isConnectMarketing(webView.url) {
+                    // 等待 QQ 期间忽略误入营销页；取票阶段才终态
+                    if vm.oneKeyPhase == .waitingQQConfirm {
+                        AppViewModel.logOneKey("webview_marketing", "ignored_waiting_qq")
+                    } else {
+                        AppViewModel.logOneKey("webview_marketing", AppViewModel.sanitizeURLLog(webView.url))
+                        vm.markOneKeyUnsupportedQuickLogin()
+                    }
+                } else if QqOneKeyLogin.isXloginPage(webView.url) {
+                    vm.attachOneKeyFetcher(to: webView)
+                }
             }
             webView.evaluateJavaScript(LoginURLs.qqLoginProbeJS) { [weak self] result, _ in
                 guard let self else { return }
