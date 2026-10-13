@@ -21,7 +21,7 @@ description: >-
 2. **Rewrite against the spec** with own assets. Do not ship competitor art/binary blobs.
 3. **One screen or one feature per change.** Verify before stacking more.
 4. **Log timeline + falsify.** Record what was tried and ruled out; do not re-try a killed approach without new evidence.
-5. **One-key follows Fandian QQ_ONE_KEY** (`phonepk` + live `p=`). Do not reintroduce ptqrshow/qrcode one-key without new evidence + user ask.
+5. **One-key follows Fandian iOS IPA** (`qrcode` + `schemacallback`). Android `p=` causes iOS「授权失败」— forbidden.
 
 ## Workflow
 
@@ -57,22 +57,24 @@ Extract from screenshots: color, type size, spacing, radius, animation ms → to
 - **Behavior:** same inputs → compare request sequence, key logs, state transitions.
 - **Perf budget:** memory / jetsam / fps written in the spec.
 
-### 5. Login (饭点 QQ_ONE_KEY 1:1 — current)
+### 5. Login (Fandian **iOS IPA** 对拍 — current)
+
+实机：竞品也**切不了号**；能点「同意」；回 App 后手动刷新才有 Cookie。
 
 | Step | Behavior |
 |------|----------|
-| Entry | Clear QQ WK data → iPhone UA → `phonepk?cmd=index&channel=0` |
-| Page | Tencent → authorize → live `style=35` xlogin（可切号；用户点页内「一键登录」） |
-| Jump QQ | Intercept `wtloginmqq://…?p=` → open `wtloginmqq://ptlogin/qlogin?p=<encoded>` **without** schemacallback（`returnRoute=https`） |
-| Return | Allow `ssl.ptlogin2/jump` **with** clientuin/clientkey/keyindex；connect「亿万用户」→ bounce phonepk |
-| Non-goals | No ptqrshow / qrcode / hide `#onekey` / blue banner / Desktop-UA for one-key |
+| Entry | Clear QQ WK → iPhone UA → `phonepk` |
+| Page | authorize → style=35；藏 `#onekey`（点了走 p= 会授权失败） |
+| Jump QQ | `ptqrshow` → `wtloginmqq3?qrcode=&schemacallback=daledoulogin://` |
+| Return | restore + `qlogin_submit` + **自动刷新 phonepk** 取 Cookie |
+| Non-goals | 切号（iOS 竞品也不行）；Android `p=` |
 
 | Forbidden | Why |
 |-----------|-----|
-| Desktop UA for one-key | style=33 / no `#onekey` |
-| Stale hardcoded h5sig in p= | 「授权失败」 |
+| `wtlogin?p=` | iOS「登录授权失败」 |
+| Desktop UA for one-key | style=33 |
 
-扫码 `graph show` + Cookie 粘贴仍为备份。官方动画（Ruffle）与一键无关，勿回退。
+扫码 + Cookie 粘贴仍为备份。官方动画（Ruffle）勿回退。
 
 ### 6. Evidence habit
 

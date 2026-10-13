@@ -9,7 +9,7 @@
 | **扫码登陆（推荐）** | 壳内 `graph.qq.com` + 桌面 UA，写游戏 Cookie |
 | **Cookie 登陆** | 粘贴含 `skey` 的 Cookie 字符串 → Keychain + WKWebView |
 
-**一键登陆**：饭点 QQ_ONE_KEY 同款 — `phonepk` → style=35 → `wtloginmqq?p=` 开 QQ，https 回跳写 Cookie。失败请用扫码或粘贴 Cookie。
+**一键登陆**：对齐竞品 iOS — `phonepk` → style=35 → `wtloginmqq3?qrcode=` + schemacallback；回壳自动刷新取 Cookie。失败请用扫码或粘贴 Cookie。
 
 ## 出包
 

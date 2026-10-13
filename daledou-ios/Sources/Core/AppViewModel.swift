@@ -24,6 +24,7 @@ final class AppViewModel: ObservableObject {
     @Published var qqLabel = ""
     @Published var loginMode: LoginMode = .idle
     @Published var preferDesktopUA = false
+    private var oneKeyFetcher: OneKeyTicketFetcher?
 
     // 官方动画（viewfight）
     @Published var showViewFightFab = false
@@ -61,34 +62,70 @@ final class AppViewModel: ObservableObject {
 
     /// 防 connect 营销页死循环回跳
     private var lastOneKeyBounceAt: TimeInterval = 0
+    /// 防回壳自动刷新重入
+    private var oneKeyReturnBusy = false
 
-    /// 一键登录（饭点 QQ_ONE_KEY 1:1）：清 Cookie → phonepk → style=35 → 拦截 p= 开 QQ。
+    /// 一键登录（竞品 iOS）：清 Cookie → phonepk → style=35 → ptqrshow/qrcode → QQ「同意」→ 回壳自动刷新取 Cookie。
+    /// 对拍结论：竞品也切不了号；能点同意；回 App 需刷新才有 Cookie —— 我们自动刷新。
     func openOneKeyLogin() {
         loginMode = .oneKey
         preferDesktopUA = false
         didEnterGameFromCapture = false
         QqOneKeyLogin.clearPending()
         session.clear()
+        oneKeyFetcher?.cancel()
+        oneKeyFetcher = nil
         lastOneKeyBounceAt = 0
-        statusText = "一键登录：清理会话并打开游戏入口…"
+        oneKeyReturnBusy = false
+        statusText = "一键登录：清理会话并打开入口…"
         clearWebEpoch &+= 1
         pendingURL = URL(string: LoginURLs.ledouEntry)
     }
 
-    /// 误入 connect「亿万用户」营销页：重新从 phonepk 走（饭点入口）
+    func attachOneKeyFetcher(to webView: WKWebView) {
+        guard loginMode == .oneKey else { return }
+        guard QqOneKeyLogin.isXloginPage(webView.url) else { return }
+        if oneKeyFetcher != nil { return }
+        let fetcher = OneKeyTicketFetcher(webView: webView) { [weak self] event in
+            self?.handleOneKeyEvent(event)
+        }
+        oneKeyFetcher = fetcher
+        fetcher.start()
+    }
+
+    func oneKeyFetcherMarkOpened() {
+        oneKeyFetcher?.markOpenedQQ()
+    }
+
+    /// 误入 connect「亿万用户」：拉回 phonepk 重走
     func bounceOneKeyToPhonepk(reason: String = "离开营销页") {
         guard loginMode == .oneKey else { return }
         let now = Date().timeIntervalSince1970
         guard now - lastOneKeyBounceAt > 2.0 else { return }
         lastOneKeyBounceAt = now
+        oneKeyFetcher?.cancel()
+        oneKeyFetcher = nil
         statusText = "一键登录：\(reason)，重新打开入口…"
         pendingURL = URL(string: LoginURLs.ledouEntry)
+    }
+
+    private func handleOneKeyEvent(_ event: OneKeyTicketFetcher.Event) {
+        switch event {
+        case .status(let s):
+            statusText = s
+        case .openedQQ:
+            statusText = "已跳转 QQ，请点「同意」…"
+        case .failed(let msg):
+            statusText = msg
+        }
     }
 
     /// 扫码登陆（壳内展示二维码，与一键分流）
     func openScanLogin() {
         loginMode = .scan
         preferDesktopUA = true
+        oneKeyFetcher?.cancel()
+        oneKeyFetcher = nil
         QqOneKeyLogin.clearPending()
         session.clear()
         clearWebEpoch &+= 1
@@ -144,26 +181,58 @@ final class AppViewModel: ObservableObject {
         loginMode = .oneKey
         statusText = "已从 QQ 返回，正在完成授权…"
         if let https = QqOneKeyLogin.continueURL(fromCallback: url),
-           (https.scheme == "http" || https.scheme == "https") {
-            // 饭点 returnRoute=https：放行带 clientuin 的 jump；拦无凭证的空 jump
-            if QqOneKeyLogin.isValidReturnJump(https) || !https.path.lowercased().contains("jump") {
-                pendingURL = https
-            }
+           (https.scheme == "http" || https.scheme == "https"),
+           !https.path.lowercased().contains("jump") {
+            pendingURL = https
+            return
+        }
+        finishOneKeyAfterQQReturn()
+    }
+
+    /// 竞品需手动回 App + 刷新；我们自动：restore → resume → 刷新 phonepk 取 Cookie
+    func onAppBecameActive() {
+        guard loginMode == .oneKey, !session.isLoggedIn else { return }
+        // 尚未跳过 QQ 时不要刷新，否则会打断取票
+        guard QqOneKeyLogin.awaitingReturn || QqOneKeyLogin.launchedQrcode != nil else { return }
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            guard loginMode == .oneKey, !session.isLoggedIn else { return }
+            finishOneKeyAfterQQReturn()
         }
     }
 
-    /// 从 QQ 回到 App：等 WebView 跟 https 回跳写 Cookie
-    func onAppBecameActive() {
-        guard loginMode == .oneKey, !session.isLoggedIn else { return }
+    private func finishOneKeyAfterQQReturn() {
+        guard !oneKeyReturnBusy else { return }
+        oneKeyReturnBusy = true
+        QqOneKeyLogin.markReturned()
+        oneKeyFetcher?.resumeAfterQQ()
+        if let wv = gameWebView, QqOneKeyLogin.isXloginPage(wv.url) {
+            wv.evaluateJavaScript(QqOneKeyLogin.jsResumeAfterQQ, completionHandler: nil)
+            wv.evaluateJavaScript(QqOneKeyLogin.jsKeepPolling, completionHandler: nil)
+        }
+        statusText = "已回 App，自动刷新获取 Cookie…"
         Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 400_000_000)
+            defer { oneKeyReturnBusy = false }
+            try? await Task.sleep(nanoseconds: 1_200_000_000)
             guard loginMode == .oneKey, !session.isLoggedIn else { return }
-            QqOneKeyLogin.markReturned()
-            statusText = "已回 App，等待授权落地…"
             if let wv = gameWebView {
-                let header = await CookieBridge.waitForSkey(from: wv, attempts: 6, gapMs: 350)
+                let header = await CookieBridge.waitForSkey(from: wv, attempts: 8, gapMs: 400)
                 if LoginURLs.hasRealSkey(header) {
                     onCookiesCaptured(header)
+                    return
+                }
+            }
+            // 对齐竞品「手动刷新」：强制进 phonepk 再读 Cookie
+            preferDesktopUA = false
+            pendingURL = URL(string: LoginURLs.ledouEntry)
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            guard loginMode == .oneKey, !session.isLoggedIn else { return }
+            if let wv = gameWebView {
+                let header = await CookieBridge.waitForSkey(from: wv, attempts: 10, gapMs: 400)
+                if LoginURLs.hasRealSkey(header) {
+                    onCookiesCaptured(header)
+                } else {
+                    statusText = "未读到 Cookie，请点菜单刷新或再试一键登录"
                 }
             }
         }
@@ -362,6 +431,8 @@ final class AppViewModel: ObservableObject {
     }
 
     func logout() {
+        oneKeyFetcher?.cancel()
+        oneKeyFetcher = nil
         QqOneKeyLogin.clearPending()
         session.clear()
         loginMode = .idle
