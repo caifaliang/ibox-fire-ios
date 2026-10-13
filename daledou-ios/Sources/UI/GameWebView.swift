@@ -382,10 +382,12 @@ struct GameWebView: UIViewRepresentable {
                 }
                 if LoginURLs.hasRealSkey(header) {
                     vm.onCookiesCaptured(header)
-                } else if LoginURLs.isGameHost(url), !vm.session.isLoggedIn,
-                          vm.loginMode == .idle {
-                    // 一键/扫码进行中勿刷这条（会误导成「已进游戏」且盖住跳转 QQ 状态）
-                    vm.statusText = "已进游戏页，但未读到 skey。可试 Cookie 登陆备份"
+                } else if LoginURLs.isGameHost(url) || LoginURLs.isInGameShell(url),
+                          !vm.session.isLoggedIn {
+                    await vm.syncSessionFromWebView(reason: "capture_game_host")
+                    if !vm.session.isLoggedIn, vm.loginMode == .idle {
+                        vm.statusText = "已进游戏页，但未读到 skey。可试 Cookie 登陆备份"
+                    }
                 }
             }
         }

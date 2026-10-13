@@ -263,9 +263,18 @@ enum LoginURLs {
 
     static func hasRealSkey(_ cookie: String?) -> Bool {
         guard let c = cookie, !c.isEmpty else { return false }
-        // 手机端常见 skey；部分链路只有 p_skey
-        if c.range(of: #"(?:^|[;\s])skey="#, options: .regularExpression) != nil { return true }
-        return c.range(of: #"(?:^|[;\s])p_skey="#, options: .regularExpression) != nil
+        // 须有非空值；排除占位 skey=@ / 空值
+        guard let r = try? NSRegularExpression(
+            pattern: #"(?:^|[;\s])(?:p_)?skey=([^\s;]+)"#,
+            options: .caseInsensitive
+        ) else { return false }
+        let matches = r.matches(in: c, range: NSRange(c.startIndex..., in: c))
+        for m in matches where m.numberOfRanges > 1 {
+            guard let range = Range(m.range(at: 1), in: c) else { continue }
+            let v = String(c[range])
+            if !v.isEmpty, v != "@" { return true }
+        }
+        return false
     }
 
     static func extractQq(_ cookie: String) -> String? {

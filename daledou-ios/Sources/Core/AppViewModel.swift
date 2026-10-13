@@ -143,7 +143,7 @@ final class AppViewModel: ObservableObject {
             statusText = s
         case .openedQQ:
             oneKeyPhase = .waitingQQConfirm
-            statusText = "QQ：等倒计时→继续→同意，然后立刻返回"
+            statusText = "QQ：倒计时→继续→同意→马上回 App（过期提示可忽略）"
         case .leftAuthPage:
             // 若已打开 QQ，可能是授权跳转；否则停取票
             if oneKeyPhase == .waitingQQConfirm {
@@ -472,45 +472,36 @@ final class AppViewModel: ObservableObject {
 
     private func finishOneKeyAfterQQReturn() {
         guard !oneKeyReturnBusy else { return }
-        if oneKeyPhase == .syncingCookies || oneKeyPhase == .loadingGame || oneKeyPhase == .succeeded {
-            return
-        }
+        if oneKeyPhase == .succeeded, session.isLoggedIn { return }
         oneKeyReturnBusy = true
         QqOneKeyLogin.markReturned()
-        statusText = "已回 App，正在确认授权…"
-        Self.logOneKey("recover", "webview_resume")
+        statusText = "已回 App，正在确认授权…（QQ 若提示过期可忽略）"
+        Self.logOneKey("recover", "webview_resume phase=\(oneKeyPhase.rawValue)")
         oneKeyFetcher?.resumeAfterQQ()
         Task { @MainActor in
             defer { oneKeyReturnBusy = false }
-            try? await Task.sleep(nanoseconds: 2_000_000_000)
-            guard loginMode == .oneKey, !session.isLoggedIn else { return }
-            if oneKeyPhase == .syncingCookies || oneKeyPhase == .loadingGame || oneKeyPhase == .succeeded {
-                return
-            }
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            if session.isLoggedIn { return }
+            await syncSessionFromWebView(reason: "return_immediate")
+            if session.isLoggedIn { return }
+
             if let wv = gameWebView {
                 _ = await evalJS(QqOneKeyLogin.jsFreezeQr, in: wv)
                 _ = await evalJS(QqOneKeyLogin.jsResumeAfterQQ, in: wv)
                 _ = await evalJS(QqOneKeyLogin.jsKeepPolling, in: wv)
-                let header = await CookieBridge.waitForSkey(from: wv, attempts: 12, gapMs: 400)
-                if LoginURLs.hasRealSkey(header) {
-                    oneKeyPhase = .succeeded
-                    onCookiesCaptured(header)
-                    return
-                }
             }
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            await syncSessionFromWebView(reason: "return_after_resume")
+            if session.isLoggedIn { return }
+
             // 再推一次 phonepk
             pendingURL = URL(string: LoginURLs.ledouEntry)
-            try? await Task.sleep(nanoseconds: 2_000_000_000)
-            if let wv = gameWebView {
-                let h = await CookieBridge.waitForSkey(from: wv, attempts: 8, gapMs: 400)
-                if LoginURLs.hasRealSkey(h) {
-                    oneKeyPhase = .succeeded
-                    onCookiesCaptured(h)
-                    return
-                }
-            }
-            if oneKeyPhase == .waitingQQConfirm {
-                statusText = "未读到会话：请确认已点同意，或改用扫码/Cookie"
+            try? await Task.sleep(nanoseconds: 2_500_000_000)
+            await syncSessionFromWebView(reason: "return_phonepk")
+            if session.isLoggedIn { return }
+
+            if !session.isLoggedIn {
+                statusText = "未读到会话：可下拉刷新游戏页，或改用扫码/Cookie"
             }
         }
     }
@@ -548,16 +539,60 @@ final class AppViewModel: ObservableObject {
             }
         }
 
-        if session.isLoggedIn, LoginURLs.isInGameShell(url) {
-            let q = qqLabel.isEmpty ? (session.qq.isEmpty ? "?" : session.qq) : qqLabel
-            statusText = "已登录 QQ \(q)"
-            titleHint = "大乐斗"
-            preferDesktopUA = false
-            loginMode = .idle
-            oneKeyPhase = .succeeded
+        if LoginURLs.isInGameShell(url) {
+            // 一键回壳后常已进游戏页，但 SessionStore 尚未落到 skey → 补同步
+            if !session.isLoggedIn {
+                Task { @MainActor in await syncSessionFromWebView(reason: "nav_game_shell") }
+            } else {
+                let q = qqLabel.isEmpty ? (session.qq.isEmpty ? "?" : session.qq) : qqLabel
+                statusText = "已登录 QQ \(q)"
+                titleHint = "大乐斗"
+                preferDesktopUA = false
+                loginMode = .idle
+                oneKeyPhase = .succeeded
+            }
         }
 
         updateViewFightFab(for: currentURLString)
+    }
+
+    /// 从 WKWebView Cookie 补写 SessionStore（一键回壳后常见「进了游戏但未 isLoggedIn」）
+    func syncSessionFromWebView(reason: String) async {
+        guard let wv = gameWebView else { return }
+        Self.logOneKey("sync_session", reason)
+        let header = await CookieBridge.waitForSkey(from: wv, attempts: 12, gapMs: 350)
+        if LoginURLs.hasRealSkey(header) {
+            onCookiesCaptured(header)
+            return
+        }
+        // 宽松：游戏域上有 uin 也尝试落库（部分链路 skey 名异常）
+        let raw = await CookieBridge.readCookieHeader(from: wv)
+        if let qq = LoginURLs.extractQq(raw), !qq.isEmpty, !raw.isEmpty {
+            Self.logOneKey("sync_session", "uin_only qq=\(qq) names=\(cookieNames(raw))")
+            // 仍要求 skey/p_skey，避免空会话
+            if raw.lowercased().contains("skey=") {
+                session.save(cookieHeader: raw)
+                qqLabel = qq
+                loginMode = .idle
+                oneKeyPhase = .succeeded
+                titleHint = "大乐斗"
+                statusText = "已登录 QQ \(qq)"
+                refreshStatus()
+            }
+        } else {
+            Self.logOneKey("sync_session", "no_skey names=\(cookieNames(raw))")
+        }
+    }
+
+    private func cookieNames(_ header: String) -> String {
+        header.split(separator: ";")
+            .compactMap { pair -> String? in
+                let p = pair.trimmingCharacters(in: .whitespaces)
+                guard let eq = p.firstIndex(of: "=") else { return nil }
+                return String(p[..<eq])
+            }
+            .sorted()
+            .joined(separator: ",")
     }
 
     private func updateViewFightFab(for urlString: String) {
@@ -577,21 +612,31 @@ final class AppViewModel: ObservableObject {
             statusText = "请先打开「查看乐斗过程」"
             return
         }
-        guard session.isLoggedIn else {
-            statusText = "请先登录再看官方动画"
-            return
-        }
         guard !viewFightLoading else { return }
         viewFightLoading = true
         statusText = "正在获取战斗数据…"
-        Task {
+        Task { @MainActor in
+            // 一键后可能 WebView 已有会话而 SessionStore 未写：先补同步
+            if !session.isLoggedIn {
+                await syncSessionFromWebView(reason: "official_anim")
+            }
             var cookie = session.cookieHeader
             if let wv = gameWebView {
                 let web = await CookieBridge.readCookieHeader(from: wv)
                 cookie = Self.mergeCookieHeaders(cookie, web)
                 if LoginURLs.hasRealSkey(cookie) {
                     session.save(cookieHeader: cookie)
+                    if !session.isLoggedIn {
+                        // save 后 isLoggedIn 应已 true；再兜底
+                        onCookiesCaptured(cookie)
+                    }
                 }
+            }
+            guard LoginURLs.hasRealSkey(cookie) else {
+                viewFightLoading = false
+                statusText = "请先登录再看官方动画"
+                Self.logOneKey("anim_no_skey", "names=\(cookieNames(cookie))")
+                return
             }
             let result = await FightActFetcher.fetch(pageUrl: page, cookieHeader: cookie)
             if result.act.isEmpty {
