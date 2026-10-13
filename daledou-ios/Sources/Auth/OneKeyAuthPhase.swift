@@ -1,21 +1,20 @@
 import Foundation
 
-/// 一键登录统一状态机（按外部技术建议：失败即停，禁止营销页死循环）。
+/// 一键登录统一状态机（原生取票路径；失败即停，WebView 不拉起 QQ）。
 enum OneKeyAuthPhase: String {
     case idle
-    /// 清 Cookie、加载初始授权 URL
-    case preparing
-    /// 等待明确可取票的授权页（xlogin）
-    case awaitingAuthPage
-    /// 正在 ptqrshow 取票
+    /// canOpenURL / 清会话
+    case preflight
+    /// 原生 xlogin + ptqrshow 取票
     case fetchingTicket
-    /// 已打开 QQ，等同意 / schemacallback
-    case awaitingQQ
-    /// 回壳后校验游戏会话、最多刷新一次 phonepk
-    case recovering
-    /// connect「亿万用户」/「不支持QQ快速登录」——终态，不再自动跳转
+    /// 已 open QQ，等同意（含回壳补轮询）
+    case waitingQQConfirm
+    /// ptqrlogin=0 后注入 Cookie
+    case syncingCookies
+    /// 加载 authorize / phonepk 完成 OAuth 尾段
+    case loadingGame
+    /// connect 营销页等（兜底日志；主路径不应再出现）
     case unsupportedQuickLogin
-    /// 取票/超时/无法开 QQ 等——终态，提示扫码或 Cookie
     case failed
     case succeeded
 }

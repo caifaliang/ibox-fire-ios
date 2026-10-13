@@ -61,22 +61,25 @@ Extract from screenshots: color, type size, spacing, radius, animation ms → to
 
 目标是 **游戏站点 skey 会话**，不是 QQ OAuth access_token。
 
+**主路径：原生取票**（`NativeQqLogin`，不经 WKWebView 拉 QQ）
+
 | Phase | Behavior |
 |-------|----------|
-| preparing / awaitingAuthPage | Clear → load authorize；脱敏记初始 URL |
-| fetchingTicket | **仅** xlogin 上 ptqrshow；离开 xlogin 停取票 |
-| awaitingQQ | `wtloginmqq3?qrcode=&schemacallback=` |
-| recovering | 回壳校验一次；有效则最多刷新 phonepk **一次** |
-| unsupportedQuickLogin | connect「亿万用户」/「不支持快速登录」→ **终态停**，提示扫码/Cookie |
-| failed | 取票失败/超时 → 终态，提示扫码/Cookie |
+| preflight | `canOpenURL(wtloginmqq3://)` |
+| fetchingTicket | ephemeral URLSession：authorize→xlogin→`ptqrshow` type=1 |
+| waitingQQConfirm | `wtloginmqq3?qrcode=&schemacallback=`；回壳 `nudgePoll` |
+| syncingCookies | `ptqrlogin=0` → check_sig → inject WKHTTPCookieStore |
+| loadingGame | load authorize / phonepk 完成 OAuth 尾段 |
+| failed / unsupported | 终态，提示扫码/Cookie；不自动重试 |
 
 | Forbidden | Why |
 |-----------|-----|
-| phonepk ↔ connect 自动循环 | 死局 |
-| `wtlogin?p=` 当真路径 | iOS 授权失败 |
-| 把 style=35 当成功标准 | 服务端未必允进 |
+| WebView 发起一键 / 等页内拉 QQ | 营销页「不支持快速登录」 |
+| `isAuthorizationQR` 只认字母数字 | type=1 现网返回 `http://txz.qq.com/p?k=` |
+| `urlQueryAllowed` 编 qrcode | `&f=` 截断 |
+| `wtlogin?p=` | iOS 授权失败 |
 
-扫码 + Cookie 为正式可用路径。Ruffle 勿动。
+扫码 + Cookie 为降级路径。Ruffle 勿动。
 
 ### 6. Evidence habit
 

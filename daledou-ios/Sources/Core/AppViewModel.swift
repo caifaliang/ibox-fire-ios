@@ -24,9 +24,9 @@ final class AppViewModel: ObservableObject {
     @Published var qqLabel = ""
     @Published var loginMode: LoginMode = .idle
     @Published var preferDesktopUA = false
-    /// 一键登录状态机（禁止营销页自动重跳）
+    /// 一键登录状态机（原生取票；禁止 WebView 拉 QQ）
     @Published private(set) var oneKeyPhase: OneKeyAuthPhase = .idle
-    private var oneKeyFetcher: OneKeyTicketFetcher?
+    private var nativeQqLogin: NativeQqLogin?
     private var oneKeyStartURLLog = ""
     private var oneKeyReturnBusy = false
     private var oneKeyRecoverAttempted = false
@@ -65,61 +65,69 @@ final class AppViewModel: ObservableObject {
         }
     }
 
-    /// 一键登录：清会话 → 打开 authorize；仅在 xlogin 取票；营销页 **终态停**（不再自动跳转）。
+    /// 一键登录：原生取票 + 拉起 QQ；WebView 不参与拉起（避免营销页「不支持」）。
     func openOneKeyLogin() {
         loginMode = .oneKey
         preferDesktopUA = false
         didEnterGameFromCapture = false
         QqOneKeyLogin.clearPending()
         session.clear()
-        stopOneKeyFetcher()
+        stopNativeOneKey()
         oneKeyReturnBusy = false
         oneKeyRecoverAttempted = false
-        oneKeyPhase = .preparing
-        let start = LoginURLs.oneKeyLogin
-        oneKeyStartURLLog = Self.sanitizeURLLog(URL(string: start))
-        Self.logOneKey("start", oneKeyStartURLLog)
-        statusText = "一键登录：打开授权入口…"
+        oneKeyPhase = .preflight
+        oneKeyStartURLLog = "native"
+        Self.logOneKey("start", "native_qrcode")
+        statusText = "一键登录：预检 QQ…"
         clearWebEpoch &+= 1
-        pendingURL = URL(string: start)
-        oneKeyPhase = .awaitingAuthPage
+        loadWaitingPage = true
+        pendingURL = nil
+
+        oneKeyPhase = .fetchingTicket
+        let native = NativeQqLogin { [weak self] event in
+            self?.handleNativeOneKeyEvent(event)
+        }
+        nativeQqLogin = native
+        native.start()
     }
 
+    /// 兼容旧调用：WebView 不再挂 Fetcher
     func attachOneKeyFetcher(to webView: WKWebView) {
-        guard loginMode == .oneKey else { return }
-        guard oneKeyPhase == .awaitingAuthPage || oneKeyPhase == .fetchingTicket else { return }
-        guard QqOneKeyLogin.isXloginPage(webView.url) else { return }
-        if oneKeyFetcher != nil { return }
-        oneKeyPhase = .fetchingTicket
-        Self.logOneKey("fetcher_start", Self.sanitizeURLLog(webView.url))
-        let fetcher = OneKeyTicketFetcher(webView: webView) { [weak self] event in
-            self?.handleOneKeyEvent(event)
-        }
-        oneKeyFetcher = fetcher
-        fetcher.start()
+        _ = webView
     }
 
     func oneKeyFetcherMarkOpened() {
-        oneKeyFetcher?.markOpenedQQ()
+        if oneKeyPhase == .fetchingTicket {
+            oneKeyPhase = .waitingQQConfirm
+        }
     }
 
     func stopOneKeyFetcher() {
-        oneKeyFetcher?.cancel()
-        oneKeyFetcher = nil
+        stopNativeOneKey()
     }
 
-    /// connect「亿万用户」/「不支持QQ快速登录」：终态，停止取票，**禁止**再跳 phonepk/authorize
+    private func stopNativeOneKey() {
+        nativeQqLogin?.cancel()
+        nativeQqLogin = nil
+    }
+
+    /// connect「亿万用户」：主路径不应再出现；若仍命中只记日志+终态，不循环
     func markOneKeyUnsupportedQuickLogin(reason: String = "当前环境不支持 QQ 快速登录") {
         guard loginMode == .oneKey else { return }
+        // 原生等待 QQ 时 WebView 可能仍停在等待页，忽略误报
+        if oneKeyPhase == .waitingQQConfirm || oneKeyPhase == .fetchingTicket
+            || oneKeyPhase == .syncingCookies || oneKeyPhase == .loadingGame {
+            Self.logOneKey("marketing_ignored", reason)
+            return
+        }
         if oneKeyPhase == .unsupportedQuickLogin || oneKeyPhase == .failed { return }
-        stopOneKeyFetcher()
+        stopNativeOneKey()
         oneKeyPhase = .unsupportedQuickLogin
         Self.logOneKey("unsupported_quick_login", reason)
         statusText = "\(reason)。请用「扫码登陆」或「Cookie」"
         loginMode = .idle
     }
 
-    /// 兼容旧调用点：一律按不支持快速登录处理，不再自动 bounce
     func bounceOneKeyToLiveXlogin(reason: String = "离开营销页") {
         markOneKeyUnsupportedQuickLogin(reason: "一键登录不可用（\(reason)）")
     }
@@ -128,32 +136,80 @@ final class AppViewModel: ObservableObject {
         markOneKeyUnsupportedQuickLogin(reason: "一键登录不可用（\(reason)）")
     }
 
-    private func handleOneKeyEvent(_ event: OneKeyTicketFetcher.Event) {
+    private func handleNativeOneKeyEvent(_ event: NativeQqLogin.Event) {
         switch event {
         case .status(let s):
-            if oneKeyPhase == .fetchingTicket || oneKeyPhase == .awaitingAuthPage {
-                statusText = s
-            }
+            statusText = s
         case .openedQQ:
-            oneKeyPhase = .awaitingQQ
+            oneKeyPhase = .waitingQQConfirm
             statusText = "已跳转 QQ，请点「同意」…"
-        case .leftAuthPage:
-            // 离开 xlogin：若进了营销页由导航层标 unsupported；此处只停取票
-            stopOneKeyFetcher()
-            if oneKeyPhase == .fetchingTicket {
-                oneKeyPhase = .awaitingAuthPage
+        case .succeeded(let cookies):
+            stopNativeOneKey()
+            Task { @MainActor in
+                await applyNativeCookiesAndEnterGame(cookies)
             }
-        case .ticketFailed:
-            failOneKey("取票失败，请用扫码或 Cookie 登录")
-        case .cannotOpenQQ:
-            failOneKey("无法打开 QQ，请确认已安装后用扫码或 Cookie")
-        case .timeout:
-            failOneKey("一键登录超时，请用扫码或 Cookie 登录")
+        case .failed(let message):
+            failOneKey(message)
         }
     }
 
+    private func applyNativeCookiesAndEnterGame(_ cookies: [HTTPCookie]) async {
+        oneKeyPhase = .syncingCookies
+        statusText = "正在同步 Cookie…"
+        Self.logOneKey(
+            "sync_cookies",
+            "names=" + cookies.map(\.name).sorted().joined(separator: ",")
+        )
+        let header = cookies
+            .map { "\($0.name)=\($0.value)" }
+            .sorted()
+            .joined(separator: "; ")
+        if let wv = gameWebView {
+            await CookieBridge.restore(cookies, into: wv)
+            // 再按粘贴路径写 .qq.com，保证 authorize/phonepk 能带上
+            await CookieBridge.inject(cookieHeader: header, into: wv)
+        }
+        if LoginURLs.hasRealSkey(header) {
+            session.save(cookieHeader: header)
+        }
+
+        oneKeyPhase = .loadingGame
+        statusText = "正在完成授权并进入游戏…"
+        preferDesktopUA = false
+        // 先走 authorize 尾段，让游戏站点种会话；再兜底 phonepk
+        pendingURL = URL(string: LoginURLs.oneKeyLogin)
+        try? await Task.sleep(nanoseconds: 2_500_000_000)
+        guard loginMode == .oneKey, !session.isLoggedIn else {
+            if session.isLoggedIn { oneKeyPhase = .succeeded }
+            return
+        }
+        if let wv = gameWebView {
+            let h = await CookieBridge.waitForSkey(from: wv, attempts: 8, gapMs: 400)
+            if LoginURLs.hasRealSkey(h) {
+                oneKeyPhase = .succeeded
+                onCookiesCaptured(h)
+                return
+            }
+        }
+        pendingURL = URL(string: LoginURLs.ledouEntry)
+        try? await Task.sleep(nanoseconds: 2_000_000_000)
+        guard loginMode == .oneKey, !session.isLoggedIn else {
+            if session.isLoggedIn { oneKeyPhase = .succeeded }
+            return
+        }
+        if let wv = gameWebView {
+            let h = await CookieBridge.waitForSkey(from: wv, attempts: 8, gapMs: 400)
+            if LoginURLs.hasRealSkey(h) {
+                oneKeyPhase = .succeeded
+                onCookiesCaptured(h)
+                return
+            }
+        }
+        failOneKey("未建立游戏会话，请用扫码或 Cookie 登录")
+    }
+
     private func failOneKey(_ message: String) {
-        stopOneKeyFetcher()
+        stopNativeOneKey()
         oneKeyPhase = .failed
         statusText = message
         loginMode = .idle
@@ -186,7 +242,7 @@ final class AppViewModel: ObservableObject {
     func openScanLogin() {
         loginMode = .scan
         preferDesktopUA = true
-        stopOneKeyFetcher()
+        stopNativeOneKey()
         oneKeyPhase = .idle
         QqOneKeyLogin.clearPending()
         session.clear()
@@ -235,7 +291,7 @@ final class AppViewModel: ObservableObject {
            let finish = LoginURLs.finishWithCode(code) {
             QqOneKeyLogin.markReturned()
             loginMode = .oneKey
-            oneKeyPhase = .recovering
+            oneKeyPhase = .loadingGame
             preferDesktopUA = false
             statusText = "已从 QQ 返回（code），正在写入会话…"
             pendingURL = finish
@@ -246,22 +302,26 @@ final class AppViewModel: ObservableObject {
         if let https = QqOneKeyLogin.continueURL(fromCallback: url),
            (https.scheme == "http" || https.scheme == "https"),
            !https.path.lowercased().contains("jump") {
-            oneKeyPhase = .recovering
+            oneKeyPhase = .loadingGame
             statusText = "已从 QQ 返回，正在完成授权…"
             pendingURL = https
             return
         }
+        // 原生路径：回壳立刻补轮询（后台时轮询会停）
+        statusText = "已回 App，正在确认授权…"
+        nativeQqLogin?.nudgePoll()
         finishOneKeyAfterQQReturn()
     }
 
-    /// 回壳：校验一次会话；有效则最多刷新一次 phonepk；无效则终态提示扫码/Cookie
+    /// 回壳：原生补轮询；若已有 skey 则进游戏
     func onAppBecameActive() {
         guard loginMode == .oneKey, !session.isLoggedIn else { return }
-        guard oneKeyPhase == .awaitingQQ || QqOneKeyLogin.awaitingReturn || QqOneKeyLogin.launchedQrcode != nil else {
+        guard oneKeyPhase == .waitingQQConfirm || QqOneKeyLogin.awaitingReturn || QqOneKeyLogin.launchedQrcode != nil else {
             return
         }
+        nativeQqLogin?.nudgePoll()
         Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 500_000_000)
+            try? await Task.sleep(nanoseconds: 400_000_000)
             guard loginMode == .oneKey, !session.isLoggedIn else { return }
             finishOneKeyAfterQQReturn()
         }
@@ -269,46 +329,35 @@ final class AppViewModel: ObservableObject {
 
     private func finishOneKeyAfterQQReturn() {
         guard !oneKeyReturnBusy else { return }
-        guard !oneKeyRecoverAttempted else { return }
-        oneKeyReturnBusy = true
-        oneKeyRecoverAttempted = true
-        oneKeyPhase = .recovering
-        QqOneKeyLogin.markReturned()
-        oneKeyFetcher?.resumeAfterQQ()
-        if let wv = gameWebView, QqOneKeyLogin.isXloginPage(wv.url) {
-            wv.evaluateJavaScript(QqOneKeyLogin.jsResumeAfterQQ, completionHandler: nil)
-            wv.evaluateJavaScript(QqOneKeyLogin.jsKeepPolling, completionHandler: nil)
+        // 可多次 nudge；仅「已进 loading/sync」后限制一次硬恢复
+        if oneKeyPhase == .syncingCookies || oneKeyPhase == .loadingGame || oneKeyPhase == .succeeded {
+            return
         }
-        statusText = "已回 App，正在校验游戏会话…"
-        Self.logOneKey("recover", "begin")
+        oneKeyReturnBusy = true
+        QqOneKeyLogin.markReturned()
+        statusText = "已回 App，正在确认授权…"
+        Self.logOneKey("recover", "nudge")
+        nativeQqLogin?.nudgePoll()
         Task { @MainActor in
             defer { oneKeyReturnBusy = false }
-            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            // 给原生轮询 3s；成功会走 succeeded 回调
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
             guard loginMode == .oneKey, !session.isLoggedIn else { return }
-
+            if oneKeyPhase == .syncingCookies || oneKeyPhase == .loadingGame || oneKeyPhase == .succeeded {
+                return
+            }
             if let wv = gameWebView {
-                let header = await CookieBridge.waitForSkey(from: wv, attempts: 6, gapMs: 350)
+                let header = await CookieBridge.waitForSkey(from: wv, attempts: 4, gapMs: 300)
                 if LoginURLs.hasRealSkey(header) {
                     oneKeyPhase = .succeeded
                     onCookiesCaptured(header)
                     return
                 }
             }
-
-            // 会话尚未就绪：只刷新 phonepk 一次（竞品手动刷新的自动化），不再循环
-            preferDesktopUA = false
-            pendingURL = URL(string: LoginURLs.ledouEntry)
-            try? await Task.sleep(nanoseconds: 1_800_000_000)
-            guard loginMode == .oneKey, !session.isLoggedIn else { return }
-            if let wv = gameWebView {
-                let header = await CookieBridge.waitForSkey(from: wv, attempts: 8, gapMs: 400)
-                if LoginURLs.hasRealSkey(header) {
-                    oneKeyPhase = .succeeded
-                    onCookiesCaptured(header)
-                    return
-                }
+            // 不立刻 fail：仍在 waitingQQConfirm 时继续等原生 120s 超时
+            if oneKeyPhase == .waitingQQConfirm {
+                statusText = "等待 QQ 授权确认…"
             }
-            failOneKey("未建立游戏会话，请用扫码或 Cookie 登录")
         }
     }
 
@@ -507,7 +556,7 @@ final class AppViewModel: ObservableObject {
     }
 
     func logout() {
-        stopOneKeyFetcher()
+        stopNativeOneKey()
         oneKeyPhase = .idle
         oneKeyRecoverAttempted = false
         QqOneKeyLogin.clearPending()

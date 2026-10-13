@@ -153,27 +153,48 @@ enum QqOneKeyLogin {
 
     // MARK: - Launch
 
+    /// type=1 现网返回 `http://txz.qq.com/p?k=…&f=appid`；旧路径偶发纯字母数字票。
     static func isAuthorizationQR(_ raw: String) -> Bool {
         let s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard s.count >= 16 else { return false }
-        return s.unicodeScalars.allSatisfy { CharacterSet.alphanumerics.contains($0) }
+        if s.unicodeScalars.allSatisfy({ CharacterSet.alphanumerics.contains($0) }) {
+            return true
+        }
+        let lower = s.lowercased()
+        if lower.hasPrefix("http://txz.qq.com/") || lower.hasPrefix("https://txz.qq.com/") {
+            return true
+        }
+        if lower.contains("txz.qq.com/p?k=") || lower.contains("txz.qq.com/p?k%") {
+            return true
+        }
+        return false
     }
+
+    /// 只编码一层：`&` `?` `=` 必须编码，否则 `f=` 会截断 query。
+    private static let qrQueryAllowed: CharacterSet = {
+        var s = CharacterSet.alphanumerics
+        s.insert(charactersIn: "-._~")
+        return s
+    }()
 
     static func launchURL(qrAuthorization: String) -> URL? {
         let ticket = qrAuthorization.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !ticket.isEmpty else { return nil }
-        let cb = callbackURLString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)
-            ?? "daledoulogin://"
-        let qrEnc: String
-        if ticket.rangeOfCharacter(from: CharacterSet.alphanumerics.inverted) == nil {
-            qrEnc = ticket
-        } else if ticket.removingPercentEncoding != ticket {
-            qrEnc = ticket.replacingOccurrences(of: "&", with: "%26")
-        } else {
-            qrEnc = ticket.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ticket
-        }
+        let decoded = ticket.removingPercentEncoding ?? ticket
+        let qrEnc = decoded.addingPercentEncoding(withAllowedCharacters: qrQueryAllowed) ?? decoded
+        let cb = callbackURLString.addingPercentEncoding(withAllowedCharacters: qrQueryAllowed)
+            ?? "daledoulogin%3A%2F%2F"
         let s = "wtloginmqq3://ptlogin/qlogin?qrcode=\(qrEnc)&schemacallback=\(cb)"
         return URL(string: s) ?? (NSURL(string: s) as URL?)
+    }
+
+    /// 原生路径：标记已拉起，供回壳判定（不经 WebView）
+    static func markNativeLaunch(qrAuthorization: String) {
+        let ticket = (qrAuthorization.removingPercentEncoding ?? qrAuthorization)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        launchedQrcode = ticket
+        launchedAt = Date()
+        awaitingReturn = true
     }
 
     static func qrcodeTicket(fromWtlogin url: URL) -> String? {

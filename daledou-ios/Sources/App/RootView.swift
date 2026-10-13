@@ -61,9 +61,9 @@ struct RootView: View {
         }
         .onAppear { vm.bootstrap() }
         .confirmationDialog("菜单", isPresented: $vm.showMenu, titleVisibility: .visible) {
-            Button("一键登录（跳转 QQ）") { vm.openOneKeyLogin() }
-            Button("扫码登陆") { vm.openScanLogin() }
-            Button("Cookie 登陆") { vm.openCookieLoginSheet() }
+            Button("QQ 授权登录（使用 QQ 当前登录的账号）") { vm.openOneKeyLogin() }
+            Button("扫码登录") { vm.openScanLogin() }
+            Button("粘贴 Cookie（高级）") { vm.openCookieLoginSheet() }
             Button("进入游戏首页") { vm.openGameHome() }
             Button("刷新") { vm.reload() }
             Button("退出登录", role: .destructive) { vm.logout() }
