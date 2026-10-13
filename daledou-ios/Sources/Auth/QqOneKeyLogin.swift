@@ -100,7 +100,7 @@ enum QqOneKeyLogin {
     })();
     """
 
-    /// 申请 QR 授权串（任意 *.ptlogin2.qq.com/xlogin，不限 xui）
+    /// 申请 QR 授权串（严格：对齐饭点，需 pt 已初始化）
     static let jsRequestQr = """
     (() => {
         if (location.protocol !== 'https:' || !/\\.ptlogin2\\.qq\\.com$/i.test(location.hostname) ||
@@ -139,6 +139,48 @@ enum QqOneKeyLogin {
     })();
     """
 
+    /// 松弛取票：不要求 pt.hasInit（隐藏 WebView 里 pt 常晚于 onload）
+    static let jsRequestQrLoose = """
+    (() => {
+        if (window.__dldQrRequested) return window.__dldQrStatus === 'ready' ? 'ready' : 'requested';
+        window.__dldQrRequested = true;
+        window.__dldQrStatus = 'waiting';
+        window.__dldQrAuthorization = '';
+        window.ptui_qrcode_CB = response => {
+            if (response && response.ec === 0 && typeof response.qrcode === 'string' && response.qrcode.length > 0) {
+                window.__dldQrAuthorization = response.qrcode;
+                window.__dldQrStatus = 'ready';
+                try {
+                    if (typeof pt !== 'undefined' && pt.qrcode && typeof pt.qrcode.polling === 'function') {
+                        pt.qrcode.used = true;
+                        pt.qrcode.polling();
+                    }
+                } catch (e) {}
+            } else {
+                window.__dldQrStatus = 'failed';
+            }
+        };
+        try {
+            if (typeof pt !== 'undefined' && pt.qrcode) {
+                pt.qrcode.used = true;
+                pt.qrcode.done = false;
+            }
+        } catch (e) {}
+        const request = document.createElement('script');
+        request.src = 'https://xui.ptlogin2.qq.com/ssl/ptqrshow?s=8&e=0&appid=716027609&type=1' +
+            '&u1=https%3A%2F%2Fconnect.qq.com&daid=383&pt_3rd_aid=102067279&t=' + Math.random();
+        request.onerror = () => { window.__dldQrStatus = 'failed'; try { request.remove(); } catch (e) {} };
+        request.onload = () => {
+            try { request.remove(); } catch (e) {}
+            setTimeout(() => {
+                if (window.__dldQrStatus === 'waiting') window.__dldQrStatus = 'failed';
+            }, 2000);
+        };
+        (document.head || document.documentElement).appendChild(request);
+        return 'requested';
+    })();
+    """
+
     static let jsPollStatus = """
     (() => {
         if (location.protocol !== 'https:' || !/\\.ptlogin2\\.qq\\.com$/i.test(location.hostname) ||
@@ -150,6 +192,18 @@ enum QqOneKeyLogin {
             status: window.__dldQrStatus || 'waiting',
             url: window.__dldQrAuthorization || '',
             qrsig: hasSig
+        });
+    })();
+    """
+
+    static let jsPollStatusLoose = """
+    (() => {
+        var hasSig = document.cookie.split(';').some(function(v){ return v.trim().indexOf('qrsig=')===0; });
+        return JSON.stringify({
+            status: window.__dldQrStatus || 'waiting',
+            url: window.__dldQrAuthorization || '',
+            qrsig: hasSig,
+            page: location.hostname + location.pathname
         });
     })();
     """

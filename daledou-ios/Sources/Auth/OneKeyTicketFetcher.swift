@@ -17,6 +17,8 @@ final class OneKeyTicketFetcher: NSObject, WKNavigationDelegate, WKUIDelegate {
     private var task: Task<Void, Never>?
     private var lastOpenedQr = ""
     private var finished = false
+    private var lastLoadedTarget = ""
+    private var navContinuations: [CheckedContinuation<Void, Never>] = []
 
     init(onEvent: @escaping (Event) -> Void) {
         self.onEvent = onEvent
@@ -29,6 +31,7 @@ final class OneKeyTicketFetcher: NSObject, WKNavigationDelegate, WKUIDelegate {
         cancel()
         finished = false
         lastOpenedQr = ""
+        lastLoadedTarget = ""
 
         let cfg = WKWebViewConfiguration()
         cfg.defaultWebpagePreferences.allowsContentJavaScript = true
@@ -44,8 +47,8 @@ final class OneKeyTicketFetcher: NSObject, WKNavigationDelegate, WKUIDelegate {
             onEvent(.failed("授权入口无效"))
             return
         }
-        wv.load(URLRequest(url: url))
         task = Task { @MainActor [weak self] in
+            await self?.loadAndWait(url)
             await self?.runPipeline()
         }
     }
@@ -53,6 +56,7 @@ final class OneKeyTicketFetcher: NSObject, WKNavigationDelegate, WKUIDelegate {
     func cancel() {
         task?.cancel()
         task = nil
+        finishNavWaiters()
         webView?.stopLoading()
         webView?.navigationDelegate = nil
         webView?.uiDelegate = nil
@@ -68,8 +72,7 @@ final class OneKeyTicketFetcher: NSObject, WKNavigationDelegate, WKUIDelegate {
             _ = await eval(QqOneKeyLogin.jsResumeAfterQQ, in: wv)
             _ = await eval(QqOneKeyLogin.jsKeepPolling, in: wv)
             onEvent(.status("已回 App，正在写入会话…"))
-            // 等 skey
-            for _ in 0..<20 {
+            for _ in 0..<24 {
                 guard !Task.isCancelled, !finished else { return }
                 let header = await CookieBridge.waitForSkey(from: wv, attempts: 2, gapMs: 300)
                 if LoginURLs.hasRealSkey(header) {
@@ -84,67 +87,31 @@ final class OneKeyTicketFetcher: NSObject, WKNavigationDelegate, WKUIDelegate {
 
     private func runPipeline() async {
         guard let wv = webView else { return }
-        for round in 0..<120 {
+        for round in 0..<150 {
             guard !Task.isCancelled, !finished else { return }
-
             let url = wv.url
+            let hostPath = "\(url?.host ?? "?")\(url?.path ?? "")"
+
             if let url, LoginURLs.isOauthLanding(url), LoginURLs.oauthCode(from: url) == nil {
-                // 空落地，重走开 authorize
                 onEvent(.status("一键登录：重新进入授权…"))
-                wv.load(URLRequest(url: URL(string: LoginURLs.oneKeyLogin)!))
-                try? await Task.sleep(nanoseconds: 800_000_000)
+                await loadAndWait(URL(string: LoginURLs.oneKeyLogin)!)
                 continue
             }
 
-            if QqOneKeyLogin.isGraphOAuthPage(url) {
-                if let target = await eval(QqOneKeyLogin.jsFindLoginTarget, in: wv) as? String,
-                   !target.isEmpty,
-                   let turl = URL(string: target) {
-                    if QqOneKeyLogin.isWtloginScheme(turl.scheme) {
-                        await openQQ(with: turl, from: wv)
-                        continue
-                    }
-                    if turl.host?.contains("ptlogin") == true {
-                        onEvent(.status("一键登录：打开登录框…"))
-                        wv.load(URLRequest(url: turl))
-                        try? await Task.sleep(nanoseconds: 600_000_000)
-                        continue
-                    }
-                }
-                _ = await eval(QqOneKeyLogin.jsClickOneKeyButton, in: wv)
-            }
-
-            if QqOneKeyLogin.isXloginPage(url) {
-                if lastOpenedQr.isEmpty || QqOneKeyLogin.qrLikelyExpired {
-                    if QqOneKeyLogin.qrLikelyExpired {
-                        _ = await eval(QqOneKeyLogin.jsResetQr, in: wv)
-                        QqOneKeyLogin.clearLaunchStamp()
-                        lastOpenedQr = ""
-                        onEvent(.status("授权将过期，换新码…"))
-                    }
-                    if round % 2 == 0 {
-                        _ = await eval(QqOneKeyLogin.jsRequestQr, in: wv)
-                    }
-                }
-
-                try? await Task.sleep(nanoseconds: 350_000_000)
-
-                guard let raw = await eval(QqOneKeyLogin.jsPollStatus, in: wv) as? String,
-                      let data = raw.data(using: .utf8),
-                      let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                      let status = obj["status"] as? String else { continue }
-
-                if status == "failed" {
+            // 已在 xlogin / ptlogin：直接取票（不依赖 pt.hasInit）
+            if isLoginShell(url) {
+                onEvent(.status("一键登录：生成授权串…(\(round))"))
+                if QqOneKeyLogin.qrLikelyExpired {
                     _ = await eval(QqOneKeyLogin.jsResetQr, in: wv)
+                    QqOneKeyLogin.clearLaunchStamp()
                     lastOpenedQr = ""
-                    onEvent(.status("授权准备失败，重试…"))
-                    continue
                 }
+                _ = await eval(QqOneKeyLogin.jsRequestQrLoose, in: wv)
+                try? await Task.sleep(nanoseconds: 400_000_000)
 
-                if status == "ready", let qr = obj["url"] as? String, !qr.isEmpty {
+                if let qr = await pollQr(in: wv), !qr.isEmpty {
                     if qr == lastOpenedQr, !QqOneKeyLogin.qrLikelyExpired {
                         _ = await eval(QqOneKeyLogin.jsKeepPolling, in: wv)
-                        // 已跳过 QQ 后轮询 Cookie
                         let header = await CookieBridge.readCookieHeader(from: wv)
                         if LoginURLs.hasRealSkey(header) {
                             finished = true
@@ -165,13 +132,92 @@ final class OneKeyTicketFetcher: NSObject, WKNavigationDelegate, WKUIDelegate {
                     }
                     continue
                 }
-            } else {
-                try? await Task.sleep(nanoseconds: 400_000_000)
+                continue
             }
+
+            if QqOneKeyLogin.isGraphOAuthPage(url) {
+                onEvent(.status("一键登录：解析授权页…"))
+                if let target = await eval(QqOneKeyLogin.jsFindLoginTarget, in: wv) as? String,
+                   !target.isEmpty,
+                   let turl = URL(string: target) {
+                    if QqOneKeyLogin.isWtloginScheme(turl.scheme) {
+                        await openQQ(with: turl, from: wv)
+                        continue
+                    }
+                    if turl.host?.contains("ptlogin") == true {
+                        if target != lastLoadedTarget {
+                            lastLoadedTarget = target
+                            onEvent(.status("一键登录：进入登录页…"))
+                            await loadAndWait(turl)
+                        }
+                        continue
+                    }
+                }
+                _ = await eval(QqOneKeyLogin.jsClickOneKeyButton, in: wv)
+                // 仍停在 graph：也试松弛取票（少数页顶层就有 pt）
+                _ = await eval(QqOneKeyLogin.jsRequestQrLoose, in: wv)
+                if let qr = await pollQr(in: wv), !qr.isEmpty {
+                    lastOpenedQr = qr
+                    let cookies = await CookieBridge.snapshotQQCookies(from: wv)
+                    QqOneKeyLogin.rememberAuthorization(loginURL: wv.url, cookies: cookies)
+                    if QqOneKeyLogin.openWithQrAuthorization(qr, force: true) {
+                        onEvent(.openedQQ)
+                        onEvent(.status("已跳转 QQ，请在 QQ 内切换账号并确认…"))
+                    }
+                }
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                continue
+            }
+
+            onEvent(.status("一键登录：等待跳转… \(hostPath)"))
+            try? await Task.sleep(nanoseconds: 500_000_000)
         }
         if !finished {
             onEvent(.failed("一键登录超时，请重试或改用扫码/Cookie"))
         }
+    }
+
+    private func isLoginShell(_ url: URL?) -> Bool {
+        guard let u = url, let host = u.host?.lowercased() else { return false }
+        if host.contains("ptlogin2.qq.com") { return true }
+        if host.contains("ui.ptlogin2") { return true }
+        return QqOneKeyLogin.isXloginPage(u)
+    }
+
+    private func pollQr(in wv: WKWebView) async -> String? {
+        guard let raw = await eval(QqOneKeyLogin.jsPollStatusLoose, in: wv) as? String,
+              let data = raw.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let status = obj["status"] as? String else { return nil }
+        if status == "failed" {
+            _ = await eval(QqOneKeyLogin.jsResetQr, in: wv)
+            onEvent(.status("授权串失败，重试…"))
+            return nil
+        }
+        if status == "ready", let qr = obj["url"] as? String, !qr.isEmpty {
+            return qr
+        }
+        return nil
+    }
+
+    private func loadAndWait(_ url: URL) async {
+        guard let wv = webView else { return }
+        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+            navContinuations.append(cont)
+            wv.load(URLRequest(url: url))
+            // 兜底：最多等 8s
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 8_000_000_000)
+                self.finishNavWaiters()
+            }
+        }
+        try? await Task.sleep(nanoseconds: 250_000_000)
+    }
+
+    private func finishNavWaiters() {
+        let list = navContinuations
+        navContinuations.removeAll()
+        list.forEach { $0.resume() }
     }
 
     private func openQQ(with url: URL, from wv: WKWebView) async {
@@ -193,6 +239,18 @@ final class OneKeyTicketFetcher: NSObject, WKNavigationDelegate, WKUIDelegate {
     }
 
     // MARK: - WKNavigationDelegate
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        finishNavWaiters()
+    }
+
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        finishNavWaiters()
+    }
+
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        finishNavWaiters()
+    }
 
     func webView(
         _ webView: WKWebView,
