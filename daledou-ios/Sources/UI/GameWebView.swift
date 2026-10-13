@@ -240,15 +240,16 @@ struct GameWebView: UIViewRepresentable {
                     }
 
                     if status == "ready", let qr = obj["url"] as? String, !qr.isEmpty {
-                        if qr != lastOpenedQr || QqOneKeyLogin.qrLikelyExpired {
-                            lastOpenedQr = qr
-                            let ok = QqOneKeyLogin.openWithQrAuthorization(qr, force: true)
-                            self.vm.statusText = ok
-                                ? "已跳转 QQ，请尽快确认登录…"
-                                : "无法打开 QQ，请确认已安装手机 QQ"
-                        } else {
+                        // 同一授权串未过期：只 polling（含已在 QQ / 已回壳），勿反复 open、勿开 p= jump
+                        if qr == lastOpenedQr, !QqOneKeyLogin.qrLikelyExpired {
                             _ = await self.evalJS(QqOneKeyLogin.jsKeepPolling, in: webView)
+                            continue
                         }
+                        lastOpenedQr = qr
+                        let ok = QqOneKeyLogin.openWithQrAuthorization(qr, force: true)
+                        self.vm.statusText = ok
+                            ? "已跳转 QQ，请尽快确认登录…"
+                            : "无法打开 QQ，请确认已安装手机 QQ"
                     }
                 }
             }
@@ -317,6 +318,26 @@ struct GameWebView: UIViewRepresentable {
             }
 
             if scheme == "http" || scheme == "https" {
+                // 一键：仅允许扫码确认后的 jump（openlogin 含 pt_skey_valid=1）；拦 Android 静态 p=（valid=0 →「授权失败」）
+                if vm.loginMode == .oneKey,
+                   (url.host ?? "").lowercased().contains("ptlogin2.qq.com"),
+                   url.path.lowercased().contains("jump") {
+                    let raw = url.absoluteString
+                    let decoded = raw.removingPercentEncoding ?? raw
+                    let skeyOk = decoded.contains("pt_skey_valid=1")
+                    if !skeyOk {
+                        decisionHandler(.cancel)
+                        Task { @MainActor in
+                            self.vm.statusText = "已拦下失败授权页，留在登录页完成确认…"
+                            if let wv = self.webView, QqOneKeyLogin.isXloginPage(wv.url) {
+                                wv.evaluateJavaScript(QqOneKeyLogin.jsResumeAfterQQ, completionHandler: nil)
+                            } else {
+                                self.vm.pendingURL = URL(string: LoginURLs.xloginHome)
+                            }
+                        }
+                        return
+                    }
+                }
                 // 扫码落地 index.php?code=…：只提示一次，进游戏后由 Cookie 捕获改成「已登录」
                 if vm.loginMode == .scan,
                    LoginURLs.isOauthLanding(url),

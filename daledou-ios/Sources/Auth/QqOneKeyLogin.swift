@@ -111,7 +111,7 @@ enum QqOneKeyLogin {
     })();
     """
 
-    /// 仅 keep-alive polling，不要 qlogin_submit（submit 会弄死未确认的码）
+    /// 仅 keep-alive polling，不要 qlogin_submit（确认前 submit 会弄死未确认的码）
     static let jsKeepPolling = """
     (() => {
         if (typeof pt === 'undefined' || !pt.qrcode || typeof pt.qrcode.polling !== 'function') return 'no';
@@ -120,7 +120,7 @@ enum QqOneKeyLogin {
     })();
     """
 
-    /// QQ 已确认 / 回壳之后再 submit
+    /// QQ 已确认 / 回壳之后再 submit（对齐饭点：polling + qlogin_submit，勿跳 p= jump）
     static let jsResumeAfterQQ = """
     (() => {
         if (location.protocol !== 'https:' || location.hostname !== 'xui.ptlogin2.qq.com' ||
@@ -130,7 +130,7 @@ enum QqOneKeyLogin {
         if (!document.cookie.split(';').some(value => value.trim().startsWith('qrsig='))) return 'missing-session';
         pt.qrcode.used = true;
         pt.qrcode.polling();
-        try { if (window.$ && $.http && pt.qlogin_submit) $.http.loadScript(pt.qlogin_submit(pt.qrcode.CGI)); } catch (e) {}
+        try { $.http.loadScript(pt.qlogin_submit(pt.qrcode.CGI)); } catch (e) { return 'submit-err'; }
         return 'resumed';
     })();
     """
@@ -183,6 +183,7 @@ enum QqOneKeyLogin {
         return launchURL(qrAuthorization: qr)
     }
 
+    /// schemacallback 体里若带 https 落地 URL 则返回；空/`?` 回调 **不要** 落到 Android `p=` jump（iOS 会「授权失败」）。
     static func continueURL(fromCallback url: URL) -> URL? {
         let abs = url.absoluteString
         let prefixes = [
@@ -199,17 +200,15 @@ enum QqOneKeyLogin {
             }
         }
         guard var body = rest else { return nil }
+        if body.hasPrefix("(null)") { body = String(body.dropFirst(6)) }
+        if body.hasPrefix("?") || body.isEmpty { return nil }
         if body.hasPrefix("http://") || body.hasPrefix("https://") {
             return URL(string: body)
-        }
-        if body.hasPrefix("(null)") { body = String(body.dropFirst(6)) }
-        if body.hasPrefix("?") || body.isEmpty {
-            return pendingJumpURL ?? LoginURLs.oneClickJumpURL
         }
         if body.contains(".") {
             return URL(string: "https://" + body)
         }
-        return pendingJumpURL ?? LoginURLs.oneClickJumpURL
+        return nil
     }
 
     @discardableResult
@@ -218,7 +217,8 @@ enum QqOneKeyLogin {
         if !force, launchedQrcode == qr { return true }
         launchedQrcode = qr
         launchedAt = Date()
-        pendingJumpURL = LoginURLs.oneClickJumpURL
+        // 回壳后留在 xlogin 做 qlogin_submit；禁止把 pending 设成 oneClickJumpURL(p=)
+        pendingJumpURL = URL(string: LoginURLs.xloginHome)
         awaitingReturn = true
         var candidates = [launch]
         if var c = URLComponents(url: launch, resolvingAgainstBaseURL: false) {

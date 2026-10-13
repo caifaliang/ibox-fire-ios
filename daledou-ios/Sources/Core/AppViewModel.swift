@@ -126,35 +126,53 @@ final class AppViewModel: ObservableObject {
             pendingURL = finish
             return
         }
-        // schemacallback：优先在原 xlogin 页 resume polling 写 Cookie；有 jump 再跟
+        // schemacallback：对齐饭点 —— 留在 xlogin 做 qlogin_submit，绝不打开 Android p= jump
         QqOneKeyLogin.markReturned()
         loginMode = .oneKey
         preferDesktopUA = true
-        statusText = "已从 QQ 返回，正在写入会话…"
-        if let jump = QqOneKeyLogin.continueURL(fromCallback: url) {
-            pendingURL = jump
-        } else if let cur = gameWebView?.url, QqOneKeyLogin.isXloginPage(cur) {
-            // 留在 xlogin，由 WebView 继续 polling / Cookie 捕获
+        statusText = "已从 QQ 返回，正在完成授权…"
+        if let https = QqOneKeyLogin.continueURL(fromCallback: url),
+           (https.scheme == "http" || https.scheme == "https"),
+           !Self.isForbiddenOneClickJump(https) {
+            pendingURL = https
+            return
+        }
+        if let cur = gameWebView?.url, QqOneKeyLogin.isXloginPage(cur) {
             gameWebView?.evaluateJavaScript(QqOneKeyLogin.jsResumeAfterQQ, completionHandler: nil)
+            gameWebView?.evaluateJavaScript(QqOneKeyLogin.jsKeepPolling, completionHandler: nil)
         } else {
+            // 丢页时重开 xlogin（不是 p= jump）；pipeline 会再申请码
             pendingURL = URL(string: LoginURLs.xloginHome)
         }
     }
 
-    /// 从 QQ 回到 App：resume 写 Cookie；仍未登录则提示换新码（由 WebView pipeline 重开）
+    /// Android `ssl.ptlogin2.qq.com/jump?...` 在 iOS WebView 里常显示「授权失败」
+    private static func isForbiddenOneClickJump(_ url: URL) -> Bool {
+        let host = (url.host ?? "").lowercased()
+        guard host.contains("ptlogin2.qq.com") else { return false }
+        return url.path.lowercased().contains("jump")
+    }
+
+    /// 从 QQ 回到 App：只 resume，禁止立刻 reload（会清掉 qrsig → 授权失败）
     func onAppBecameActive() {
         guard loginMode == .oneKey, !session.isLoggedIn else { return }
         Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 400_000_000)
+            try? await Task.sleep(nanoseconds: 500_000_000)
             guard loginMode == .oneKey, !session.isLoggedIn else { return }
             if let wv = gameWebView, QqOneKeyLogin.isXloginPage(wv.url) {
-                wv.evaluateJavaScript(QqOneKeyLogin.jsResumeAfterQQ, completionHandler: nil)
+                let resume = await withCheckedContinuation { (cont: CheckedContinuation<String?, Never>) in
+                    wv.evaluateJavaScript(QqOneKeyLogin.jsResumeAfterQQ) { result, _ in
+                        cont.resume(returning: result as? String)
+                    }
+                }
                 wv.evaluateJavaScript(QqOneKeyLogin.jsKeepPolling, completionHandler: nil)
-                if QqOneKeyLogin.awaitingReturn || QqOneKeyLogin.qrLikelyExpired {
-                    statusText = "未登录成功则将换新码并重新跳转 QQ…"
+                statusText = "已回 App，正在写入会话…"
+                // 仅缺 session / 码已过期时再换新码；不要因 awaitingReturn 就 reload
+                if resume == "missing-session" || QqOneKeyLogin.qrLikelyExpired {
+                    try? await Task.sleep(nanoseconds: 1_200_000_000)
+                    guard loginMode == .oneKey, !session.isLoggedIn else { return }
+                    statusText = "会话丢失或授权过期，换新码并重新跳转 QQ…"
                     webReloadToken &+= 1
-                } else {
-                    statusText = "已回 App，正在写入会话…"
                 }
             }
             QqOneKeyLogin.markReturned()
