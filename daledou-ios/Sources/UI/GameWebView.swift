@@ -45,7 +45,8 @@ struct GameWebView: UIViewRepresentable {
                 context.coordinator.applyUA(wv, desktop: vm.preferDesktopUA)
                 wv.load(URLRequest(url: resume))
             } else {
-                wv.loadHTMLString(LoginURLs.waitingHTML, baseURL: URL(string: "https://dld.qzapp.z.qq.com/"))
+                // 禁止用 dld.qzapp 作 baseURL：会被误判 isGameHost →「已进游戏页但未读到 skey」
+                wv.loadHTMLString(LoginURLs.waitingHTML, baseURL: URL(string: "about:blank"))
             }
         }
         return wv
@@ -79,13 +80,15 @@ struct GameWebView: UIViewRepresentable {
                     vm.loadWaitingPage = false
                     webView.loadHTMLString(
                         LoginURLs.waitingHTML,
-                        baseURL: URL(string: "https://dld.qzapp.z.qq.com/")
+                        baseURL: URL(string: "about:blank")
                     )
                 }
-                if let u = next {
+                // clear 异步期间可能已写入更新的 pendingURL（xlogin），优先用最新
+                let loadURL = vm.pendingURL ?? next
+                if let u = loadURL {
+                    vm.pendingURL = nil
                     context.coordinator.applyUA(webView, desktop: vm.preferDesktopUA)
                     webView.load(URLRequest(url: u))
-                    vm.pendingURL = nil
                 }
             }
             return
@@ -95,7 +98,7 @@ struct GameWebView: UIViewRepresentable {
             vm.loadWaitingPage = false
             webView.loadHTMLString(
                 LoginURLs.waitingHTML,
-                baseURL: URL(string: "https://dld.qzapp.z.qq.com/")
+                baseURL: URL(string: "about:blank")
             )
         }
 
@@ -382,11 +385,11 @@ struct GameWebView: UIViewRepresentable {
                 }
                 if LoginURLs.hasRealSkey(header) {
                     vm.onCookiesCaptured(header)
-                } else if LoginURLs.isGameHost(url) || LoginURLs.isInGameShell(url),
-                          !vm.session.isLoggedIn {
-                    await vm.syncSessionFromWebView(reason: "capture_game_host")
-                    if !vm.session.isLoggedIn, vm.loginMode == .idle {
-                        vm.statusText = "已进游戏页，但未读到 skey。可试 Cookie 登陆备份"
+                } else if LoginURLs.isInGameShell(url), !vm.session.isLoggedIn {
+                    // 仅 phonepk 真游戏壳；勿把 waitingHTML（曾误用 dld baseURL）当成已进游戏
+                    await vm.syncSessionFromWebView(reason: "capture_game_shell")
+                    if !vm.session.isLoggedIn, vm.loginMode == .idle || vm.loginMode == .oneKey {
+                        vm.statusText = "已进游戏页，但未读到 skey。可试 Cookie"
                     }
                 }
             }

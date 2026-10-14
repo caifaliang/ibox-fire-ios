@@ -81,13 +81,14 @@ final class AppViewModel: ObservableObject {
         oneKeyPhase = .preflight
         Self.logOneKey("start", "webview_xlogin")
         statusText = "一键登录：打开授权页…"
-        clearWebEpoch &+= 1
         loadWaitingPage = false
+        // 等拿到 xlogin 再 clear+load，避免 clear 异步把随后写入的 pendingURL 清掉
 
         oneKeyPhase = .fetchingTicket
         Task { @MainActor in
             let xlogin = await LoginURLs.resolveLiveXloginURL()
             guard loginMode == .oneKey else { return }
+            clearWebEpoch &+= 1
             if let xlogin {
                 oneKeyStartURLLog = Self.sanitizeURLLog(xlogin)
                 Self.logOneKey("load_xlogin", oneKeyStartURLLog)
@@ -488,21 +489,20 @@ final class AppViewModel: ObservableObject {
         }
     }
 
-    /// 对齐安卓：不要立刻 phonepk 打断 index.php?code= 写 Cookie。
+    /// 回壳：先 resume 几秒让 OAuth 落 Cookie；仍无 skey 再进 phonepk（fd61 能进游戏，fd62 空等会卡死）。
     private func waitForOauthCookiesThenEnter(reason: String) async {
         Self.logOneKey("oauth_wait", reason)
         preferDesktopUA = false
-        statusText = "等待登录 Cookie…"
+        statusText = "等待登录 Cookie…（可点左上角回 App）"
 
-        // 最多约 20s：期间只 resume/polling，不改 pendingURL
-        for i in 0..<20 {
+        // 阶段 A：约 5s 只 resume，不打断可能的 index.php?code=
+        for i in 0..<5 {
             if session.isLoggedIn { return }
             if let wv = gameWebView {
-                let diag = await CookieBridge.cookieNameDomainLog(from: wv)
-                if i == 0 || i == 5 || i == 10 || i == 19 {
+                if i == 0 || i == 4 {
+                    let diag = await CookieBridge.cookieNameDomainLog(from: wv)
                     Self.logOneKey("oauth_cookies", "t=\(i) \(diag)")
                 }
-                // 仍在 xlogin：继续页内提交
                 if QqOneKeyLogin.isXloginPage(wv.url) {
                     _ = await evalJS(QqOneKeyLogin.jsResumeAfterQQ, in: wv)
                     _ = await evalJS(QqOneKeyLogin.jsKeepPolling, in: wv)
@@ -510,24 +510,35 @@ final class AppViewModel: ObservableObject {
             }
             await syncSessionFromWebView(reason: "oauth_poll_\(i)")
             if session.isLoggedIn { return }
-
-            // 已在游戏壳且有 skey：成功
-            if LoginURLs.isInGameShell(URL(string: currentURLString)), session.isLoggedIn {
-                return
+            // 已在 phonepk：继续采 Cookie，勿再改 URL
+            if LoginURLs.isInGameShell(URL(string: currentURLString)) {
+                break
+            }
+            // 已在 oauth 落地页：再多等一会
+            if LoginURLs.isOauthLanding(URL(string: currentURLString)) {
+                try? await Task.sleep(nanoseconds: 1_200_000_000)
+                await syncSessionFromWebView(reason: "oauth_landing_\(i)")
+                if session.isLoggedIn { return }
+                continue
             }
             try? await Task.sleep(nanoseconds: 1_000_000_000)
         }
 
         if session.isLoggedIn { return }
 
-        // OAuth 超时仍无 skey：最后才推 phonepk（可能已有页内会话）
-        Self.logOneKey("oauth_wait", "timeout_push_phonepk")
+        // 阶段 B：推进游戏首页（用户手动回 App 后的可用路径）
+        Self.logOneKey("oauth_wait", "push_phonepk")
         statusText = "正在进入游戏…"
-        pendingURL = URL(string: LoginURLs.ledouEntry)
-        for i in 0..<8 {
-            try? await Task.sleep(nanoseconds: 800_000_000)
+        if !LoginURLs.isInGameShell(URL(string: currentURLString)) {
+            pendingURL = URL(string: LoginURLs.ledouEntry)
+        }
+        for i in 0..<12 {
+            try? await Task.sleep(nanoseconds: 700_000_000)
             await syncSessionFromWebView(reason: "phonepk_poll_\(i)")
             if session.isLoggedIn { return }
+            if let wv = gameWebView, QqOneKeyLogin.isXloginPage(wv.url) {
+                _ = await evalJS(QqOneKeyLogin.jsResumeAfterQQ, in: wv)
+            }
         }
         if !session.isLoggedIn {
             let names: String
@@ -537,6 +548,7 @@ final class AppViewModel: ObservableObject {
                 names = "(no-wv)"
             }
             Self.logOneKey("oauth_fail", "names=\(names)")
+            // 保持 oneKey，便于用户再点菜单；勿假装 idle 成功
             statusText = "未读到 skey（\(cookieNamesShort(names))）。可扫码或 Cookie"
         }
     }

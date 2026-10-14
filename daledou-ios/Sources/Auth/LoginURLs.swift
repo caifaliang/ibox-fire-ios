@@ -308,7 +308,9 @@ enum LoginURLs {
     }
 
     static func isGameHost(_ url: URL?) -> Bool {
-        guard let host = url?.host?.lowercased() else { return false }
+        guard let url, let host = url.host?.lowercased(), !host.isEmpty else { return false }
+        // about:blank / 本地等待页不算游戏域
+        if url.scheme?.lowercased() == "about" { return false }
         return host.contains("dld.qzapp.z.qq.com") || host.contains("fight.pet.qq.com")
     }
 
