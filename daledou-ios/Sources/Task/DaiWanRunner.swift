@@ -46,7 +46,7 @@ final class DaiWanRunner: ObservableObject {
         job = Task {
             running = true
             defer { running = false; job = nil }
-            let msg = await executeType(name, cookie: cookie)
+            let msg = await executeTypePublic(name, cookie: cookie)
             log.append(name, msg)
         }
     }
@@ -59,7 +59,7 @@ final class DaiWanRunner: ObservableObject {
         for (i, name) in DaiWanCatalog.autoDaiWanTypes.enumerated() {
             if Task.isCancelled { break }
             guard toggles.isEnabled(DaiWanCatalog.typeId(i)) else { continue }
-            let msg = await executeType(name, cookie: cookie)
+            let msg = await executeTypePublic(name, cookie: cookie)
             parts.append("\(name):\(String(msg.prefix(32)))")
             try? await Task.sleep(nanoseconds: 400_000_000)
         }
@@ -67,11 +67,13 @@ final class DaiWanRunner: ObservableObject {
         log.append("代玩界面", summary)
     }
 
-    private func executeType(_ typeName: String, cookie: String) async -> String {
+    /// 供 Hub / 活跃矩阵复用。
+    func executeTypePublic(_ typeName: String, cookie: String) async -> String {
         log.append(typeName, "开始")
         switch true {
         case typeName.contains("一键活跃"):
-            let tip = "活跃引擎未接（见 M13）"
+            // 避免与 runHub 互锁：活跃单独编排
+            let tip = await HuoYueRunner.shared.runOnceAwait(cookie: cookie)
             log.append(typeName, tip)
             return tip
         case typeName.contains("一键领奖"):

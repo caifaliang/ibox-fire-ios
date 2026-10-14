@@ -91,6 +91,10 @@ struct RootView: View {
             DaiWanHubView()
                 .environmentObject(vm)
         }
+        .sheet(isPresented: $vm.showHuoYue) {
+            HuoYueView()
+                .environmentObject(vm)
+        }
         .sheet(isPresented: $vm.showCookieSheet) {
             CookiePasteSheet()
                 .environmentObject(vm)

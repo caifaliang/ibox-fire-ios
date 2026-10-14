@@ -21,6 +21,8 @@ final class AppViewModel: ObservableObject {
     /// M12：代玩设置 / 代玩界面
     @Published var showDaiWanSettings = false
     @Published var showDaiWanHub = false
+    /// M13：活跃代玩
+    @Published var showHuoYue = false
     @Published var showCookieSheet = false
     @Published var cookieDraft = ""
     @Published var cookieError = ""
@@ -1157,6 +1159,9 @@ final class AppViewModel: ObservableObject {
         case "daiwan_ui":
             showDaiWanHub = true
             return .handled
+        case "huoyue":
+            showHuoYue = true
+            return .handled
         default:
             return .needsPlaceholder
         }
@@ -1175,6 +1180,7 @@ final class AppViewModel: ObservableObject {
         showChaQu = false
         showDaiWanSettings = false
         showDaiWanHub = false
+        showHuoYue = false
         showAccountSwitch = false
         pendingURL = url
         statusText = "已打开 \(url.host ?? "")\(url.path)"

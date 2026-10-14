@@ -79,7 +79,7 @@ enum FeatureCatalog {
         ),
 
         // —— 设置相关 ——
-        .init(id: "huoyue", label: "活跃代玩", section: .settings, pageTitle: "活跃代玩"),
+        .init(id: "huoyue", label: "活跃代玩", section: .settings, pageTitle: "活跃代玩", portStatus: .partial),
         .init(id: "daiwan", label: "代玩", section: .settings, pageTitle: "代玩设置(下滑更多)", portStatus: .partial),
         .init(id: "lingjiang", label: "领奖报名", section: .settings, pageTitle: "自动领奖报名设置(下滑更多)"),
         .init(id: "renwu", label: "任务", section: .settings, pageTitle: "任务设置(下滑更多)"),
