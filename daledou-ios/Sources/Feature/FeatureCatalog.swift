@@ -101,7 +101,7 @@ enum FeatureCatalog {
         .init(id: "qunxia_luxiang", label: "群侠录像", section: .more, portStatus: .partial),
         .init(id: "bangpai_wakuang", label: "帮派挖矿", section: .more, emphasize: true),
         .init(id: "shuqian", label: "书签", section: .more),
-        .init(id: "account_switch", label: "账号切换", section: .more),
+        .init(id: "account_switch", label: "账号切换", section: .more, portStatus: .ready),
         .init(id: "about", label: "关于大乐斗", section: .more, emphasize: true),
         .init(id: "scan_login", label: "扫码登陆", section: .more, portStatus: .ready, emphasize: true),
         .init(id: "one_login", label: "一键登陆", section: .more, portStatus: .ready, emphasize: true),

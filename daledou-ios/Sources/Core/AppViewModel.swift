@@ -12,6 +12,8 @@ final class AppViewModel: ObservableObject {
     @Published var showMenu = false
     /// M7：功能中心（对齐 Android FeatureCatalog）
     @Published var showFeatureHub = false
+    /// M8：账号切换
+    @Published var showAccountSwitch = false
     @Published var showCookieSheet = false
     @Published var cookieDraft = ""
     @Published var cookieError = ""
@@ -1130,9 +1132,37 @@ final class AppViewModel: ObservableObject {
         case "exit_app":
             statusText = "请用系统手势划掉 App（iOS 无强制退出）"
             return .handled
+        case "account_switch":
+            showAccountSwitch = true
+            return .handled
         default:
             return .needsPlaceholder
         }
+    }
+
+    /// M8：切换已存账号 → Session + 注入 WK + 进游戏
+    func applySavedAccount(_ account: SavedAccount) {
+        applyCookieHeader(account.cookie, status: "已切换到 \(account.name)")
+    }
+
+    func applyCookieHeader(_ header: String, status: String) {
+        let normalized = Self.normalizeCookieHeader(header)
+        guard LoginURLs.hasGameSession(normalized) else {
+            statusText = "会话无效"
+            return
+        }
+        stopAllOneKey()
+        oneKeyPhase = .idle
+        loginMode = .idle
+        preferDesktopUA = false
+        session.save(cookieHeader: normalized)
+        showFeatureHub = false
+        showAccountSwitch = false
+        cookieInjectToken &+= 1
+        pendingURL = URL(string: LoginURLs.ledouEntry)
+        refreshStatus()
+        statusText = status
+        AppViewModel.logOneKey("account_switch", "qq=\(session.qq)")
     }
 
     func logout() {

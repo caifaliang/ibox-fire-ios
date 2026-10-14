@@ -67,6 +67,10 @@ struct RootView: View {
             FeatureHubView()
                 .environmentObject(vm)
         }
+        .sheet(isPresented: $vm.showAccountSwitch) {
+            AccountSwitchView()
+                .environmentObject(vm)
+        }
         .sheet(isPresented: $vm.showCookieSheet) {
             CookiePasteSheet()
                 .environmentObject(vm)

@@ -14,7 +14,7 @@
 | M5 | 官方动画 / Ruffle | partial | qunxia_luxiang | Fight/* FAB | 缺完整「群侠录像」页 |
 | M6 | 壳顶栏 / 简菜单 | partial | — | RootView | 需扩成功能中心 |
 | M7 | **功能中心菜单 + 路由骨架** | **done** | MainMenuScreen / FeatureRoute | Feature/* + RootView | fd82：三区目录 + 占位；已接一键/扫码/退出/动画 |
-| M8 | 账号切换 | todo | AccountSwitchScreen | — | |
+| M8 | 账号切换 | done | AccountSwitchScreen | AccountStore + AccountSwitchView | fd83：保存/切换/删除/粘贴 |
 | M9 | 书签 | todo | shuqian | — | |
 | M10 | 背包查询 | todo | beibao | — | |
 | M11 | 武林查区 | todo | chaqu | — | |
@@ -34,6 +34,6 @@
 
 ## 下一切片（建议）
 
-**M8 账号切换** 或 **M9/M10/M11 书签/背包/查区**（择一查询类，依赖少）。
+**M9/M10/M11 书签 / 背包查询 / 武林查区**（查询类，依赖少）。
 
-M7 已完成（fd82）：功能中心三区 + 占位；一键/扫码/退出/群侠录像(动画) 可进。
+M7 fd82 功能中心 · M8 fd83 账号切换已完成。

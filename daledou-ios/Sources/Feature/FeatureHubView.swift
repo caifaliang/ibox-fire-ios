@@ -132,7 +132,14 @@ struct FeatureHubView: View {
     private func handleTap(_ item: FeatureItem) {
         switch vm.openFeature(id: item.id) {
         case .handled:
-            dismiss()
+            // 账号切换另开 sheet：先关中心会抢 presentation，稍后再关
+            if item.id == "account_switch" {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                    dismiss()
+                }
+            } else {
+                dismiss()
+            }
         case .needsPlaceholder:
             placeholderItem = item
         }
