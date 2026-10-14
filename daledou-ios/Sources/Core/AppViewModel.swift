@@ -159,19 +159,11 @@ final class AppViewModel: ObservableObject {
         case .timeout:
             failOneKey("一键登录超时，请用扫码或 Cookie 登录")
         case .loginLikelyDone:
+            // 离开 xlogin 多半在走 OAuth 跳转；禁止立刻 phonepk 掐掉 index.php?code=
             oneKeyPhase = .loadingGame
-            statusText = "授权完成，正在进入游戏…"
+            statusText = "授权跳转中，等待写入 Cookie…"
             Task { @MainActor in
-                try? await Task.sleep(nanoseconds: 1_500_000_000)
-                if let wv = gameWebView {
-                    let h = await CookieBridge.waitForSkey(from: wv, attempts: 10, gapMs: 400)
-                    if LoginURLs.hasRealSkey(h) {
-                        oneKeyPhase = .succeeded
-                        onCookiesCaptured(h)
-                        return
-                    }
-                }
-                pendingURL = URL(string: LoginURLs.ledouEntry)
+                await waitForOauthCookiesThenEnter(reason: "left_xlogin")
             }
         }
     }
@@ -481,42 +473,77 @@ final class AppViewModel: ObservableObject {
         oneKeyReturnBusy = true
         QqOneKeyLogin.markReturned()
         oneKeyPhase = .loadingGame
-        statusText = "已回 App，正在写入登录…（过期提示可忽略）"
+        statusText = "已回 App，等待授权落 Cookie…（过期提示可忽略）"
         Self.logOneKey("recover", "webview_resume phase=\(oneKeyPhase.rawValue)")
         oneKeyFetcher?.resumeAfterQQ()
         Task { @MainActor in
             defer { oneKeyReturnBusy = false }
-
-            // 立刻 resume + 并行推 phonepk（用户手动返回能进游戏，这里自动化）
             if let wv = gameWebView {
                 _ = await evalJS(QqOneKeyLogin.jsFreezeQr, in: wv)
                 _ = await evalJS(QqOneKeyLogin.jsResumeAfterQQ, in: wv)
                 _ = await evalJS(QqOneKeyLogin.jsKeepPolling, in: wv)
             }
-            preferDesktopUA = false
-            pendingURL = URL(string: LoginURLs.ledouEntry)
+            // 关键：先等 OAuth（index.php?code=）自己跑完种 skey，再进 phonepk
+            await waitForOauthCookiesThenEnter(reason: "return_from_qq")
+        }
+    }
 
-            for (i, gapMs) in [800, 1200, 1500, 2000].enumerated() {
-                try? await Task.sleep(nanoseconds: UInt64(gapMs) * 1_000_000)
-                if session.isLoggedIn { return }
-                await syncSessionFromWebView(reason: "return_poll_\(i)")
-                if session.isLoggedIn { return }
-                if let wv = gameWebView {
-                    _ = await evalJS(QqOneKeyLogin.jsKeepPolling, in: wv)
+    /// 对齐安卓：不要立刻 phonepk 打断 index.php?code= 写 Cookie。
+    private func waitForOauthCookiesThenEnter(reason: String) async {
+        Self.logOneKey("oauth_wait", reason)
+        preferDesktopUA = false
+        statusText = "等待登录 Cookie…"
+
+        // 最多约 20s：期间只 resume/polling，不改 pendingURL
+        for i in 0..<20 {
+            if session.isLoggedIn { return }
+            if let wv = gameWebView {
+                let diag = await CookieBridge.cookieNameDomainLog(from: wv)
+                if i == 0 || i == 5 || i == 10 || i == 19 {
+                    Self.logOneKey("oauth_cookies", "t=\(i) \(diag)")
+                }
+                // 仍在 xlogin：继续页内提交
+                if QqOneKeyLogin.isXloginPage(wv.url) {
                     _ = await evalJS(QqOneKeyLogin.jsResumeAfterQQ, in: wv)
+                    _ = await evalJS(QqOneKeyLogin.jsKeepPolling, in: wv)
                 }
             }
+            await syncSessionFromWebView(reason: "oauth_poll_\(i)")
+            if session.isLoggedIn { return }
 
-            if !session.isLoggedIn {
-                // 最后再推一次游戏首页
-                pendingURL = URL(string: LoginURLs.ledouEntry)
-                try? await Task.sleep(nanoseconds: 2_000_000_000)
-                await syncSessionFromWebView(reason: "return_final")
+            // 已在游戏壳且有 skey：成功
+            if LoginURLs.isInGameShell(URL(string: currentURLString)), session.isLoggedIn {
+                return
             }
-            if !session.isLoggedIn {
-                statusText = "未读到会话：请下拉刷新，或改用扫码/Cookie"
-            }
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
         }
+
+        if session.isLoggedIn { return }
+
+        // OAuth 超时仍无 skey：最后才推 phonepk（可能已有页内会话）
+        Self.logOneKey("oauth_wait", "timeout_push_phonepk")
+        statusText = "正在进入游戏…"
+        pendingURL = URL(string: LoginURLs.ledouEntry)
+        for i in 0..<8 {
+            try? await Task.sleep(nanoseconds: 800_000_000)
+            await syncSessionFromWebView(reason: "phonepk_poll_\(i)")
+            if session.isLoggedIn { return }
+        }
+        if !session.isLoggedIn {
+            let names: String
+            if let wv = gameWebView {
+                names = await CookieBridge.cookieNameDomainLog(from: wv)
+            } else {
+                names = "(no-wv)"
+            }
+            Self.logOneKey("oauth_fail", "names=\(names)")
+            statusText = "未读到 skey（\(cookieNamesShort(names))）。可扫码或 Cookie"
+        }
+    }
+
+    private func cookieNamesShort(_ diag: String) -> String {
+        let names = diag.split(separator: ",").prefix(8).joined(separator: ",")
+        return names.isEmpty ? "无" : names
     }
 
     private func evalJS(_ script: String, in webView: WKWebView) async -> Any? {
@@ -552,8 +579,19 @@ final class AppViewModel: ObservableObject {
             }
         }
 
+        if loginMode == .oneKey || oneKeyPhase == .loadingGame || oneKeyPhase == .waitingQQConfirm {
+            if LoginURLs.isOauthLanding(url) {
+                statusText = "正在完成授权回调…"
+                Self.logOneKey("nav_oauth", Self.sanitizeURLLog(url))
+                // 让 index.php?code= 自己跑完，勿在此改 pendingURL
+                Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 1_500_000_000)
+                    await syncSessionFromWebView(reason: "nav_oauth_landing")
+                }
+            }
+        }
+
         if LoginURLs.isInGameShell(url) {
-            // 一键回壳后常已进游戏页，但 SessionStore 尚未落到 skey → 补同步
             if !session.isLoggedIn {
                 Task { @MainActor in await syncSessionFromWebView(reason: "nav_game_shell") }
             } else {
@@ -572,29 +610,14 @@ final class AppViewModel: ObservableObject {
     /// 从 WKWebView Cookie 补写 SessionStore（一键回壳后常见「进了游戏但未 isLoggedIn」）
     func syncSessionFromWebView(reason: String) async {
         guard let wv = gameWebView else { return }
-        Self.logOneKey("sync_session", reason)
-        let header = await CookieBridge.waitForSkey(from: wv, attempts: 12, gapMs: 350)
+        let header = await CookieBridge.readCookieHeader(from: wv)
+        let diag = await CookieBridge.cookieNameDomainLog(from: wv)
         if LoginURLs.hasRealSkey(header) {
+            Self.logOneKey("sync_session", "\(reason) ok names=\(cookieNames(header))")
             onCookiesCaptured(header)
             return
         }
-        // 宽松：游戏域上有 uin 也尝试落库（部分链路 skey 名异常）
-        let raw = await CookieBridge.readCookieHeader(from: wv)
-        if let qq = LoginURLs.extractQq(raw), !qq.isEmpty, !raw.isEmpty {
-            Self.logOneKey("sync_session", "uin_only qq=\(qq) names=\(cookieNames(raw))")
-            // 仍要求 skey/p_skey，避免空会话
-            if raw.lowercased().contains("skey=") {
-                session.save(cookieHeader: raw)
-                qqLabel = qq
-                loginMode = .idle
-                oneKeyPhase = .succeeded
-                titleHint = "大乐斗"
-                statusText = "已登录 QQ \(qq)"
-                refreshStatus()
-            }
-        } else {
-            Self.logOneKey("sync_session", "no_skey names=\(cookieNames(raw))")
-        }
+        Self.logOneKey("sync_session", "\(reason) miss diag=\(diag)")
     }
 
     private func cookieNames(_ header: String) -> String {

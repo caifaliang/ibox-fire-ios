@@ -3,13 +3,14 @@ import WebKit
 
 /// WKWebView Cookie ↔ SessionStore
 enum CookieBridge {
+    /// 对齐安卓：按游戏/登录相关 host 汇总 Cookie（含 document.cookie 兜底）
     static func readCookieHeader(from webView: WKWebView) async -> String {
-        // 与 WebView 同一 dataStore；再兜底 default（防止配置不一致）
+        var map: [String: String] = [:]
+
         let stores = [
             webView.configuration.websiteDataStore.httpCookieStore,
             WKWebsiteDataStore.default().httpCookieStore,
         ]
-        var map: [String: String] = [:]
         for store in stores {
             let cookies: [HTTPCookie] = await withCheckedContinuation { cont in
                 store.getAllCookies { cont.resume(returning: $0) }
@@ -17,23 +18,74 @@ enum CookieBridge {
             for c in cookies {
                 let d = c.domain.lowercased()
                 guard d.contains("qq.com") || d.contains("gtimg.cn") else { continue }
-                let name = c.name
-                let val = c.value
-                if val.isEmpty { continue }
-                // skey / p_skey：非空覆盖空值
-                if let old = map[name], !old.isEmpty, name.lowercased().contains("skey") {
-                    continue
-                }
-                map[name] = val
+                merge(&map, name: c.name, value: c.value)
             }
         }
+
+        // 非 HttpOnly 兜底
+        if let jsCookie = await documentCookie(from: webView) {
+            for pair in jsCookie.split(separator: ";") {
+                let p = pair.trimmingCharacters(in: .whitespaces)
+                guard let eq = p.firstIndex(of: "=") else { continue }
+                let name = String(p[..<eq])
+                let val = String(p[p.index(after: eq)...])
+                merge(&map, name: name, value: val)
+            }
+        }
+
         return map
             .map { "\($0.key)=\($0.value)" }
             .sorted()
             .joined(separator: "; ")
     }
 
-    /// 轮询直到有 skey 或超时（扫码落地后 Set-Cookie 有时略晚）
+    /// 脱敏：仅 name + domain
+    static func cookieNameDomainLog(from webView: WKWebView) async -> String {
+        let store = webView.configuration.websiteDataStore.httpCookieStore
+        let cookies: [HTTPCookie] = await withCheckedContinuation { cont in
+            store.getAllCookies { cont.resume(returning: $0) }
+        }
+        let parts = cookies
+            .filter {
+                let d = $0.domain.lowercased()
+                return d.contains("qq.com") || d.contains("gtimg.cn")
+            }
+            .map { "\($0.name)@\($0.domain)" }
+            .sorted()
+        return parts.joined(separator: ",")
+    }
+
+    private static func merge(_ map: inout [String: String], name: String, value: String) {
+        let val = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, !val.isEmpty else { return }
+        let key = name
+        let lower = key.lowercased()
+        if lower.contains("skey") {
+            // 非空、非 @ 的新值覆盖旧占位
+            if let old = map[key], old != "@", !old.isEmpty, (val == "@" || val.isEmpty) {
+                return
+            }
+            if val == "@" {
+                if map[key] == nil { map[key] = val }
+                return
+            }
+            map[key] = val
+            return
+        }
+        if map[key] == nil || map[key]?.isEmpty == true {
+            map[key] = val
+        }
+    }
+
+    private static func documentCookie(from webView: WKWebView) async -> String? {
+        await withCheckedContinuation { cont in
+            webView.evaluateJavaScript("document.cookie || ''") { result, _ in
+                cont.resume(returning: result as? String)
+            }
+        }
+    }
+
+    /// 轮询直到有 skey 或超时
     static func waitForSkey(from webView: WKWebView, attempts: Int = 8, gapMs: UInt64 = 400) async -> String {
         for i in 0..<attempts {
             let header = await readCookieHeader(from: webView)
@@ -76,7 +128,6 @@ enum CookieBridge {
         }
     }
 
-    /// 跳转 QQ 前快照（对齐饭点 rememberAuthorization）
     static func snapshotQQCookies(from webView: WKWebView) async -> [HTTPCookie] {
         let store = webView.configuration.websiteDataStore.httpCookieStore
         let cookies: [HTTPCookie] = await withCheckedContinuation { cont in
@@ -88,7 +139,6 @@ enum CookieBridge {
         }
     }
 
-    /// 回壳后写回（对齐饭点 restoreQqAuthorization）
     static func restore(_ cookies: [HTTPCookie], into webView: WKWebView) async {
         guard !cookies.isEmpty else { return }
         let store = webView.configuration.websiteDataStore.httpCookieStore
@@ -110,7 +160,6 @@ enum CookieBridge {
                 store.delete(c) { cont.resume() }
             }
         }
-        // 饭点登录前清 QQ 域会话：Cookie + 本地存储，避免 xlogin 自动落到 connect 营销页
         let types: Set<String> = [
             WKWebsiteDataTypeCookies,
             WKWebsiteDataTypeLocalStorage,
