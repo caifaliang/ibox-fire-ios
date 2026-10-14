@@ -152,12 +152,13 @@ enum OneKeyCheckSigCompleter {
         case waiting, confirming, expired, success(URL?), other(Int), noResult
     }
 
+    /// ptlogin hash33：必须 32 位 wrapping；Swift Int `+=`/`<<` 溢出会 EXC_BREAKPOINT（fd74 冷启闪退）
     private static func hash33(_ qrsig: String) -> Int {
-        var e = 0
+        var e: UInt32 = 0
         for ch in qrsig.utf16 {
-            e += (e << 5) &+ Int(ch)
+            e = e &+ ((e &<< 5) &+ UInt32(ch))
         }
-        return e & 2147483647
+        return Int(e & 0x7fff_ffff)
     }
 
     private static func pollOnce(
@@ -168,7 +169,9 @@ enum OneKeyCheckSigCompleter {
         jarCookies: inout [HTTPCookie]
     ) async -> Outcome {
         let token = hash33(qrsig)
-        var comps = URLComponents(string: "https://ssl.ptlogin2.qq.com/ptqrlogin")!
+        guard var comps = URLComponents(string: "https://ssl.ptlogin2.qq.com/ptqrlogin") else {
+            return .noResult
+        }
         let ms = Int(Date().timeIntervalSince1970 * 1000)
         comps.queryItems = [
             .init(name: "u1", value: "https://connect.qq.com"),
