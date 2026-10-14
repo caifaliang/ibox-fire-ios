@@ -54,14 +54,18 @@ struct RootView: View {
             }
         }
         .onAppear { vm.bootstrap() }
-        .confirmationDialog("菜单", isPresented: $vm.showMenu, titleVisibility: .visible) {
-            Button("QQ 授权登录（使用 QQ 当前登录的账号）") { vm.openOneKeyLogin() }
+        .confirmationDialog("快捷菜单", isPresented: $vm.showMenu, titleVisibility: .visible) {
+            Button("功能中心") { vm.showFeatureHub = true }
+            Button("一键登录") { vm.openOneKeyLogin() }
             Button("扫码登录") { vm.openScanLogin() }
-            Button("粘贴 Cookie（高级）") { vm.openCookieLoginSheet() }
-            Button("进入游戏首页") { vm.openGameHome() }
+            Button("粘贴 Cookie") { vm.openCookieLoginSheet() }
             Button("刷新") { vm.reload() }
             Button("退出登录", role: .destructive) { vm.logout() }
             Button("取消", role: .cancel) {}
+        }
+        .sheet(isPresented: $vm.showFeatureHub) {
+            FeatureHubView()
+                .environmentObject(vm)
         }
         .sheet(isPresented: $vm.showCookieSheet) {
             CookiePasteSheet()
@@ -86,12 +90,21 @@ struct RootView: View {
             }
             Spacer()
             Button {
+                vm.showFeatureHub = true
+            } label: {
+                Image(systemName: "square.grid.2x2")
+                    .font(.title3)
+                    .padding(8)
+            }
+            .accessibilityLabel("功能中心")
+            Button {
                 vm.showMenu = true
             } label: {
                 Image(systemName: "line.3.horizontal")
                     .font(.title3)
                     .padding(8)
             }
+            .accessibilityLabel("快捷菜单")
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)

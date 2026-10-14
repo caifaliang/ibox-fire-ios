@@ -10,6 +10,8 @@ final class AppViewModel: ObservableObject {
 
     @Published var statusText = ""
     @Published var showMenu = false
+    /// M7：功能中心（对齐 Android FeatureCatalog）
+    @Published var showFeatureHub = false
     @Published var showCookieSheet = false
     @Published var cookieDraft = ""
     @Published var cookieError = ""
@@ -663,6 +665,7 @@ final class AppViewModel: ObservableObject {
         QqOneKeyLogin.markReturned()
         oneKeyPhase = .loadingGame
         statusText = "已回 App，正在确认登录…"
+        OneKeyReturnNotifier.resetSession()
         Self.logOneKey("recover", "webview_resume phase=\(oneKeyPhase.rawValue)")
         oneKeyFetcher?.resumeAfterQQ()
         Task { @MainActor in
@@ -1100,6 +1103,36 @@ final class AppViewModel: ObservableObject {
         if LoginURLs.isInGameShell(URL(string: currentURLString)) { return }
         statusText = "检测到仍在 QQ 登录页，强制进入游戏…"
         forceEnterGame()
+    }
+
+    enum FeatureOpenResult {
+        case handled
+        case needsPlaceholder
+    }
+
+    /// M7 路由：已接功能直接跑；其余由 UI 出占位页
+    @discardableResult
+    func openFeature(id: String) -> FeatureOpenResult {
+        Self.logOneKey("feature_tap", id)
+        switch id {
+        case "one_login":
+            openOneKeyLogin()
+            return .handled
+        case "scan_login":
+            openScanLogin()
+            return .handled
+        case "logout":
+            logout()
+            return .handled
+        case "qunxia_luxiang":
+            openOfficialAnimation()
+            return .handled
+        case "exit_app":
+            statusText = "请用系统手势划掉 App（iOS 无强制退出）"
+            return .handled
+        default:
+            return .needsPlaceholder
+        }
     }
 
     func logout() {
