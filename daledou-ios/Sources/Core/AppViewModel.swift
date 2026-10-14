@@ -47,24 +47,29 @@ final class AppViewModel: ObservableObject {
     private var resumeGameURL: URL?
 
     private var foregroundObserversInstalled = false
+    /// RootView.onAppear 会在回前台时再触发；只允许真正冷启动跑一次
+    private var didBootstrap = false
 
     func bootstrap() {
         installForegroundObservers()
-        // QQ 期间进程被杀：冷启动仍要收尾进游戏
-        if QqOneKeyLogin.persistedAwaitingReturn, !session.isLoggedIn {
-            Self.logOneKey("bootstrap", "resume_after_qq_kill")
-            loginMode = .oneKey
-            oneKeyPhase = .loadingGame
-            statusText = "检测到从 QQ 返回，正在进入游戏…"
-            preferDesktopUA = false
-            pendingURL = URL(string: LoginURLs.ledouEntry)
-            Task { @MainActor in
-                try? await Task.sleep(nanoseconds: 500_000_000)
-                await waitForOauthCookiesThenEnter(reason: "cold_resume_qq")
-            }
+        // 回 QQ/前台导致 onAppear 重入时禁止再走「杀进程恢复」——会冲掉进行中的一键
+        if didBootstrap {
+            Self.logOneKey("bootstrap", "skip_reappear mode=\(loginMode.rawValue) phase=\(oneKeyPhase.rawValue)")
+            return
+        }
+        didBootstrap = true
+
+        // 进程被杀后 WK Cookie 已没：无法静默恢复，清 flag 让用户重做一键
+        // （勿在此 push phonepk，否则会落到「亿万用户」营销页）
+        if QqOneKeyLogin.persistedAwaitingReturn {
+            Self.logOneKey("bootstrap", "qq_kill_need_retry")
+            QqOneKeyLogin.persistedAwaitingReturn = false
+            loadWaitingPage = true
+            statusText = "上次一键被中断，请重新点「一键登录」"
             refreshStatus()
             return
         }
+
         if session.isLoggedIn {
             preferDesktopUA = false
             // 仅 skey 冷启动 inject；OpenID 会话冷启动无法还原 WK 原生态，走等待页让用户再一键
@@ -526,13 +531,15 @@ final class AppViewModel: ObservableObject {
         guard oneKeyPending else { return }
         // 回到前台时确保仍按一键收尾
         if loginMode != .oneKey { loginMode = .oneKey }
-        if oneKeyPhase == .waitingQQConfirm || oneKeyPhase == .idle || oneKeyPhase == .fetchingTicket {
+        // 仍在等 QQ：保持 waitingQQConfirm，让 finish 去 resume+harvest；勿过早标 loadingGame
+        if oneKeyPhase == .idle || oneKeyPhase == .fetchingTicket {
             oneKeyPhase = .loadingGame
         }
         oneKeyFetcher?.resumeAfterQQ()
         Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 300_000_000)
+            try? await Task.sleep(nanoseconds: 400_000_000)
             guard !session.isLoggedIn else { return }
+            // 若还在 xlogin 且刚回前台，给页内 polling / check_sig 多留一会
             finishOneKeyAfterQQReturn()
         }
     }
@@ -692,6 +699,19 @@ final class AppViewModel: ObservableObject {
 
         if LoginURLs.isConnectMarketing(url) {
             if loginMode == .oneKey {
+                // 回壳收尾中误入营销页：拉回 live xlogin，勿直接终态
+                if oneKeyPhase == .waitingQQConfirm
+                    || oneKeyPhase == .loadingGame
+                    || oneKeyPhase == .syncingCookies {
+                    Self.logOneKey("nav_marketing", "bounce_xlogin phase=\(oneKeyPhase.rawValue)")
+                    Task { @MainActor in
+                        if let x = await LoginURLs.resolveLiveXloginURL() {
+                            oneKeyPhase = .fetchingTicket
+                            pendingURL = x
+                        }
+                    }
+                    return
+                }
                 markOneKeyUnsupportedQuickLogin(reason: "当前应用不支持 QQ 快速登录")
                 return
             }

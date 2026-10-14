@@ -194,9 +194,11 @@ struct GameWebView: UIViewRepresentable {
             scheduleCookieCapture(webView)
             if vm.loginMode == .oneKey {
                 if LoginURLs.isConnectMarketing(webView.url) {
-                    // 等待 QQ 期间忽略误入营销页；取票阶段才终态
-                    if vm.oneKeyPhase == .waitingQQConfirm {
-                        AppViewModel.logOneKey("webview_marketing", "ignored_waiting_qq")
+                    // 等待/回壳收尾中忽略营销页；勿终态
+                    if vm.oneKeyPhase == .waitingQQConfirm
+                        || vm.oneKeyPhase == .loadingGame
+                        || vm.oneKeyPhase == .syncingCookies {
+                        AppViewModel.logOneKey("webview_marketing", "ignored_phase=\(vm.oneKeyPhase.rawValue)")
                     } else {
                         AppViewModel.logOneKey("webview_marketing", AppViewModel.sanitizeURLLog(webView.url))
                         vm.markOneKeyUnsupportedQuickLogin()
@@ -282,6 +284,17 @@ struct GameWebView: UIViewRepresentable {
 
             if scheme == "http" || scheme == "https" {
                 if vm.loginMode == .oneKey, LoginURLs.isConnectMarketing(url) {
+                    // 收尾阶段：取消导航，由 onNavigated 拉回 xlogin
+                    if vm.oneKeyPhase == .waitingQQConfirm
+                        || vm.oneKeyPhase == .loadingGame
+                        || vm.oneKeyPhase == .syncingCookies {
+                        decisionHandler(.cancel)
+                        Task { @MainActor in
+                            AppViewModel.logOneKey("nav_marketing", "cancel_keep_phase")
+                            self.vm.onNavigated(to: url)
+                        }
+                        return
+                    }
                     decisionHandler(.cancel)
                     Task { @MainActor in
                         AppViewModel.logOneKey("nav_marketing", AppViewModel.sanitizeURLLog(url))
