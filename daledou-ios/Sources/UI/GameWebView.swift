@@ -17,6 +17,14 @@ struct GameWebView: UIViewRepresentable {
         cfg.preferences.javaScriptCanOpenWindowsAutomatically = false
         // 持久 Cookie，利于授权后会话留在壳内
         cfg.websiteDataStore = .default()
+        // E2：documentStart 钩住页内拼出的 wtlogin，对照官方 schemacallback/字段
+        cfg.userContentController.add(context.coordinator, name: "dldWtloginProbe")
+        let probe = WKUserScript(
+            source: Coordinator.wtloginProbeJS,
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: false
+        )
+        cfg.userContentController.addUserScript(probe)
         let wv = WKWebView(frame: .zero, configuration: cfg)
         wv.navigationDelegate = context.coordinator
         wv.uiDelegate = context.coordinator
@@ -57,6 +65,7 @@ struct GameWebView: UIViewRepresentable {
         uiView.stopLoading()
         uiView.navigationDelegate = nil
         uiView.uiDelegate = nil
+        uiView.configuration.userContentController.removeScriptMessageHandler(forName: "dldWtloginProbe")
         if coordinator.vm.gameWebView === uiView {
             coordinator.vm.gameWebView = nil
         }
@@ -140,7 +149,7 @@ struct GameWebView: UIViewRepresentable {
         }
     }
 
-    final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate {
+    final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
         var vm: AppViewModel
         weak var webView: WKWebView?
         var lastReloadToken = 0
@@ -152,6 +161,46 @@ struct GameWebView: UIViewRepresentable {
         private var lastHandledCode = ""
         private var lastStuckRecoverAt: TimeInterval = 0
 
+        /// E2：尽早钩住页内拼装的 wtlogin（对照官方 cb/字段）
+        static let wtloginProbeJS = """
+        (function(){
+          if (window.__dldWtProbe) return; window.__dldWtProbe=1;
+          function report(u, how){
+            try {
+              var s = String(u||'');
+              if (!/^(wtlogin|mqq)/i.test(s)) return;
+              var h = window.webkit && webkit.messageHandlers && webkit.messageHandlers.dldWtloginProbe;
+              if (h) h.postMessage({how: String(how||''), url: s.substring(0, 2500)});
+            } catch (e) {}
+          }
+          try {
+            var _open = window.open;
+            window.open = function(u){
+              report(u, 'open');
+              return _open ? _open.apply(this, arguments) : null;
+            };
+          } catch (e) {}
+          try {
+            var _assign = Location.prototype.assign;
+            Location.prototype.assign = function(u){ report(u,'assign'); return _assign.call(this, u); };
+            var _replace = Location.prototype.replace;
+            Location.prototype.replace = function(u){ report(u,'replace'); return _replace.call(this, u); };
+          } catch (e) {}
+          try {
+            var desc = Object.getOwnPropertyDescriptor(Location.prototype, 'href');
+            if (desc && desc.set) {
+              var rawSet = desc.set;
+              Object.defineProperty(Location.prototype, 'href', {
+                configurable: true,
+                enumerable: desc.enumerable,
+                get: desc.get,
+                set: function(v){ report(v,'href'); return rawSet.call(this, v); }
+              });
+            }
+          } catch (e) {}
+        })();
+        """
+
         /// 把 _blank / window.open 留在壳内；仅放行 qrcode= 的 wtlogin（p= → 授权失败）
         private let stayJS = """
         (function(){
@@ -160,6 +209,10 @@ struct GameWebView: UIViewRepresentable {
             try{
               var s=String(u||'');
               if(/^(wtlogin|mqq)/i.test(s)){
+                try {
+                  var h = window.webkit && webkit.messageHandlers && webkit.messageHandlers.dldWtloginProbe;
+                  if (h) h.postMessage({how:'stay_open', url:s.substring(0,2500)});
+                } catch(e0){}
                 if(/[?&]p=/i.test(s) && !/[?&]qrcode=/i.test(s)){ return null; }
                 location.href=s; return null;
               }
@@ -178,6 +231,26 @@ struct GameWebView: UIViewRepresentable {
         """
 
         init(vm: AppViewModel) { self.vm = vm }
+
+        func userContentController(
+            _ userContentController: WKUserContentController,
+            didReceive message: WKScriptMessage
+        ) {
+            guard message.name == "dldWtloginProbe" else { return }
+            let how: String
+            let raw: String
+            if let dict = message.body as? [String: Any] {
+                how = (dict["how"] as? String) ?? "js"
+                raw = (dict["url"] as? String) ?? ""
+            } else if let s = message.body as? String {
+                how = "js"
+                raw = s
+            } else {
+                return
+            }
+            guard !raw.isEmpty else { return }
+            AppViewModel.logWtloginRawProbe(source: "page_\(how)", raw: raw)
+        }
 
         func applyUA(_ webView: WKWebView, desktop: Bool) {
             // 一键必须手机 UA：桌面 UA 会把 authorize 赶到无「一键登录」的扫码框
@@ -271,6 +344,7 @@ struct GameWebView: UIViewRepresentable {
             if QqOneKeyLogin.isWtloginScheme(scheme) {
                 decisionHandler(.cancel)
                 Task { @MainActor in
+                    AppViewModel.logWtloginURLProbe(url, source: "nav")
                     AppViewModel.logOneKey("wtlogin_nav", AppViewModel.sanitizeURLLog(url))
                     if let ticket = QqOneKeyLogin.qrcodeTicket(fromWtlogin: url) {
                         _ = QqOneKeyLogin.openWithQrAuthorization(ticket, force: true)
@@ -350,6 +424,7 @@ struct GameWebView: UIViewRepresentable {
             guard let url = navigationAction.request.url else { return nil }
             let scheme = (url.scheme ?? "").lowercased()
             if QqOneKeyLogin.isWtloginScheme(scheme) {
+                AppViewModel.logWtloginURLProbe(url, source: "create")
                 AppViewModel.logOneKey("create_wtlogin", AppViewModel.sanitizeURLLog(url))
                 if let ticket = QqOneKeyLogin.qrcodeTicket(fromWtlogin: url) {
                     _ = QqOneKeyLogin.openWithQrAuthorization(ticket, force: true)

@@ -147,7 +147,8 @@ final class OneKeyTicketFetcher: NSObject {
                 openedQQ = true
                 beginBG()
                 onEvent(.openedQQ)
-                onEvent(.status("QQ：倒计时→继续→同意→马上回 App（过期可忽略）"))
+                // Path1：与对拍结论一致——同意后需点左上角 ◀ 回 App
+                onEvent(.status("QQ：同意后点左上角 ◀ DaLedou 返回（勿等自动跳）"))
                 AppViewModel.logOneKey("fetcher_opened", "ok")
                 break
             } else {

@@ -44,3 +44,10 @@
 - **Conclusion (2026-10-14):** On iOS `wtloginmqq3?qrcode=` path, QQ does **not** open any tested schemacallback after 同意. Scheme roulette stopped.
 - Working UX: manual `< DaLedou` / app switch + background harvest (fd75 golden).
 - Next only with new evidence: Fandian IPA dump of live wtlogin URL; Universal Link + associated domains; or local notification “点回大乐斗” after poll=0 (soft assist, not true auto).
+
+### External AI consult (2026-10-14) — agreed plan
+- Scheme roulette stopped; QQ likely ignores schemacallback for our path.
+- **E1**: screen-record 饭点 Agree (manual?).
+- **E2** (fd79): hook page/native wtlogin → `wtlogin_probe` log keys+cb.
+- **E4**: only if E2 shows browser cb / richer keys — positive control.
+- Path1 UX: status hints manual ◀ return (ship with E2).

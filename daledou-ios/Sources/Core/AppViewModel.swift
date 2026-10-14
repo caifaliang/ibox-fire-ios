@@ -433,6 +433,37 @@ final class AppViewModel: ObservableObject {
         return "\(host)\(path)"
     }
 
+    /// E2：记录页/导航里完整 wtlogin query 结构（不含 qrcode 明文）
+    nonisolated static func logWtloginURLProbe(_ url: URL, source: String) {
+        let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        let keys = items.map(\.name).sorted().joined(separator: ",")
+        let cb = items.first(where: { $0.name.lowercased() == "schemacallback" })?.value ?? "(none)"
+        let hasQr = items.contains { $0.name.lowercased() == "qrcode" }
+        let hasP = items.contains { $0.name.lowercased() == "p" }
+        let extra = items
+            .filter {
+                let n = $0.name.lowercased()
+                return n != "qrcode" && n != "p" && n != "schemacallback"
+            }
+            .map { "\($0.name)=\($0.value ?? "")" }
+            .joined(separator: "&")
+        let extraClip = extra.count > 180 ? String(extra.prefix(180)) + "…" : extra
+        logOneKey(
+            "wtlogin_probe",
+            "src=\(source) scheme=\(url.scheme ?? "?") keys=[\(keys)] cb=\(cb) qr=\(hasQr) p=\(hasP) extra=\(extraClip)"
+        )
+    }
+
+    /// E2：从 JS message 收到的原始 wtlogin 串
+    nonisolated static func logWtloginRawProbe(source: String, raw: String) {
+        let s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let u = URL(string: s) ?? (NSURL(string: s) as URL?) else {
+            logOneKey("wtlogin_probe", "src=\(source) parse_fail len=\(s.count) head=\(s.prefix(80))")
+            return
+        }
+        logWtloginURLProbe(u, source: source)
+    }
+
     /// 允许从 open completion / 非 MainActor 探针线程写日志
     nonisolated static func logOneKey(_ event: String, _ detail: String) {
         #if DEBUG

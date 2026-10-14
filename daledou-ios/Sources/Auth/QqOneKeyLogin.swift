@@ -387,6 +387,7 @@ enum QqOneKeyLogin {
             "qq_open",
             "cb=\(cbParam) scheme=\(launch.scheme ?? "?") candidates=\(candidates.map { $0.scheme ?? "?" }.joined(separator: ","))"
         )
+        AppViewModel.logWtloginURLProbe(launch, source: "native_open")
         for u in candidates where UIApplication.shared.canOpenURL(u) {
             let sch = u.scheme ?? "?"
             AppViewModel.logOneKey("qq_open_try", "\(sch) canOpen=1")
