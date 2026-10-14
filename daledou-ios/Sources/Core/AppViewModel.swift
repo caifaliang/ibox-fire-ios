@@ -426,14 +426,15 @@ final class AppViewModel: ObservableObject {
     }
 
     /// 脱敏导航日志：仅 host + path（无 query/Cookie）
-    static func sanitizeURLLog(_ url: URL?) -> String {
+    nonisolated static func sanitizeURLLog(_ url: URL?) -> String {
         guard let u = url else { return "(nil)" }
         let host = u.host ?? ""
         let path = u.path
         return "\(host)\(path)"
     }
 
-    static func logOneKey(_ event: String, _ detail: String) {
+    /// 允许从 open completion / 非 MainActor 探针线程写日志
+    nonisolated static func logOneKey(_ event: String, _ detail: String) {
         #if DEBUG
         print("[OneKey] \(event) \(detail)")
         #endif
@@ -457,7 +458,7 @@ final class AppViewModel: ObservableObject {
     }
 
     /// 每次一键开始清空旧日志，避免误读历史
-    static func resetOneKeyLogFile() {
+    nonisolated static func resetOneKeyLogFile() {
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         let url = docs.appendingPathComponent("onekey_last.txt")
         try? "".write(to: url, atomically: true, encoding: .utf8)
@@ -517,7 +518,6 @@ final class AppViewModel: ObservableObject {
 
     /// Exp A：最近一次回壳是否来自 schemacallback（onOpenURL）
     private var lastReturnViaCallback = false
-    private var lastCallbackAt: Date?
 
     func handleOpenURL(_ url: URL) {
         // 先记一切非 http(s) 的打开，避免漏判「QQ 回跳了但 scheme 未登记」
@@ -530,7 +530,6 @@ final class AppViewModel: ObservableObject {
         }
         guard QqOneKeyLogin.isOurCallback(url) || LoginURLs.isCallbackScheme(url.scheme) else { return }
         lastReturnViaCallback = true
-        lastCallbackAt = Date()
         Self.logOneKey("callback", "HIT scheme=\(sch) via=schemacallback")
         if let code = LoginURLs.oauthCode(from: url),
            let finish = LoginURLs.finishWithCode(code) {
