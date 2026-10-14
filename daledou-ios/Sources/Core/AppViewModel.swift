@@ -250,6 +250,8 @@ final class AppViewModel: ObservableObject {
         case .openedQQ:
             oneKeyPhase = .waitingQQConfirm
             statusText = "已打开 QQ：点一次「同意」后，立刻点左上角 ◀ 回大乐斗（勿反复点同意）"
+            // 进程常被杀，poll 来不及：先预约本地通知催返回
+            OneKeyReturnNotifier.scheduleReturnRemindersAfterOpenQQ()
             // 同意瞬间收 skey（回壳再 poll 多为 65）
             if let wv = gameWebView {
                 OneKeyCheckSigCompleter.startBackgroundHarvest(from: wv)
@@ -317,6 +319,7 @@ final class AppViewModel: ObservableObject {
             oneKeyPhase = .waitingQQConfirm
             // 禁止在此加载 xlogin：页内会重新 ptqrshow，把 QQ 里正在授权的票作废 →「二维码已过期」
             statusText = "已打开 QQ：点一次「同意」后立刻点左上角 ◀ 返回（勿反复点同意）"
+            OneKeyReturnNotifier.scheduleReturnRemindersAfterOpenQQ()
             Task { @MainActor in await seedOneKeyCookiesOnly() }
         case .succeeded(let cookies):
             let cookiesCopy = cookies
