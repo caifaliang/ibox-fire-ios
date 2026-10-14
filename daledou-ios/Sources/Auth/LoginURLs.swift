@@ -269,16 +269,19 @@ enum LoginURLs {
         return false
     }
 
-    /// 一键回壳实测：index.php OAuth 常只种 openId+accessToken+newuin，无 skey；
-    /// 游戏壳仍可进（斗豆/菜单正常）。UI / SessionStore 认此会话；粘贴 Cookie 仍要求 skey。
+    /// 一键回壳实测：index.php OAuth 常只种 openId+accessToken+newuin，无 skey。
+    /// UI 可认；玩法/进房仍可能要 skey（见 OneKeyCheckSigCompleter）。
     static func hasOpenIdSession(_ cookie: String?) -> Bool {
         guard let c = cookie, !c.isEmpty else { return false }
-        guard let open = cookieValue(c, names: ["openId", "openid"]), !open.isEmpty, open != "@"
-        else { return false }
-        guard let token = cookieValue(c, names: ["accessToken", "access_token"]),
-              !token.isEmpty, token != "@"
-        else { return false }
-        return true
+        if let open = cookieValue(c, names: ["openId", "openid"]), !open.isEmpty, open != "@",
+           let token = cookieValue(c, names: ["accessToken", "access_token"]),
+           !token.isEmpty, token != "@" {
+            return true
+        }
+        // 兜底：大小写/分隔异常时用子串判断
+        let lower = c.lowercased()
+        return lower.contains("openid=") && lower.contains("accesstoken=")
+            && !lower.contains("openid=@") && !lower.contains("accesstoken=@")
     }
 
     /// 可用会话：skey 或 QQ 互联 OpenID（一键主路径）

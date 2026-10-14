@@ -1,0 +1,217 @@
+import Foundation
+import WebKit
+
+/// 回壳后：用 WebView 里的 qrsig 再 poll `ptqrlogin`，跟 `check_sig` 收 skey。
+/// 一键实测常只落到 openId；本路径尽量补种 skey，且**只 merge 不 clear**。
+enum OneKeyCheckSigCompleter {
+    static func tryHarvestSkey(from webView: WKWebView) async -> [HTTPCookie] {
+        let existing = await CookieBridge.snapshotQQCookies(from: webView)
+        guard let qrsig = existing.first(where: { $0.name.lowercased() == "qrsig" })?.value,
+              !qrsig.isEmpty else {
+            AppViewModel.logOneKey("check_sig", "no_qrsig")
+            return []
+        }
+        let loginSig = existing.first(where: {
+            $0.name.lowercased() == "pt_login_sig" || $0.name.lowercased() == "login_sig"
+        })?.value ?? ""
+
+        var jar: [String: String] = [:]
+        var jarCookies: [HTTPCookie] = existing
+        for c in existing {
+            jar[c.name] = c.value
+        }
+
+        let cfg = URLSessionConfiguration.ephemeral
+        cfg.httpCookieAcceptPolicy = .always
+        cfg.httpShouldSetCookies = true
+        cfg.timeoutIntervalForRequest = 12
+        let session = URLSession(configuration: cfg)
+
+        // 先把现有 Cookie 写入 ephemeral jar，便于 ptqrlogin 带上 qrsig
+        if let store = cfg.httpCookieStorage {
+            for c in existing {
+                store.setCookie(c)
+            }
+        }
+
+        AppViewModel.logOneKey("check_sig", "poll_begin qrsig_len=\(qrsig.count)")
+        var jump: URL?
+        for i in 0..<8 {
+            let outcome = await pollOnce(
+                session: session,
+                qrsig: qrsig,
+                loginSig: loginSig,
+                jar: &jar,
+                jarCookies: &jarCookies
+            )
+            switch outcome {
+            case .waiting:
+                if i == 0 || i == 3 { AppViewModel.logOneKey("check_sig", "poll=66") }
+            case .confirming:
+                AppViewModel.logOneKey("check_sig", "poll=67")
+            case .expired:
+                AppViewModel.logOneKey("check_sig", "poll=65_expired")
+                return []
+            case .success(let url):
+                jump = url
+                AppViewModel.logOneKey("check_sig", "poll=0")
+            case .other(let code):
+                AppViewModel.logOneKey("check_sig", "poll=\(code)")
+                return []
+            case .none:
+                break
+            }
+            if jump != nil { break }
+            try? await Task.sleep(nanoseconds: 600_000_000)
+        }
+        guard let jump else {
+            AppViewModel.logOneKey("check_sig", "no_jump")
+            return []
+        }
+
+        AppViewModel.logOneKey("check_sig", "follow \(AppViewModel.sanitizeURLLog(jump))")
+        _ = await fetch(
+            session: session,
+            url: jump,
+            referer: "https://xui.ptlogin2.qq.com/",
+            jar: &jar,
+            jarCookies: &jarCookies
+        )
+        // authorize 尾段：有时 check_sig 后还需走一遍才有完整态
+        if let auth = URL(string: LoginURLs.oneKeyLogin) {
+            _ = await fetch(
+                session: session,
+                url: auth,
+                referer: "https://xui.ptlogin2.qq.com/",
+                jar: &jar,
+                jarCookies: &jarCookies
+            )
+        }
+
+        let names = jar.keys.sorted().joined(separator: ",")
+        let hasSkey = jar.keys.contains { $0.lowercased() == "skey" || $0.lowercased() == "p_skey" }
+        AppViewModel.logOneKey("check_sig", "done has_skey=\(hasSkey) names=\(names)")
+        guard hasSkey else { return [] }
+        return jarCookies.filter {
+            let n = $0.name.lowercased()
+            return n.contains("skey") || n == "uin" || n == "p_uin" || n == "luin"
+        }
+    }
+
+    private enum Outcome {
+        case waiting, confirming, expired, success(URL?), other(Int), none
+    }
+
+    private static func pollOnce(
+        session: URLSession,
+        qrsig: String,
+        loginSig: String,
+        jar: inout [String: String],
+        jarCookies: inout [HTTPCookie]
+    ) async -> Outcome {
+        let token = NativeQqLogin.hash33(qrsig)
+        var comps = URLComponents(string: "https://ssl.ptlogin2.qq.com/ptqrlogin")!
+        let ms = Int(Date().timeIntervalSince1970 * 1000)
+        comps.queryItems = [
+            .init(name: "u1", value: "https://connect.qq.com"),
+            .init(name: "ptqrtoken", value: String(token)),
+            .init(name: "ptredirect", value: "0"),
+            .init(name: "h", value: "1"),
+            .init(name: "t", value: "1"),
+            .init(name: "g", value: "1"),
+            .init(name: "from_ui", value: "1"),
+            .init(name: "ptlang", value: "2052"),
+            .init(name: "action", value: "0-0-\(ms)"),
+            .init(name: "js_ver", value: "24051615"),
+            .init(name: "js_type", value: "1"),
+            .init(name: "login_sig", value: loginSig),
+            .init(name: "pt_uistyle", value: "40"),
+            .init(name: "aid", value: "716027609"),
+            .init(name: "daid", value: "383"),
+            .init(name: "pt_3rd_aid", value: "102067279"),
+        ]
+        guard let url = comps.url else { return .none }
+        guard let text = await fetch(
+            session: session,
+            url: url,
+            referer: "https://xui.ptlogin2.qq.com/",
+            jar: &jar,
+            jarCookies: &jarCookies
+        ) else { return .none }
+        return parsePtuiCB(text)
+    }
+
+    private static func fetch(
+        session: URLSession,
+        url: URL,
+        referer: String?,
+        jar: inout [String: String],
+        jarCookies: inout [HTTPCookie]
+    ) async -> String? {
+        var req = URLRequest(url: url)
+        req.httpMethod = "GET"
+        req.setValue(LoginURLs.iphoneUA, forHTTPHeaderField: "User-Agent")
+        req.setValue(
+            "text/html,application/xhtml+xml,application/javascript,*/*;q=0.8",
+            forHTTPHeaderField: "Accept"
+        )
+        if let referer, !referer.isEmpty {
+            req.setValue(referer, forHTTPHeaderField: "Referer")
+        }
+        if !jar.isEmpty {
+            req.setValue(
+                jar.map { "\($0.key)=\($0.value)" }.sorted().joined(separator: "; "),
+                forHTTPHeaderField: "Cookie"
+            )
+        }
+        do {
+            let (data, resp) = try await session.data(for: req)
+            if let http = resp as? HTTPURLResponse {
+                ingest(http, pageURL: http.url ?? url, jar: &jar, jarCookies: &jarCookies)
+            }
+            return String(data: data, encoding: .utf8)
+                ?? String(data: data, encoding: .isoLatin1)
+        } catch {
+            return nil
+        }
+    }
+
+    private static func ingest(
+        _ http: HTTPURLResponse,
+        pageURL: URL,
+        jar: inout [String: String],
+        jarCookies: inout [HTTPCookie]
+    ) {
+        var fields: [String: String] = [:]
+        for (k, v) in http.allHeaderFields {
+            fields["\(k)"] = "\(v)"
+        }
+        for c in HTTPCookie.cookies(withResponseHeaderFields: fields, for: pageURL) {
+            jar[c.name] = c.value
+            jarCookies.removeAll { $0.name == c.name && $0.domain == c.domain }
+            jarCookies.append(c)
+        }
+    }
+
+    private static func parsePtuiCB(_ text: String) -> Outcome {
+        let pat = #"ptuiCB\(\s*'(\d+)'\s*,\s*'[^']*'\s*,\s*'([^']*)'"#
+        guard let r = try? NSRegularExpression(pattern: pat),
+              let m = r.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
+              m.numberOfRanges >= 3,
+              let codeRange = Range(m.range(at: 1), in: text),
+              let urlRange = Range(m.range(at: 2), in: text),
+              let code = Int(text[codeRange]) else {
+            return .other(-1)
+        }
+        let jumpRaw = String(text[urlRange])
+        switch code {
+        case 66: return .waiting
+        case 67: return .confirming
+        case 65: return .expired
+        case 0:
+            return .success(jumpRaw.isEmpty ? nil : URL(string: jumpRaw))
+        default:
+            return .other(code)
+        }
+    }
+}

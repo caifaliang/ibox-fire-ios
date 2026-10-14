@@ -511,6 +511,22 @@ final class AppViewModel: ObservableObject {
         preferDesktopUA = false
         statusText = "等待登录 Cookie…（可点左上角回 App）"
 
+        // 优先：用 qrsig 跟 check_sig 收 skey（OpenID 不够进玩法）
+        if let wv = gameWebView {
+            let harvested = await OneKeyCheckSigCompleter.tryHarvestSkey(from: wv)
+            if !harvested.isEmpty {
+                await CookieBridge.restore(harvested, into: wv)
+                await syncSessionFromWebView(reason: "check_sig_merge")
+                if session.isLoggedIn, LoginURLs.hasRealSkey(session.cookieHeader) {
+                    Self.logOneKey("oauth_wait", "skey_via_check_sig")
+                    if !LoginURLs.isInGameShell(URL(string: currentURLString)) {
+                        pendingURL = URL(string: LoginURLs.ledouEntry)
+                    }
+                    return
+                }
+            }
+        }
+
         // 阶段 A：约 6s 只 resume / 采 Cookie，不打断 index.php?code=
         for i in 0..<6 {
             guard gen == oauthWaitGeneration else {
@@ -536,9 +552,13 @@ final class AppViewModel: ObservableObject {
                 break
             }
             if LoginURLs.isOauthLanding(URL(string: currentURLString)) {
-                try? await Task.sleep(nanoseconds: 1_200_000_000)
-                await syncSessionFromWebView(reason: "oauth_landing_\(i)")
-                if session.isLoggedIn { return }
+                // 多等一会儿让 index.php Set-Cookie 落完，勿急着 phonepk
+                for j in 0..<4 {
+                    guard gen == oauthWaitGeneration else { return }
+                    try? await Task.sleep(nanoseconds: 900_000_000)
+                    await syncSessionFromWebView(reason: "oauth_landing_\(i)_\(j)")
+                    if session.isLoggedIn { return }
+                }
                 continue
             }
             try? await Task.sleep(nanoseconds: 1_000_000_000)
