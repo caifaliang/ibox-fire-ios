@@ -47,8 +47,15 @@ final class AppViewModel: ObservableObject {
     func bootstrap() {
         if session.isLoggedIn {
             preferDesktopUA = false
-            cookieInjectToken &+= 1
-            pendingURL = URL(string: LoginURLs.ledouEntry)
+            // 仅 skey 冷启动 inject；OpenID 会话冷启动无法还原 WK 原生态，走等待页让用户再一键
+            if LoginURLs.hasRealSkey(session.cookieHeader) {
+                cookieInjectToken &+= 1
+                pendingURL = URL(string: LoginURLs.ledouEntry)
+            } else {
+                Self.logOneKey("bootstrap", "openid_only_need_relogin")
+                loadWaitingPage = true
+                statusText = "上次为 OpenID 会话，请再点「一键登录」"
+            }
         } else {
             loadWaitingPage = true
         }
@@ -792,18 +799,33 @@ final class AppViewModel: ObservableObject {
         }
         let showQq = qqLabel.isEmpty ? "?" : qqLabel
         titleHint = "大乐斗"
-        let kindHint = LoginURLs.hasRealSkey(header) ? "" : "（OpenID）"
-        // 注意：index.php?code= 也在 dld.qzapp 上，不能当成已进游戏而跳过跳转
-        if !didEnterGameFromCapture || !LoginURLs.isInGameShell(URL(string: currentURLString)) {
+        let hasSkey = LoginURLs.hasRealSkey(header)
+        let kindHint = hasSkey ? "" : "（OpenID）"
+        let inShell = LoginURLs.isInGameShell(URL(string: currentURLString))
+        // 已在 phonepk：只落库，禁止 reinject/reload（会冲掉 WK 原生 OAuth Cookie → 页内「未登录」）
+        if inShell {
             didEnterGameFromCapture = true
-            statusText = "已登录 QQ \(showQq)\(kindHint) · 正在进入游戏…"
+            statusText = "已登录 QQ \(showQq)\(kindHint)"
+            Self.logOneKey("enter_game", "already_shell kind=\(hasSkey ? "skey" : "openid")")
+            return
+        }
+        guard !didEnterGameFromCapture else {
+            statusText = "已登录 QQ \(showQq)\(kindHint)"
+            return
+        }
+        didEnterGameFromCapture = true
+        statusText = "已登录 QQ \(showQq)\(kindHint) · 正在进入游戏…"
+        if hasSkey {
+            // 粘贴/扫码 skey：需要 inject 再进壳
             forceEnterGame()
         } else {
-            statusText = "已登录 QQ \(showQq)\(kindHint)"
+            // OpenID：保留 WebView 已有 Cookie，只跳 phonepk，勿 cookieInject
+            Self.logOneKey("enter_game", "soft_phonepk openid")
+            pendingURL = URL(string: LoginURLs.ledouEntry)
         }
     }
 
-    /// 注入 Cookie 并强制打开手机端首页（扫码后卡在 QQ 一键页时用）
+    /// 注入 Cookie 并强制打开手机端首页（扫码 / skey 粘贴后用）
     func forceEnterGame() {
         preferDesktopUA = false
         loginMode = .idle
