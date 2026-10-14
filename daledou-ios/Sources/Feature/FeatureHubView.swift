@@ -136,6 +136,7 @@ struct FeatureHubView: View {
             // 另开 sheet 的功能：稍后再关中心，避免 presentation 冲突
             let sheetIds: Set<String> = [
                 "account_switch", "shuqian", "beibao", "chaqu",
+                "daiwan", "daiwan_ui",
             ]
             if sheetIds.contains(item.id) {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {

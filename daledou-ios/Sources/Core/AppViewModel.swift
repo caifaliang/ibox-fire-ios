@@ -18,6 +18,9 @@ final class AppViewModel: ObservableObject {
     @Published var showBookmark = false
     @Published var showBeiBao = false
     @Published var showChaQu = false
+    /// M12：代玩设置 / 代玩界面
+    @Published var showDaiWanSettings = false
+    @Published var showDaiWanHub = false
     @Published var showCookieSheet = false
     @Published var cookieDraft = ""
     @Published var cookieError = ""
@@ -1148,6 +1151,12 @@ final class AppViewModel: ObservableObject {
         case "chaqu":
             showChaQu = true
             return .handled
+        case "daiwan":
+            showDaiWanSettings = true
+            return .handled
+        case "daiwan_ui":
+            showDaiWanHub = true
+            return .handled
         default:
             return .needsPlaceholder
         }
@@ -1164,6 +1173,8 @@ final class AppViewModel: ObservableObject {
         showBookmark = false
         showBeiBao = false
         showChaQu = false
+        showDaiWanSettings = false
+        showDaiWanHub = false
         showAccountSwitch = false
         pendingURL = url
         statusText = "已打开 \(url.host ?? "")\(url.path)"

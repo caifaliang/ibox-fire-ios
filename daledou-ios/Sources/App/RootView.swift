@@ -83,6 +83,14 @@ struct RootView: View {
             ChaQuView()
                 .environmentObject(vm)
         }
+        .sheet(isPresented: $vm.showDaiWanSettings) {
+            DaiWanSettingsView()
+                .environmentObject(vm)
+        }
+        .sheet(isPresented: $vm.showDaiWanHub) {
+            DaiWanHubView()
+                .environmentObject(vm)
+        }
         .sheet(isPresented: $vm.showCookieSheet) {
             CookiePasteSheet()
                 .environmentObject(vm)

@@ -13,12 +13,12 @@
 | M4 | Cookie 登录 | done | （高级） | CookiePasteSheet | |
 | M5 | 官方动画 / Ruffle | partial | qunxia_luxiang | Fight/* FAB | 缺完整「群侠录像」页 |
 | M6 | 壳顶栏 / 简菜单 | partial | — | RootView | 需扩成功能中心 |
-| M7 | **功能中心菜单 + 路由骨架** | **done** | MainMenuScreen / FeatureRoute | Feature/* + RootView | fd82：三区目录 + 占位；已接一键/扫码/退出/动画 |
-| M8 | 账号切换 | done | AccountSwitchScreen | AccountStore + AccountSwitchView | fd83：保存/切换/删除/粘贴 |
-| M9 | 书签 | done | shuqian | BookmarkStore + BookmarkView | fd84：多行 URL → 壳内打开 |
-| M10 | 背包查询 | partial | beibao | BeiBaoService + BeiBaoView | fd84：store 刮取 + 关键词；无出售 |
-| M11 | 武林查区 | partial | chaqu | ChaQuView | fd84：设置落盘；扫区后台未接 |
-| M12 | 代玩设置 + Workers | todo | daiwan / DaiWanWorkers | — | 含 autoDaiWanTypes |
+| M7 | **功能中心菜单 + 路由骨架** | **done** | MainMenuScreen / FeatureRoute | Feature/* + RootView | fd82 |
+| M8 | 账号切换 | done | AccountSwitchScreen | AccountStore + AccountSwitchView | fd83 |
+| M9 | 书签 | done | shuqian | BookmarkStore + BookmarkView | fd84 |
+| M10 | 背包查询 | partial | beibao | BeiBaoService + BeiBaoView | fd84 |
+| M11 | 武林查区 | partial | chaqu | ChaQuView | fd84 |
+| M12 | 代玩设置 + Workers | partial | daiwan / DaiWanWorkers | Task/* + DaiWan*View | fd85：L4 开关+Hub；手机武林/群侠已接 |
 | M13 | 活跃代玩 | todo | huoyue | — | |
 | M14 | 领奖报名 | todo | lingjiang | — | |
 | M15 | 任务设置 | todo | renwu | — | |
@@ -34,6 +34,6 @@
 
 ## 下一切片（建议）
 
-**M12 代玩设置 + Workers 骨架**（或先补 M11 扫区后台）。
+**M13 活跃代玩**（HuoYueRunner / 设置页）或逐项补代玩 CGI（会武/历练…）。
 
-M7–M9/M10/M11（设置页）已随 fd84 落地。
+fd85：代玩 Hub + L4 开关骨架已落地。
