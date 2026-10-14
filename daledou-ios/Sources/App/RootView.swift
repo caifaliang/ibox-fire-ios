@@ -8,13 +8,7 @@ struct RootView: View {
             VStack(spacing: 0) {
                 topBar
                 if !vm.statusText.isEmpty {
-                    Text(vm.statusText)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 4)
-                        .background(Color(.systemGray6))
+                    oneKeyStatusBanner
                 }
                 // 对齐 APK :ruffle：开战时从树里拆掉游戏 WKWebView（不是 about:blank），
                 // 让 WebContent 进程真正退出，把 jetsam 预算让给 Ruffle。
@@ -102,6 +96,45 @@ struct RootView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .background(.ultraThinMaterial)
+    }
+
+    /// 一键等待回壳用琥珀条；其它阶段保持轻提示
+    private var oneKeyStatusBanner: some View {
+        let kind = vm.oneKeyBannerKind
+        let bg: Color = {
+            switch kind {
+            case .warn: return Color.orange.opacity(0.22)
+            case .progress: return Color.blue.opacity(0.12)
+            case .success: return Color.green.opacity(0.18)
+            case .danger: return Color.red.opacity(0.16)
+            case .info, .none: return Color(.systemGray6)
+            }
+        }()
+        let fg: Color = {
+            switch kind {
+            case .warn: return Color.orange.opacity(0.95)
+            case .danger: return Color.red.opacity(0.9)
+            case .success: return Color.green.opacity(0.95)
+            default: return Color.secondary
+            }
+        }()
+        return HStack(alignment: .top, spacing: 8) {
+            if kind == .progress {
+                ProgressView()
+                    .controlSize(.small)
+            } else if kind == .warn {
+                Image(systemName: "arrow.uturn.backward.circle.fill")
+                    .foregroundStyle(fg)
+            }
+            Text(vm.statusText)
+                .font(kind == .warn ? .caption.weight(.semibold) : .caption2)
+                .foregroundStyle(kind == .warn || kind == .danger ? fg : .secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, kind == .warn ? 8 : 4)
+        .background(bg)
     }
 }
 

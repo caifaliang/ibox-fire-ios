@@ -68,7 +68,7 @@ final class AppViewModel: ObservableObject {
                 loginMode = .oneKey
                 oneKeyPhase = .waitingQQConfirm
                 preferDesktopUA = false
-                statusText = "检测到一键未完成，请从 QQ 点左上角回 App…"
+                statusText = "授权可能已完成：请从 QQ 点左上角 ◀ 回大乐斗（勿再点同意）"
                 let loginURL = QqOneKeyLogin.persistedLoginURL
                 QqOneKeyLogin.markRestoredAwaitingReturn(cookies: cookies, loginURL: loginURL)
                 Task { @MainActor in
@@ -156,6 +156,8 @@ final class AppViewModel: ObservableObject {
         oauthWaitGeneration &+= 1
         oneKeyPhase = .preflight
         Self.resetOneKeyLogFile()
+        OneKeyReturnNotifier.resetSession()
+        OneKeyReturnNotifier.requestPermissionIfNeeded()
         let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"
         Self.logOneKey("start", "webview_xlogin build=\(build)")
         statusText = "一键登录：打开授权页…"
@@ -177,6 +179,30 @@ final class AppViewModel: ObservableObject {
                 Self.logOneKey("load_xlogin", "fallback_authorize")
                 pendingURL = URL(string: LoginURLs.oneKeyLogin)
             }
+        }
+    }
+
+    /// 顶栏提示条样式：等 QQ 回壳用醒目色
+    enum OneKeyBannerKind {
+        case none, info, warn, progress, success, danger
+    }
+
+    var oneKeyBannerKind: OneKeyBannerKind {
+        guard loginMode == .oneKey || oneKeyPhase == .waitingQQConfirm else {
+            if oneKeyPhase == .failed || oneKeyPhase == .unsupportedQuickLogin { return .danger }
+            return .none
+        }
+        switch oneKeyPhase {
+        case .waitingQQConfirm:
+            return .warn
+        case .fetchingTicket, .preflight, .syncingCookies, .loadingGame:
+            return .progress
+        case .succeeded:
+            return .success
+        case .failed, .unsupportedQuickLogin:
+            return .danger
+        case .idle:
+            return .none
         }
     }
 
@@ -223,7 +249,7 @@ final class AppViewModel: ObservableObject {
             statusText = s
         case .openedQQ:
             oneKeyPhase = .waitingQQConfirm
-            statusText = "QQ：倒计时→继续→同意→马上回 App（过期提示可忽略）"
+            statusText = "已打开 QQ：点一次「同意」后，立刻点左上角 ◀ 回大乐斗（勿反复点同意）"
             // 同意瞬间收 skey（回壳再 poll 多为 65）
             if let wv = gameWebView {
                 OneKeyCheckSigCompleter.startBackgroundHarvest(from: wv)
@@ -290,7 +316,7 @@ final class AppViewModel: ObservableObject {
         case .openedQQ:
             oneKeyPhase = .waitingQQConfirm
             // 禁止在此加载 xlogin：页内会重新 ptqrshow，把 QQ 里正在授权的票作废 →「二维码已过期」
-            statusText = "QQ：等倒计时→继续→同意，然后立刻返回"
+            statusText = "已打开 QQ：点一次「同意」后立刻点左上角 ◀ 返回（勿反复点同意）"
             Task { @MainActor in await seedOneKeyCookiesOnly() }
         case .succeeded(let cookies):
             let cookiesCopy = cookies
@@ -633,7 +659,7 @@ final class AppViewModel: ObservableObject {
         oneKeyReturnBusy = true
         QqOneKeyLogin.markReturned()
         oneKeyPhase = .loadingGame
-        statusText = "已回 App，等待授权落 Cookie…（过期提示可忽略）"
+        statusText = "已回 App，正在确认登录…"
         Self.logOneKey("recover", "webview_resume phase=\(oneKeyPhase.rawValue)")
         oneKeyFetcher?.resumeAfterQQ()
         Task { @MainActor in

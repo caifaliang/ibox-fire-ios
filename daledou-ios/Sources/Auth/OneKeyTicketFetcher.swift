@@ -147,8 +147,7 @@ final class OneKeyTicketFetcher: NSObject {
                 openedQQ = true
                 beginBG()
                 onEvent(.openedQQ)
-                // Path1：与对拍结论一致——同意后需点左上角 ◀ 回 App
-                onEvent(.status("QQ：同意后点左上角 ◀ DaLedou 返回（勿等自动跳）"))
+                onEvent(.status("已打开 QQ：点一次「同意」后立刻点左上角 ◀ 返回（勿反复点同意）"))
                 AppViewModel.logOneKey("fetcher_opened", "ok")
                 break
             } else {
