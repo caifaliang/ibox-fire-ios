@@ -3,6 +3,7 @@ import WebKit
 
 /// 回壳后：用 WebView 里的 qrsig 再 poll `ptqrlogin`，跟 `check_sig` 收 skey。
 /// 一键实测常只落到 openId；本路径尽量补种 skey，且**只 merge 不 clear**。
+@MainActor
 enum OneKeyCheckSigCompleter {
     static func tryHarvestSkey(from webView: WKWebView) async -> [HTTPCookie] {
         let existing = await CookieBridge.snapshotQQCookies(from: webView)
@@ -26,8 +27,6 @@ enum OneKeyCheckSigCompleter {
         cfg.httpShouldSetCookies = true
         cfg.timeoutIntervalForRequest = 12
         let session = URLSession(configuration: cfg)
-
-        // 先把现有 Cookie 写入 ephemeral jar，便于 ptqrlogin 带上 qrsig
         if let store = cfg.httpCookieStorage {
             for c in existing {
                 store.setCookie(c)
@@ -58,7 +57,7 @@ enum OneKeyCheckSigCompleter {
             case .other(let code):
                 AppViewModel.logOneKey("check_sig", "poll=\(code)")
                 return []
-            case .none:
+            case .noResult:
                 break
             }
             if jump != nil { break }
@@ -77,7 +76,6 @@ enum OneKeyCheckSigCompleter {
             jar: &jar,
             jarCookies: &jarCookies
         )
-        // authorize 尾段：有时 check_sig 后还需走一遍才有完整态
         if let auth = URL(string: LoginURLs.oneKeyLogin) {
             _ = await fetch(
                 session: session,
@@ -99,7 +97,15 @@ enum OneKeyCheckSigCompleter {
     }
 
     private enum Outcome {
-        case waiting, confirming, expired, success(URL?), other(Int), none
+        case waiting, confirming, expired, success(URL?), other(Int), noResult
+    }
+
+    private static func hash33(_ qrsig: String) -> Int {
+        var e = 0
+        for ch in qrsig.utf16 {
+            e += (e << 5) &+ Int(ch)
+        }
+        return e & 2147483647
     }
 
     private static func pollOnce(
@@ -109,7 +115,7 @@ enum OneKeyCheckSigCompleter {
         jar: inout [String: String],
         jarCookies: inout [HTTPCookie]
     ) async -> Outcome {
-        let token = NativeQqLogin.hash33(qrsig)
+        let token = hash33(qrsig)
         var comps = URLComponents(string: "https://ssl.ptlogin2.qq.com/ptqrlogin")!
         let ms = Int(Date().timeIntervalSince1970 * 1000)
         comps.queryItems = [
@@ -130,14 +136,14 @@ enum OneKeyCheckSigCompleter {
             .init(name: "daid", value: "383"),
             .init(name: "pt_3rd_aid", value: "102067279"),
         ]
-        guard let url = comps.url else { return .none }
+        guard let url = comps.url else { return .noResult }
         guard let text = await fetch(
             session: session,
             url: url,
             referer: "https://xui.ptlogin2.qq.com/",
             jar: &jar,
             jarCookies: &jarCookies
-        ) else { return .none }
+        ) else { return .noResult }
         return parsePtuiCB(text)
     }
 
