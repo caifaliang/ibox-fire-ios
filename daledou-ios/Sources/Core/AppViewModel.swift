@@ -59,11 +59,39 @@ final class AppViewModel: ObservableObject {
         }
         didBootstrap = true
 
-        // 进程被杀后 WK Cookie 已没：无法静默恢复，清 flag 让用户重做一键
-        // （勿在此 push phonepk，否则会落到「亿万用户」营销页）
+        // 进程在 QQ 期间被杀：用落盘的 qrsig 恢复一键，等用户回 App 再收尾
         if QqOneKeyLogin.persistedAwaitingReturn {
-            Self.logOneKey("bootstrap", "qq_kill_need_retry")
-            QqOneKeyLogin.persistedAwaitingReturn = false
+            let cookies = QqOneKeyLogin.loadPersistedCookies()
+            let hasQrsig = cookies.contains { $0.name.lowercased() == "qrsig" && !$0.value.isEmpty }
+            if hasQrsig {
+                Self.logOneKey("bootstrap", "qq_kill_restore n=\(cookies.count)")
+                loginMode = .oneKey
+                oneKeyPhase = .waitingQQConfirm
+                preferDesktopUA = false
+                statusText = "检测到一键未完成，请从 QQ 点左上角回 App…"
+                let loginURL = QqOneKeyLogin.persistedLoginURL
+                QqOneKeyLogin.markRestoredAwaitingReturn(cookies: cookies, loginURL: loginURL)
+                Task { @MainActor in
+                    if let saved = loginURL {
+                        pendingURL = saved
+                    } else if let x = await LoginURLs.resolveLiveXloginURL() {
+                        pendingURL = x
+                    }
+                    for _ in 0..<25 {
+                        if let wv = gameWebView {
+                            await CookieBridge.restore(cookies, into: wv)
+                            OneKeyCheckSigCompleter.startBackgroundHarvest(from: wv)
+                            Self.logOneKey("bootstrap", "restore_cookies_ok")
+                            break
+                        }
+                        try? await Task.sleep(nanoseconds: 200_000_000)
+                    }
+                }
+                refreshStatus()
+                return
+            }
+            Self.logOneKey("bootstrap", "qq_kill_need_retry no_qrsig")
+            QqOneKeyLogin.clearPersistedLaunchSession()
             loadWaitingPage = true
             statusText = "上次一键被中断，请重新点「一键登录」"
             refreshStatus()

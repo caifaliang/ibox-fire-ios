@@ -252,11 +252,64 @@ enum QqOneKeyLogin {
     }
 
     private static let awaitingReturnDefaultsKey = "daledou.oneKeyAwaitingReturn"
+    private static let persistedCookiesKey = "daledou.oneKeyLaunchCookies"
+    private static let persistedLoginURLKey = "daledou.oneKeyLoginURL"
+
+    private struct PersistedCookie: Codable {
+        var name: String
+        var value: String
+        var domain: String
+        var path: String
+    }
 
     /// 进程被杀后仍能在冷启动识别「一键去了 QQ 还没收尾」
     static var persistedAwaitingReturn: Bool {
         get { UserDefaults.standard.bool(forKey: awaitingReturnDefaultsKey) }
         set { UserDefaults.standard.set(newValue, forKey: awaitingReturnDefaultsKey) }
+    }
+
+    /// 拉起 QQ 前把 qrsig 等落到 UserDefaults（防 jetsam 后 WK Cookie 未刷盘）
+    static func persistLaunchSession(loginURL: URL?, cookies: [HTTPCookie]) {
+        let rows = cookies.map {
+            PersistedCookie(name: $0.name, value: $0.value, domain: $0.domain, path: $0.path.isEmpty ? "/" : $0.path)
+        }
+        if let data = try? JSONEncoder().encode(rows) {
+            UserDefaults.standard.set(data, forKey: persistedCookiesKey)
+        }
+        if let s = loginURL?.absoluteString, !s.isEmpty {
+            UserDefaults.standard.set(s, forKey: persistedLoginURLKey)
+        }
+        persistedAwaitingReturn = true
+        UserDefaults.standard.synchronize()
+    }
+
+    static func loadPersistedCookies() -> [HTTPCookie] {
+        guard let data = UserDefaults.standard.data(forKey: persistedCookiesKey),
+              let rows = try? JSONDecoder().decode([PersistedCookie].self, from: data) else {
+            return []
+        }
+        return rows.compactMap { row in
+            let props: [HTTPCookiePropertyKey: Any] = [
+                .name: row.name,
+                .value: row.value,
+                .domain: row.domain.hasPrefix(".") ? row.domain : ".\(row.domain)",
+                .path: row.path,
+                .secure: "TRUE",
+            ]
+            return HTTPCookie(properties: props)
+        }
+    }
+
+    static var persistedLoginURL: URL? {
+        guard let s = UserDefaults.standard.string(forKey: persistedLoginURLKey),
+              let u = URL(string: s) else { return nil }
+        return u
+    }
+
+    static func clearPersistedLaunchSession() {
+        persistedAwaitingReturn = false
+        UserDefaults.standard.removeObject(forKey: persistedCookiesKey)
+        UserDefaults.standard.removeObject(forKey: persistedLoginURLKey)
     }
 
     /// 原生路径：标记已拉起，供回壳判定（不经 WebView）
@@ -286,6 +339,8 @@ enum QqOneKeyLogin {
     static func rememberAuthorization(loginURL: URL?, cookies: [HTTPCookie]) {
         savedLoginURL = loginURL
         savedCookies = cookies
+        // 必须在 open QQ 前落盘：进程常在切 QQ 后数秒内被杀
+        persistLaunchSession(loginURL: loginURL, cookies: cookies)
     }
 
     @discardableResult
@@ -300,17 +355,36 @@ enum QqOneKeyLogin {
         launchedAt = Date()
         pendingJumpURL = savedLoginURL
         awaitingReturn = true
-        persistedAwaitingReturn = true
+        // 再刷一次：此时 savedCookies 应已有 qrsig
+        persistLaunchSession(loginURL: savedLoginURL, cookies: savedCookies)
         var candidates = [launch]
         if var c = URLComponents(url: launch, resolvingAgainstBaseURL: false) {
             c.scheme = "wtloginmqq"
             if let u = c.url { candidates.append(u) }
         }
+        // 延长后台存活，降低刚切 QQ 就被 jetsam
+        var bg = UIBackgroundTaskIdentifier.invalid
+        bg = UIApplication.shared.beginBackgroundTask(withName: "daledou-open-qq") {
+            if bg != .invalid {
+                UIApplication.shared.endBackgroundTask(bg)
+                bg = .invalid
+            }
+        }
         for u in candidates where UIApplication.shared.canOpenURL(u) {
-            UIApplication.shared.open(u, options: [:], completionHandler: nil)
+            UIApplication.shared.open(u, options: [:], completionHandler: { _ in
+                if bg != .invalid {
+                    UIApplication.shared.endBackgroundTask(bg)
+                    bg = .invalid
+                }
+            })
             return true
         }
-        UIApplication.shared.open(launch, options: [:], completionHandler: nil)
+        UIApplication.shared.open(launch, options: [:], completionHandler: { _ in
+            if bg != .invalid {
+                UIApplication.shared.endBackgroundTask(bg)
+                bg = .invalid
+            }
+        })
         return true
     }
 
@@ -341,9 +415,18 @@ enum QqOneKeyLogin {
         return nil
     }
 
+    /// 冷启动从落盘 Cookie 恢复「仍在等 QQ」
+    static func markRestoredAwaitingReturn(cookies: [HTTPCookie], loginURL: URL?) {
+        savedCookies = cookies
+        savedLoginURL = loginURL ?? savedLoginURL
+        awaitingReturn = true
+        launchedAt = Date()
+        persistedAwaitingReturn = true
+    }
+
     static func markReturned() {
         awaitingReturn = false
-        persistedAwaitingReturn = false
+        clearPersistedLaunchSession()
     }
 
     static func clearLaunchStamp() {
@@ -354,7 +437,7 @@ enum QqOneKeyLogin {
     static func clearPending() {
         pendingJumpURL = nil
         awaitingReturn = false
-        persistedAwaitingReturn = false
+        clearPersistedLaunchSession()
         launchedQrcode = nil
         launchedAt = nil
         savedCookies = []
