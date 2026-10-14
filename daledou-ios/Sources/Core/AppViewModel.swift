@@ -32,6 +32,8 @@ final class AppViewModel: ObservableObject {
     private var oneKeyReturnBusy = false
     private var oneKeyRecoverAttempted = false
     private var oneKeyWebResumeBusy = false
+    /// 单飞：避免 left_xlogin 与 return_from_qq 并发 wait/push_phonepk 互抢
+    private var oauthWaitGeneration = 0
 
     // 官方动画（viewfight）
     @Published var showViewFightFab = false
@@ -85,6 +87,7 @@ final class AppViewModel: ObservableObject {
         oneKeyReturnBusy = false
         oneKeyRecoverAttempted = false
         oneKeyWebResumeBusy = false
+        oauthWaitGeneration &+= 1
         oneKeyPhase = .preflight
         Self.logOneKey("start", "webview_xlogin")
         statusText = "一键登录：打开授权页…"
@@ -167,9 +170,13 @@ final class AppViewModel: ObservableObject {
         case .timeout:
             failOneKey("一键登录超时，请用扫码或 Cookie 登录")
         case .loginLikelyDone:
-            // 离开 xlogin 多半在走 OAuth 跳转；禁止立刻 phonepk 掐掉 index.php?code=
+            // 离开 xlogin 多半在走 OAuth；若已在回壳收尾则勿再开第二路 wait
             oneKeyPhase = .loadingGame
             statusText = "授权跳转中，等待写入 Cookie…"
+            if oneKeyReturnBusy {
+                Self.logOneKey("left_xlogin", "skip_wait_return_busy")
+                return
+            }
             Task { @MainActor in
                 await waitForOauthCookiesThenEnter(reason: "left_xlogin")
             }
@@ -496,17 +503,23 @@ final class AppViewModel: ObservableObject {
         }
     }
 
-    /// 回壳：先 resume 几秒让 OAuth 落 Cookie；仍无 skey 再进 phonepk（fd61 能进游戏，fd62 空等会卡死）。
+    /// 回壳：先 resume 等 OAuth；仅一代 wait 可 push phonepk（防 left_xlogin∩return 双开）。
     private func waitForOauthCookiesThenEnter(reason: String) async {
-        Self.logOneKey("oauth_wait", reason)
+        oauthWaitGeneration &+= 1
+        let gen = oauthWaitGeneration
+        Self.logOneKey("oauth_wait", "\(reason) gen=\(gen)")
         preferDesktopUA = false
         statusText = "等待登录 Cookie…（可点左上角回 App）"
 
-        // 阶段 A：约 5s 只 resume，不打断可能的 index.php?code=
-        for i in 0..<5 {
+        // 阶段 A：约 6s 只 resume / 采 Cookie，不打断 index.php?code=
+        for i in 0..<6 {
+            guard gen == oauthWaitGeneration else {
+                Self.logOneKey("oauth_wait", "cancel_A gen=\(gen)")
+                return
+            }
             if session.isLoggedIn { return }
             if let wv = gameWebView {
-                if i == 0 || i == 4 {
+                if i == 0 || i == 5 {
                     let diag = await CookieBridge.cookieNameDomainLog(from: wv)
                     Self.logOneKey("oauth_cookies", "t=\(i) \(diag)")
                 }
@@ -517,11 +530,11 @@ final class AppViewModel: ObservableObject {
             }
             await syncSessionFromWebView(reason: "oauth_poll_\(i)")
             if session.isLoggedIn { return }
-            // 已在 phonepk：继续采 Cookie，勿再改 URL
             if LoginURLs.isInGameShell(URL(string: currentURLString)) {
+                await syncSessionFromWebView(reason: "oauth_shell_\(i)")
+                if session.isLoggedIn { return }
                 break
             }
-            // 已在 oauth 落地页：再多等一会
             if LoginURLs.isOauthLanding(URL(string: currentURLString)) {
                 try? await Task.sleep(nanoseconds: 1_200_000_000)
                 await syncSessionFromWebView(reason: "oauth_landing_\(i)")
@@ -531,15 +544,23 @@ final class AppViewModel: ObservableObject {
             try? await Task.sleep(nanoseconds: 1_000_000_000)
         }
 
+        guard gen == oauthWaitGeneration else {
+            Self.logOneKey("oauth_wait", "cancel_pre_B gen=\(gen)")
+            return
+        }
         if session.isLoggedIn { return }
 
-        // 阶段 B：推进游戏首页（用户手动回 App 后的可用路径）
-        Self.logOneKey("oauth_wait", "push_phonepk")
+        // 阶段 B：软进 phonepk（不 inject）
+        Self.logOneKey("oauth_wait", "push_phonepk gen=\(gen)")
         statusText = "正在进入游戏…"
         if !LoginURLs.isInGameShell(URL(string: currentURLString)) {
             pendingURL = URL(string: LoginURLs.ledouEntry)
         }
         for i in 0..<12 {
+            guard gen == oauthWaitGeneration else {
+                Self.logOneKey("oauth_wait", "cancel_B gen=\(gen)")
+                return
+            }
             try? await Task.sleep(nanoseconds: 700_000_000)
             await syncSessionFromWebView(reason: "phonepk_poll_\(i)")
             if session.isLoggedIn { return }
@@ -547,6 +568,7 @@ final class AppViewModel: ObservableObject {
                 _ = await evalJS(QqOneKeyLogin.jsResumeAfterQQ, in: wv)
             }
         }
+        guard gen == oauthWaitGeneration else { return }
         if !session.isLoggedIn {
             let names: String
             if let wv = gameWebView {
@@ -555,8 +577,7 @@ final class AppViewModel: ObservableObject {
                 names = "(no-wv)"
             }
             Self.logOneKey("oauth_fail", "names=\(names)")
-            // 保持 oneKey，便于用户再点菜单；勿假装 idle 成功
-            statusText = "未读到 skey（\(cookieNamesShort(names))）。可扫码或 Cookie"
+            statusText = "未读到登录会话（\(cookieNamesShort(names))）。可扫码或 Cookie"
         }
     }
 
@@ -805,8 +826,27 @@ final class AppViewModel: ObservableObject {
         // 已在 phonepk：只落库，禁止 reinject/reload（会冲掉 WK 原生 OAuth Cookie → 页内「未登录」）
         if inShell {
             didEnterGameFromCapture = true
-            statusText = "已登录 QQ \(showQq)\(kindHint)"
-            Self.logOneKey("enter_game", "already_shell kind=\(hasSkey ? "skey" : "openid")")
+            // 页内若仍写「未登录」，说明 Cookie 不够，勿假装成功
+            if let wv = gameWebView {
+                Task { @MainActor in
+                    let text = (await evalJS(
+                        "(document.body&&document.body.innerText||'').slice(0,200)",
+                        in: wv
+                    ) as? String) ?? ""
+                    if text.contains("未登录") || text.contains("请先登录") {
+                        Self.logOneKey("enter_game", "shell_but_page_nologin")
+                        statusText = "游戏页仍显示未登录，请再试一键或 Cookie"
+                        oneKeyPhase = .failed
+                        loginMode = .oneKey
+                        return
+                    }
+                    statusText = "已登录 QQ \(showQq)\(kindHint)"
+                    Self.logOneKey("enter_game", "already_shell kind=\(hasSkey ? "skey" : "openid")")
+                }
+            } else {
+                statusText = "已登录 QQ \(showQq)\(kindHint)"
+                Self.logOneKey("enter_game", "already_shell kind=\(hasSkey ? "skey" : "openid")")
+            }
             return
         }
         guard !didEnterGameFromCapture else {
