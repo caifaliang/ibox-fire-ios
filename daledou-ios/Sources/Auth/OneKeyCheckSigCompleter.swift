@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 import WebKit
 
 /// 拉起 QQ 后立刻后台 poll `ptqrlogin`；用户点同意瞬间收 `check_sig`/skey。
@@ -7,11 +8,13 @@ import WebKit
 enum OneKeyCheckSigCompleter {
     private(set) static var pendingSkeyCookies: [HTTPCookie] = []
     private static var bgTask: Task<Void, Never>?
+    private static var uiBgTask: UIBackgroundTaskIdentifier = .invalid
 
     static func clearPending() {
         bgTask?.cancel()
         bgTask = nil
         pendingSkeyCookies = []
+        endUIBackground()
     }
 
     static func takePendingSkeyCookies() -> [HTTPCookie] {
@@ -20,10 +23,25 @@ enum OneKeyCheckSigCompleter {
         return c
     }
 
+    private static func beginUIBackground() {
+        endUIBackground()
+        uiBgTask = UIApplication.shared.beginBackgroundTask(withName: "daledou-check-sig") {
+            endUIBackground()
+        }
+    }
+
+    private static func endUIBackground() {
+        guard uiBgTask != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(uiBgTask)
+        uiBgTask = .invalid
+    }
+
     /// QQ 已打开：用当前 WebView 的 qrsig 后台收票（与页内 polling 并行）
     static func startBackgroundHarvest(from webView: WKWebView) {
         bgTask?.cancel()
+        beginUIBackground()
         bgTask = Task { @MainActor in
+            defer { endUIBackground() }
             let cookies = await runHarvestLoop(from: webView, maxRounds: 150, gapMs: 800)
             if !cookies.isEmpty {
                 pendingSkeyCookies = cookies

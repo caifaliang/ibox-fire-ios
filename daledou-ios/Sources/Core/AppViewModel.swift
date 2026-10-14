@@ -46,7 +46,25 @@ final class AppViewModel: ObservableObject {
     private var lastViewFightUrl: String?
     private var resumeGameURL: URL?
 
+    private var foregroundObserversInstalled = false
+
     func bootstrap() {
+        installForegroundObservers()
+        // QQ 期间进程被杀：冷启动仍要收尾进游戏
+        if QqOneKeyLogin.persistedAwaitingReturn, !session.isLoggedIn {
+            Self.logOneKey("bootstrap", "resume_after_qq_kill")
+            loginMode = .oneKey
+            oneKeyPhase = .loadingGame
+            statusText = "检测到从 QQ 返回，正在进入游戏…"
+            preferDesktopUA = false
+            pendingURL = URL(string: LoginURLs.ledouEntry)
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                await waitForOauthCookiesThenEnter(reason: "cold_resume_qq")
+            }
+            refreshStatus()
+            return
+        }
         if session.isLoggedIn {
             preferDesktopUA = false
             // 仅 skey 冷启动 inject；OpenID 会话冷启动无法还原 WK 原生态，走等待页让用户再一键
@@ -62,6 +80,20 @@ final class AppViewModel: ObservableObject {
             loadWaitingPage = true
         }
         refreshStatus()
+    }
+
+    /// UIKit 前台通知：比 scenePhase 更稳（QQ 回壳常漏 scene onChange）
+    func installForegroundObservers() {
+        guard !foregroundObserversInstalled else { return }
+        foregroundObserversInstalled = true
+        let center = NotificationCenter.default
+        center.addObserver(forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.onAppBecameActive() }
+        }
+        center.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.onAppBecameActive() }
+        }
+        Self.logOneKey("observers", "foreground_installed")
     }
 
     func refreshStatus() {
@@ -480,18 +512,26 @@ final class AppViewModel: ObservableObject {
 
     /// 回壳：页内 resume + 读 skey（竞品需手动刷新，这里自动化）
     func onAppBecameActive() {
-        guard !session.isLoggedIn else { return }
         let oneKeyPending = loginMode == .oneKey
             || oneKeyPhase == .waitingQQConfirm
             || oneKeyPhase == .loadingGame
             || QqOneKeyLogin.awaitingReturn
+            || QqOneKeyLogin.persistedAwaitingReturn
             || QqOneKeyLogin.launchedQrcode != nil
+        Self.logOneKey(
+            "became_active",
+            "pending=\(oneKeyPending) mode=\(loginMode.rawValue) phase=\(oneKeyPhase.rawValue) loggedIn=\(session.isLoggedIn)"
+        )
+        guard !session.isLoggedIn else { return }
         guard oneKeyPending else { return }
         // 回到前台时确保仍按一键收尾
         if loginMode != .oneKey { loginMode = .oneKey }
+        if oneKeyPhase == .waitingQQConfirm || oneKeyPhase == .idle || oneKeyPhase == .fetchingTicket {
+            oneKeyPhase = .loadingGame
+        }
         oneKeyFetcher?.resumeAfterQQ()
         Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 200_000_000)
+            try? await Task.sleep(nanoseconds: 300_000_000)
             guard !session.isLoggedIn else { return }
             finishOneKeyAfterQQReturn()
         }

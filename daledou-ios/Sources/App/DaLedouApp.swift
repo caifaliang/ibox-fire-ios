@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 @main
 struct DaLedouApp: App {
@@ -13,8 +14,12 @@ struct DaLedouApp: App {
                 .onOpenURL { url in
                     vm.handleOpenURL(url)
                 }
-                .onChange(of: scenePhase) { phase in
-                    if phase == .active {
+                .onAppear {
+                    vm.installForegroundObservers()
+                }
+                // scenePhase + UIKit 双通道，避免回壳漏掉 onAppBecameActive
+                .onChange(of: scenePhase) { newPhase in
+                    if newPhase == .active {
                         vm.onAppBecameActive()
                     }
                 }

@@ -251,6 +251,14 @@ enum QqOneKeyLogin {
         return k
     }
 
+    private static let awaitingReturnDefaultsKey = "daledou.oneKeyAwaitingReturn"
+
+    /// 进程被杀后仍能在冷启动识别「一键去了 QQ 还没收尾」
+    static var persistedAwaitingReturn: Bool {
+        get { UserDefaults.standard.bool(forKey: awaitingReturnDefaultsKey) }
+        set { UserDefaults.standard.set(newValue, forKey: awaitingReturnDefaultsKey) }
+    }
+
     /// 原生路径：标记已拉起，供回壳判定（不经 WebView）
     static func markNativeLaunch(qrAuthorization: String) {
         let ticket = (qrAuthorization.removingPercentEncoding ?? qrAuthorization)
@@ -258,6 +266,7 @@ enum QqOneKeyLogin {
         launchedQrcode = ticket
         launchedAt = Date()
         awaitingReturn = true
+        persistedAwaitingReturn = true
     }
 
     static func qrcodeTicket(fromWtlogin url: URL) -> String? {
@@ -291,6 +300,7 @@ enum QqOneKeyLogin {
         launchedAt = Date()
         pendingJumpURL = savedLoginURL
         awaitingReturn = true
+        persistedAwaitingReturn = true
         var candidates = [launch]
         if var c = URLComponents(url: launch, resolvingAgainstBaseURL: false) {
             c.scheme = "wtloginmqq"
@@ -331,7 +341,10 @@ enum QqOneKeyLogin {
         return nil
     }
 
-    static func markReturned() { awaitingReturn = false }
+    static func markReturned() {
+        awaitingReturn = false
+        persistedAwaitingReturn = false
+    }
 
     static func clearLaunchStamp() {
         launchedQrcode = nil
@@ -341,6 +354,7 @@ enum QqOneKeyLogin {
     static func clearPending() {
         pendingJumpURL = nil
         awaitingReturn = false
+        persistedAwaitingReturn = false
         launchedQrcode = nil
         launchedAt = nil
         savedCookies = []
