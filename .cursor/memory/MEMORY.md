@@ -38,5 +38,9 @@
 - `qq_open cb=daledouapp://`, no `callback HIT`, `via=manual_or_system`
 - Manual return still logs in (openid)
 
-### Exp C (fd78) — try `schemacallback=tencent102067279://`
-QQ Connect registered scheme. If also no HIT → likely iOS `qrcode=` path never fires schemacallback; stop scheme roulette, accept manual + harvest, or need Fandian IPA URL dump / Universal Link.
+### Exp C (fd78) — FALSIFIED for tencent102067279://
+- `qq_open cb=tencent102067279://`, **no** `callback HIT` / `open_url`
+- `became_active via=manual_or_system`; login still OK after manual (`enter_game` openid)
+- **Conclusion (2026-10-14):** On iOS `wtloginmqq3?qrcode=` path, QQ does **not** open any tested schemacallback after 同意. Scheme roulette stopped.
+- Working UX: manual `< DaLedou` / app switch + background harvest (fd75 golden).
+- Next only with new evidence: Fandian IPA dump of live wtlogin URL; Universal Link + associated domains; or local notification “点回大乐斗” after poll=0 (soft assist, not true auto).
