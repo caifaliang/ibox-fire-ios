@@ -182,10 +182,10 @@ final class AppViewModel: ObservableObject {
 
     func attachOneKeyFetcher(to webView: WKWebView) {
         guard loginMode == .oneKey else { return }
-        guard oneKeyPhase == .fetchingTicket || oneKeyPhase == .waitingQQConfirm else { return }
+        // 仅取票阶段挂 Fetcher。waitingQQConfirm（含杀进程恢复）禁止再挂，否则会再次 open QQ → 闪退
+        guard oneKeyPhase == .fetchingTicket else { return }
         guard QqOneKeyLogin.isXloginPage(webView.url) else { return }
         if oneKeyFetcher != nil { return }
-        oneKeyPhase = .fetchingTicket
         Self.logOneKey("fetcher_start", Self.sanitizeURLLog(webView.url))
         let fetcher = OneKeyTicketFetcher(webView: webView) { [weak self] event in
             self?.handleFetcherEvent(event)
@@ -740,13 +740,9 @@ final class AppViewModel: ObservableObject {
                 if oneKeyPhase == .waitingQQConfirm
                     || oneKeyPhase == .loadingGame
                     || oneKeyPhase == .syncingCookies {
-                    Self.logOneKey("nav_marketing", "bounce_xlogin phase=\(oneKeyPhase.rawValue)")
-                    Task { @MainActor in
-                        if let x = await LoginURLs.resolveLiveXloginURL() {
-                            oneKeyPhase = .fetchingTicket
-                            pendingURL = x
-                        }
-                    }
+                    Self.logOneKey("nav_marketing", "bounce_phonepk phase=\(oneKeyPhase.rawValue)")
+                    // 勿改回 fetchingTicket（会再次拉 QQ）；软进游戏壳等 Cookie
+                    pendingURL = URL(string: LoginURLs.ledouEntry)
                     return
                 }
                 markOneKeyUnsupportedQuickLogin(reason: "当前应用不支持 QQ 快速登录")
