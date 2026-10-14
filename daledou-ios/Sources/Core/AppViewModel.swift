@@ -668,6 +668,15 @@ final class AppViewModel: ObservableObject {
             }
             Self.logOneKey("oauth_fail", "names=\(names)")
             statusText = "未读到登录会话（\(cookieNamesShort(names))）。可扫码或 Cookie"
+            // 勿停在「亿万用户」营销页
+            if LoginURLs.isConnectMarketing(URL(string: currentURLString))
+                || (currentURLString.contains("graph.qq.com") && !session.isLoggedIn) {
+                loadWaitingPage = true
+                pendingURL = nil
+            }
+            QqOneKeyLogin.persistedAwaitingReturn = false
+            loginMode = .idle
+            oneKeyPhase = .failed
         }
     }
 
