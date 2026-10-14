@@ -1,5 +1,11 @@
 # DaLedou / iBox Analytics Memory
 
+## Full APK → iOS port (started 2026-10-14)
+- Method: inventory → behavior spec → Swift rewrite → parity. **No** Java/.so paste.
+- Truth source: `F:\daledou` FeatureCatalog（**not** 饭点）.
+- Docs: `docs/porting/00-inventory.md`, `MODULES.md`, `FALSIFIED.md`.
+- Next slice: **M7** 功能中心菜单 + 路由骨架（占位未移植功能）.
+
 ## One-key login GOLDEN (verified 2026-10-14)
 
 **Build:** `138fd75` / commit `74977a8` — user confirmed 「完美成功了」.
@@ -45,9 +51,9 @@
 - Working UX: manual `< DaLedou` / app switch + background harvest (fd75 golden).
 - Next only with new evidence: Fandian IPA dump of live wtlogin URL; Universal Link + associated domains; or local notification “点回大乐斗” after poll=0 (soft assist, not true auto).
 
-### External AI consult (2026-10-14) — agreed plan
-- Scheme roulette stopped; QQ likely ignores schemacallback for our path.
-- **E1**: screen-record 饭点 Agree (manual?).
-- **E2** (fd79): hook page/native wtlogin → `wtlogin_probe` log keys+cb.
-- **E4**: only if E2 shows browser cb / richer keys — positive control.
-- Path1 UX: status hints manual ◀ return (ship with E2).
+### Auto-return — CLOSED (2026-10-14)
+- Exp A/B/C: QQ never opens schemacallback after 同意 (any tested scheme).
+- E2: page emits `p=` only (no cb); we native-open `qrcode`+`schemacallback` (login OK, no auto return).
+- **User: do NOT reference 饭点/Fandian for one-key** — their one-key is broken / no参考意义.
+- **Accepted UX:** manual ◀ DaLedou / app switch + background harvest (fd75 golden).
+- **fd80:** amber banner + local notify on poll 67/0 while backgrounded —「授权已确认，请立即返回…勿再点同意」. Request notif permission at one-key start. No more scheme roulette / 饭点对拍.
