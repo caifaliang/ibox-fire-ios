@@ -34,5 +34,9 @@
 - Ticket still OK (`poll=0 ticket_ok`); login works after manual return
 - Conclusion: QQ does not open `daledoulogin://` after 同意 on this path
 
-### Exp B (fd77) — try `schemacallback=daledouapp://` (Android scheme)
-Success = log shows `callback HIT`. Fail = same as A → try tencent102067279 / Fandian URL (Exp C).
+### Exp B (fd77) — FALSIFIED for daledouapp://
+- `qq_open cb=daledouapp://`, no `callback HIT`, `via=manual_or_system`
+- Manual return still logs in (openid)
+
+### Exp C (fd78) — try `schemacallback=tencent102067279://`
+QQ Connect registered scheme. If also no HIT → likely iOS `qrcode=` path never fires schemacallback; stop scheme roulette, accept manual + harvest, or need Fandian IPA URL dump / Universal Link.

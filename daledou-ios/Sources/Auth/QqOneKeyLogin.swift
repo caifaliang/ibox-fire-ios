@@ -8,11 +8,11 @@ import UIKit
 /// 回壳后 restore + resume + **自动刷新 phonepk** 取 Cookie。
 /// 禁止 `p=`（iOS 会「登录授权失败」）。
 enum QqOneKeyLogin {
-    // Exp B：改为安卓同款 daledouapp://（Exp A 证明 daledoulogin:// 无 callback HIT）
-    static let callbackScheme = "daledouapp"
-    static let callbackURLString = "daledouapp://"
-    static let callbackSchemeAlt = "daledoulogin"
-    static let callbackSchemeAlt2 = "com.daledou.ioslogin"
+    // Exp C：QQ Connect 官方 scheme（A/B 证伪自定义 daledou*）
+    static let callbackScheme = "tencent102067279"
+    static let callbackURLString = "tencent102067279://"
+    static let callbackSchemeAlt = "daledouapp"
+    static let callbackSchemeAlt2 = "daledoulogin"
 
     static let qrRefreshSeconds: TimeInterval = 40
 
@@ -240,8 +240,8 @@ enum QqOneKeyLogin {
         let qrEnc = decoded.addingPercentEncoding(withAllowedCharacters: jsEncodeURIComponentAllowed)
             ?? decoded
         let cb = callbackURLString.addingPercentEncoding(withAllowedCharacters: jsEncodeURIComponentAllowed)
-            ?? "daledouapp%3A%2F%2F"
-        // Exp B stamp：日志 qq_open 会打印 cb=
+            ?? "tencent102067279%3A%2F%2F"
+        // Exp C：日志 qq_open 打印 cb=tencent102067279://
         let s = "wtloginmqq3://ptlogin/qlogin?qrcode=\(qrEnc)&schemacallback=\(cb)"
         return URL(string: s) ?? (NSURL(string: s) as URL?)
     }
