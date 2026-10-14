@@ -103,13 +103,14 @@ enum OneKeyCheckSigCompleter {
                     AppViewModel.logOneKey("check_sig", "poll=66 t=\(i)")
                 }
             case .confirming:
-                AppViewModel.logOneKey("check_sig", "poll=67")
+                // 67≈用户已扫/确认中；若随后无 callback，说明同意未触发 schemacallback
+                AppViewModel.logOneKey("check_sig", "poll=67 agree_signal")
             case .expired:
                 AppViewModel.logOneKey("check_sig", "poll=65_expired t=\(i)")
                 return []
             case .success(let url):
                 jump = url
-                AppViewModel.logOneKey("check_sig", "poll=0 t=\(i)")
+                AppViewModel.logOneKey("check_sig", "poll=0 ticket_ok t=\(i)")
             case .other(let code):
                 AppViewModel.logOneKey("check_sig", "poll=\(code)")
                 return []

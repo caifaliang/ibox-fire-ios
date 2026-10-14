@@ -370,8 +370,23 @@ enum QqOneKeyLogin {
                 bg = .invalid
             }
         }
+        // Exp A 探针：记录 schemacallback / scheme，证伪「QQ 是否按回调回跳」
+        let cbParam: String = {
+            guard let c = URLComponents(url: launch, resolvingAgainstBaseURL: false),
+                  let v = c.queryItems?.first(where: { $0.name == "schemacallback" })?.value else {
+                return "(missing)"
+            }
+            return v
+        }()
+        AppViewModel.logOneKey(
+            "qq_open",
+            "cb=\(cbParam) scheme=\(launch.scheme ?? "?") candidates=\(candidates.map { $0.scheme ?? "?" }.joined(separator: ","))"
+        )
         for u in candidates where UIApplication.shared.canOpenURL(u) {
-            UIApplication.shared.open(u, options: [:], completionHandler: { _ in
+            let sch = u.scheme ?? "?"
+            AppViewModel.logOneKey("qq_open_try", "\(sch) canOpen=1")
+            UIApplication.shared.open(u, options: [:], completionHandler: { ok in
+                AppViewModel.logOneKey("qq_open_done", "\(sch) ok=\(ok)")
                 if bg != .invalid {
                     UIApplication.shared.endBackgroundTask(bg)
                     bg = .invalid
@@ -379,7 +394,9 @@ enum QqOneKeyLogin {
             })
             return true
         }
-        UIApplication.shared.open(launch, options: [:], completionHandler: { _ in
+        AppViewModel.logOneKey("qq_open_try", "\(launch.scheme ?? "?") canOpen=0_fallback")
+        UIApplication.shared.open(launch, options: [:], completionHandler: { ok in
+            AppViewModel.logOneKey("qq_open_done", "\(launch.scheme ?? "?") ok=\(ok)")
             if bg != .invalid {
                 UIApplication.shared.endBackgroundTask(bg)
                 bg = .invalid

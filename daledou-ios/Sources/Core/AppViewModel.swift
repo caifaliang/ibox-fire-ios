@@ -515,9 +515,23 @@ final class AppViewModel: ObservableObject {
         webReloadToken &+= 1
     }
 
+    /// Exp A：最近一次回壳是否来自 schemacallback（onOpenURL）
+    private var lastReturnViaCallback = false
+    private var lastCallbackAt: Date?
+
     func handleOpenURL(_ url: URL) {
+        // 先记一切非 http(s) 的打开，避免漏判「QQ 回跳了但 scheme 未登记」
+        let sch = (url.scheme ?? "?").lowercased()
+        if sch != "http", sch != "https" {
+            Self.logOneKey(
+                "open_url",
+                "scheme=\(sch) host=\(url.host ?? "") path=\(url.path) q=\(url.query?.prefix(80) ?? "")"
+            )
+        }
         guard QqOneKeyLogin.isOurCallback(url) || LoginURLs.isCallbackScheme(url.scheme) else { return }
-        Self.logOneKey("callback", url.scheme ?? "?")
+        lastReturnViaCallback = true
+        lastCallbackAt = Date()
+        Self.logOneKey("callback", "HIT scheme=\(sch) via=schemacallback")
         if let code = LoginURLs.oauthCode(from: url),
            let finish = LoginURLs.finishWithCode(code) {
             QqOneKeyLogin.markReturned()
@@ -551,9 +565,20 @@ final class AppViewModel: ObservableObject {
             || QqOneKeyLogin.awaitingReturn
             || QqOneKeyLogin.persistedAwaitingReturn
             || QqOneKeyLogin.launchedQrcode != nil
+        let via: String
+        if lastReturnViaCallback {
+            via = "callback"
+            lastReturnViaCallback = false
+        } else {
+            via = "manual_or_system"
+        }
+        let sinceOpen: String = {
+            guard let t = QqOneKeyLogin.launchedAt else { return "na" }
+            return String(format: "%.1fs", Date().timeIntervalSince(t))
+        }()
         Self.logOneKey(
             "became_active",
-            "pending=\(oneKeyPending) mode=\(loginMode.rawValue) phase=\(oneKeyPhase.rawValue) loggedIn=\(session.isLoggedIn)"
+            "via=\(via) since_qq=\(sinceOpen) pending=\(oneKeyPending) mode=\(loginMode.rawValue) phase=\(oneKeyPhase.rawValue) loggedIn=\(session.isLoggedIn)"
         )
         guard !session.isLoggedIn else { return }
         guard oneKeyPending else { return }
