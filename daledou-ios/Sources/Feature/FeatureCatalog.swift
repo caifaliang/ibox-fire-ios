@@ -87,7 +87,7 @@ enum FeatureCatalog {
         .init(id: "more_settings", label: "更多", section: .settings, pageTitle: "更多设置(下滑更多)"),
 
         // —— 更多 ——
-        .init(id: "chaqu", label: "武林查区", section: .more, pageTitle: "查区"),
+        .init(id: "chaqu", label: "武林查区", section: .more, pageTitle: "查区", portStatus: .partial),
         .init(id: "daiwan_ui", label: "代玩界面", section: .more, pageTitle: "代玩-记录"),
         .init(id: "piliang_douyou", label: "批量斗友", section: .more),
         .init(id: "doudou_mall", label: "斗豆商城", section: .more, pageTitle: "斗豆红包商城"),
@@ -97,10 +97,10 @@ enum FeatureCatalog {
         .init(id: "xydb", label: "幸运夺宝", section: .more),
         .init(id: "wulin_chiyao", label: "武林吃药", section: .more),
         .init(id: "qiangdipan", label: "抢地盘", section: .more),
-        .init(id: "beibao", label: "背包查询", section: .more),
+        .init(id: "beibao", label: "背包查询", section: .more, portStatus: .partial),
         .init(id: "qunxia_luxiang", label: "群侠录像", section: .more, portStatus: .partial),
         .init(id: "bangpai_wakuang", label: "帮派挖矿", section: .more, emphasize: true),
-        .init(id: "shuqian", label: "书签", section: .more),
+        .init(id: "shuqian", label: "书签", section: .more, portStatus: .ready),
         .init(id: "account_switch", label: "账号切换", section: .more, portStatus: .ready),
         .init(id: "about", label: "关于大乐斗", section: .more, emphasize: true),
         .init(id: "scan_login", label: "扫码登陆", section: .more, portStatus: .ready, emphasize: true),

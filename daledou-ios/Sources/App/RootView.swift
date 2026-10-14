@@ -71,6 +71,18 @@ struct RootView: View {
             AccountSwitchView()
                 .environmentObject(vm)
         }
+        .sheet(isPresented: $vm.showBookmark) {
+            BookmarkView()
+                .environmentObject(vm)
+        }
+        .sheet(isPresented: $vm.showBeiBao) {
+            BeiBaoView()
+                .environmentObject(vm)
+        }
+        .sheet(isPresented: $vm.showChaQu) {
+            ChaQuView()
+                .environmentObject(vm)
+        }
         .sheet(isPresented: $vm.showCookieSheet) {
             CookiePasteSheet()
                 .environmentObject(vm)

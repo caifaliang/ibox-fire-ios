@@ -15,9 +15,9 @@
 | M6 | 壳顶栏 / 简菜单 | partial | — | RootView | 需扩成功能中心 |
 | M7 | **功能中心菜单 + 路由骨架** | **done** | MainMenuScreen / FeatureRoute | Feature/* + RootView | fd82：三区目录 + 占位；已接一键/扫码/退出/动画 |
 | M8 | 账号切换 | done | AccountSwitchScreen | AccountStore + AccountSwitchView | fd83：保存/切换/删除/粘贴 |
-| M9 | 书签 | todo | shuqian | — | |
-| M10 | 背包查询 | todo | beibao | — | |
-| M11 | 武林查区 | todo | chaqu | — | |
+| M9 | 书签 | done | shuqian | BookmarkStore + BookmarkView | fd84：多行 URL → 壳内打开 |
+| M10 | 背包查询 | partial | beibao | BeiBaoService + BeiBaoView | fd84：store 刮取 + 关键词；无出售 |
+| M11 | 武林查区 | partial | chaqu | ChaQuView | fd84：设置落盘；扫区后台未接 |
 | M12 | 代玩设置 + Workers | todo | daiwan / DaiWanWorkers | — | 含 autoDaiWanTypes |
 | M13 | 活跃代玩 | todo | huoyue | — | |
 | M14 | 领奖报名 | todo | lingjiang | — | |
@@ -34,6 +34,6 @@
 
 ## 下一切片（建议）
 
-**M9/M10/M11 书签 / 背包查询 / 武林查区**（查询类，依赖少）。
+**M12 代玩设置 + Workers 骨架**（或先补 M11 扫区后台）。
 
-M7 fd82 功能中心 · M8 fd83 账号切换已完成。
+M7–M9/M10/M11（设置页）已随 fd84 落地。

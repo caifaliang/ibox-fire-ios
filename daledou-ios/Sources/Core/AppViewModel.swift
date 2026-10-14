@@ -14,6 +14,10 @@ final class AppViewModel: ObservableObject {
     @Published var showFeatureHub = false
     /// M8：账号切换
     @Published var showAccountSwitch = false
+    /// M9：书签 / 背包 / 查区
+    @Published var showBookmark = false
+    @Published var showBeiBao = false
+    @Published var showChaQu = false
     @Published var showCookieSheet = false
     @Published var cookieDraft = ""
     @Published var cookieError = ""
@@ -1135,9 +1139,34 @@ final class AppViewModel: ObservableObject {
         case "account_switch":
             showAccountSwitch = true
             return .handled
+        case "shuqian":
+            showBookmark = true
+            return .handled
+        case "beibao":
+            showBeiBao = true
+            return .handled
+        case "chaqu":
+            showChaQu = true
+            return .handled
         default:
             return .needsPlaceholder
         }
+    }
+
+    /// 功能页打开游戏内 URL（关中心后进壳）
+    func openExternalGameURL(_ url: URL) {
+        guard LedouCGI.isAllowedHost(url.host) else {
+            statusText = "拒绝非腾讯域名"
+            return
+        }
+        preferDesktopUA = false
+        showFeatureHub = false
+        showBookmark = false
+        showBeiBao = false
+        showChaQu = false
+        showAccountSwitch = false
+        pendingURL = url
+        statusText = "已打开 \(url.host ?? "")\(url.path)"
     }
 
     /// M8：切换已存账号 → Session + 注入 WK + 进游戏
