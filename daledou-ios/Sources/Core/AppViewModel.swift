@@ -260,7 +260,7 @@ final class AppViewModel: ObservableObject {
         }
         try? await Task.sleep(nanoseconds: 2_000_000_000)
         let header = await CookieBridge.waitForSkey(from: wv, attempts: 10, gapMs: 400)
-        if LoginURLs.hasRealSkey(header) {
+        if LoginURLs.hasGameSession(header) {
             oneKeyPhase = .succeeded
             onCookiesCaptured(header)
             return
@@ -269,7 +269,7 @@ final class AppViewModel: ObservableObject {
         pendingURL = URL(string: LoginURLs.oneKeyLogin)
         try? await Task.sleep(nanoseconds: 2_500_000_000)
         let h2 = await CookieBridge.waitForSkey(from: wv, attempts: 8, gapMs: 400)
-        if LoginURLs.hasRealSkey(h2) {
+        if LoginURLs.hasGameSession(h2) {
             oneKeyPhase = .succeeded
             onCookiesCaptured(h2)
         }
@@ -291,7 +291,7 @@ final class AppViewModel: ObservableObject {
             // 再按粘贴路径写 .qq.com，保证 authorize/phonepk 能带上
             await CookieBridge.inject(cookieHeader: header, into: wv)
         }
-        if LoginURLs.hasRealSkey(header) {
+        if LoginURLs.hasGameSession(header) {
             session.save(cookieHeader: header)
         }
 
@@ -307,7 +307,7 @@ final class AppViewModel: ObservableObject {
         }
         if let wv = gameWebView {
             let h = await CookieBridge.waitForSkey(from: wv, attempts: 8, gapMs: 400)
-            if LoginURLs.hasRealSkey(h) {
+            if LoginURLs.hasGameSession(h) {
                 oneKeyPhase = .succeeded
                 onCookiesCaptured(h)
                 return
@@ -321,7 +321,7 @@ final class AppViewModel: ObservableObject {
         }
         if let wv = gameWebView {
             let h = await CookieBridge.waitForSkey(from: wv, attempts: 8, gapMs: 400)
-            if LoginURLs.hasRealSkey(h) {
+            if LoginURLs.hasGameSession(h) {
                 oneKeyPhase = .succeeded
                 onCookiesCaptured(h)
                 return
@@ -624,12 +624,18 @@ final class AppViewModel: ObservableObject {
         guard let wv = gameWebView else { return }
         let header = await CookieBridge.readCookieHeader(from: wv)
         let diag = await CookieBridge.cookieNameDomainLog(from: wv)
-        if LoginURLs.hasRealSkey(header) {
-            Self.logOneKey("sync_session", "\(reason) ok names=\(cookieNames(header))")
+        if LoginURLs.hasGameSession(header) {
+            let kind = LoginURLs.hasRealSkey(header) ? "skey" : "openid"
+            Self.logOneKey("sync_session", "\(reason) ok kind=\(kind) names=\(cookieNames(header))")
             onCookiesCaptured(header)
             return
         }
-        Self.logOneKey("sync_session", "\(reason) miss diag=\(diag)")
+        // 有 newuin 但缺 openId/skey：只记日志，不误报「已进游戏」
+        if let qq = LoginURLs.extractQq(header), !qq.isEmpty {
+            Self.logOneKey("sync_session", "\(reason) uin_only qq=\(qq) diag=\(diag)")
+        } else {
+            Self.logOneKey("sync_session", "\(reason) miss diag=\(diag)")
+        }
     }
 
     private func cookieNames(_ header: String) -> String {
@@ -672,19 +678,22 @@ final class AppViewModel: ObservableObject {
             if let wv = gameWebView {
                 let web = await CookieBridge.readCookieHeader(from: wv)
                 cookie = Self.mergeCookieHeaders(cookie, web)
-                if LoginURLs.hasRealSkey(cookie) {
+                if LoginURLs.hasGameSession(cookie) {
                     session.save(cookieHeader: cookie)
                     if !session.isLoggedIn {
-                        // save 后 isLoggedIn 应已 true；再兜底
                         onCookiesCaptured(cookie)
                     }
                 }
             }
-            guard LoginURLs.hasRealSkey(cookie) else {
+            guard LoginURLs.hasGameSession(cookie) else {
                 viewFightLoading = false
                 statusText = "请先登录再看官方动画"
                 Self.logOneKey("anim_no_skey", "names=\(cookieNames(cookie))")
                 return
+            }
+            // 无 skey 时 Act 拉取可能失败，仍用 OpenID Cookie 试一次
+            if !LoginURLs.hasRealSkey(cookie) {
+                Self.logOneKey("anim_openid", "names=\(cookieNames(cookie))")
             }
             let result = await FightActFetcher.fetch(pageUrl: page, cookieHeader: cookie)
             if result.act.isEmpty {
@@ -773,7 +782,7 @@ final class AppViewModel: ObservableObject {
     private var didEnterGameFromCapture = false
 
     func onCookiesCaptured(_ header: String) {
-        guard LoginURLs.hasRealSkey(header) else { return }
+        guard LoginURLs.hasGameSession(header) else { return }
         session.save(cookieHeader: header)
         loginMode = .idle
         oneKeyPhase = .succeeded
@@ -783,13 +792,14 @@ final class AppViewModel: ObservableObject {
         }
         let showQq = qqLabel.isEmpty ? "?" : qqLabel
         titleHint = "大乐斗"
+        let kindHint = LoginURLs.hasRealSkey(header) ? "" : "（OpenID）"
         // 注意：index.php?code= 也在 dld.qzapp 上，不能当成已进游戏而跳过跳转
         if !didEnterGameFromCapture || !LoginURLs.isInGameShell(URL(string: currentURLString)) {
             didEnterGameFromCapture = true
-            statusText = "已登录 QQ \(showQq) · 正在进入游戏…"
+            statusText = "已登录 QQ \(showQq)\(kindHint) · 正在进入游戏…"
             forceEnterGame()
         } else {
-            statusText = "已登录 QQ \(showQq) · Cookie 已保存"
+            statusText = "已登录 QQ \(showQq)\(kindHint)"
         }
     }
 

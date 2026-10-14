@@ -383,13 +383,13 @@ struct GameWebView: UIViewRepresentable {
                 } else {
                     header = await CookieBridge.readCookieHeader(from: webView)
                 }
-                if LoginURLs.hasRealSkey(header) {
+                if LoginURLs.hasGameSession(header) {
                     vm.onCookiesCaptured(header)
                 } else if LoginURLs.isInGameShell(url), !vm.session.isLoggedIn {
                     // 仅 phonepk 真游戏壳；勿把 waitingHTML（曾误用 dld baseURL）当成已进游戏
                     await vm.syncSessionFromWebView(reason: "capture_game_shell")
                     if !vm.session.isLoggedIn, vm.loginMode == .idle || vm.loginMode == .oneKey {
-                        vm.statusText = "已进游戏页，但未读到 skey。可试 Cookie"
+                        vm.statusText = "已进游戏页，但未读到会话 Cookie。可试 Cookie"
                     }
                 }
             }

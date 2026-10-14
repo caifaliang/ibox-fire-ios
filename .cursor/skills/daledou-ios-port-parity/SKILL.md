@@ -59,7 +59,7 @@ Extract from screenshots: color, type size, spacing, radius, animation ms → to
 
 ### 5. Login (state machine — current)
 
-目标是 **游戏站点 skey 会话**，不是 QQ OAuth access_token。
+目标是 **可进游戏壳的会话**。一键实测常只有 `openId`+`accessToken`+`newuin`（无 skey）；`hasGameSession` 两者都认。粘贴 Cookie 仍要求 skey。
 
 **主路径：WebView xlogin 取票**（对齐 Fandian；fd59+）
 
@@ -67,10 +67,10 @@ Extract from screenshots: color, type size, spacing, radius, animation ms → to
 |-------|----------|
 | fetchingTicket | 加载 live style=35 xlogin → JS `ptqrshow` type=1 → `polling()` |
 | waitingQQConfirm | freeze 后再 `ptqrshow`；`wtloginmqq3?qrcode=`（`encodeURIComponent` 保留 `*`） |
-| loadingGame | 回壳 resume + 推 phonepk + `syncSessionFromWebView` |
-| succeeded | SessionStore 有非空 skey/p_skey |
+| loadingGame | 回壳 resume → 短等 OAuth → phonepk + `syncSessionFromWebView` |
+| succeeded | SessionStore 有 skey/p_skey **或** openId+accessToken |
 
-实测：QQ 安全确认倒计时后点同意，客户端常弹「二维码已过期」，但**马上回 App** 仍可进游戏；须把 WebView Cookie 写入 SessionStore，否则官方动画报未登录。
+实测：QQ 同意后常无 schemacallback；手动回 App → `index.php` 种 OpenID → phonepk。须把 OpenID Cookie 写入 SessionStore，标题才变「大乐斗」。
 
 | Forbidden | Why |
 |-----------|-----|

@@ -264,29 +264,41 @@ enum LoginURLs {
     static func hasRealSkey(_ cookie: String?) -> Bool {
         guard let c = cookie, !c.isEmpty else { return false }
         // 对齐安卓：有 skey=；同时接受非空 p_skey（排除占位 @）
-        if let r = try? NSRegularExpression(
-            pattern: #"(?:^|[;\s])skey=([^\s;]+)"#,
-            options: .caseInsensitive
-        ) {
-            for m in r.matches(in: c, range: NSRange(c.startIndex..., in: c)) where m.numberOfRanges > 1 {
-                if let range = Range(m.range(at: 1), in: c) {
-                    let v = String(c[range])
-                    if !v.isEmpty, v != "@" { return true }
-                }
-            }
-        }
-        if let r = try? NSRegularExpression(
-            pattern: #"(?:^|[;\s])p_skey=([^\s;]+)"#,
-            options: .caseInsensitive
-        ) {
-            for m in r.matches(in: c, range: NSRange(c.startIndex..., in: c)) where m.numberOfRanges > 1 {
-                if let range = Range(m.range(at: 1), in: c) {
-                    let v = String(c[range])
-                    if !v.isEmpty, v != "@" { return true }
-                }
-            }
-        }
+        if let v = cookieValue(c, names: ["skey"]), !v.isEmpty, v != "@" { return true }
+        if let v = cookieValue(c, names: ["p_skey"]), !v.isEmpty, v != "@" { return true }
         return false
+    }
+
+    /// 一键回壳实测：index.php OAuth 常只种 openId+accessToken+newuin，无 skey；
+    /// 游戏壳仍可进（斗豆/菜单正常）。UI / SessionStore 认此会话；粘贴 Cookie 仍要求 skey。
+    static func hasOpenIdSession(_ cookie: String?) -> Bool {
+        guard let c = cookie, !c.isEmpty else { return false }
+        guard let open = cookieValue(c, names: ["openId", "openid"]), !open.isEmpty, open != "@"
+        else { return false }
+        guard let token = cookieValue(c, names: ["accessToken", "access_token"]),
+              !token.isEmpty, token != "@"
+        else { return false }
+        return true
+    }
+
+    /// 可用会话：skey 或 QQ 互联 OpenID（一键主路径）
+    static func hasGameSession(_ cookie: String?) -> Bool {
+        hasRealSkey(cookie) || hasOpenIdSession(cookie)
+    }
+
+    /// 从 Cookie 头取指定名（大小写不敏感）
+    static func cookieValue(_ cookie: String, names: [String]) -> String? {
+        let parts = cookie.split(separator: ";")
+        for part in parts {
+            let p = part.trimmingCharacters(in: .whitespaces)
+            guard let eq = p.firstIndex(of: "=") else { continue }
+            let name = String(p[..<eq])
+            let val = String(p[p.index(after: eq)...]).trimmingCharacters(in: .whitespaces)
+            for n in names where name.caseInsensitiveCompare(n) == .orderedSame {
+                return val
+            }
+        }
+        return nil
     }
 
     static func extractQq(_ cookie: String) -> String? {

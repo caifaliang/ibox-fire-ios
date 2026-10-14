@@ -85,11 +85,11 @@ enum CookieBridge {
         }
     }
 
-    /// 轮询直到有 skey 或超时
+    /// 轮询直到有可用会话（skey 或 openId+accessToken）或超时
     static func waitForSkey(from webView: WKWebView, attempts: Int = 8, gapMs: UInt64 = 400) async -> String {
         for i in 0..<attempts {
             let header = await readCookieHeader(from: webView)
-            if LoginURLs.hasRealSkey(header) { return header }
+            if LoginURLs.hasGameSession(header) { return header }
             if i + 1 < attempts {
                 try? await Task.sleep(nanoseconds: gapMs * 1_000_000)
             }

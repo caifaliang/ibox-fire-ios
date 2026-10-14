@@ -20,12 +20,13 @@ final class SessionStore: ObservableObject {
         cookieHeader = loaded
         qq = LoginURLs.extractQq(loaded) ?? ""
         // 若只从文件恢复到，立刻回写 Keychain，方便本会话其它路径
-        if LoginURLs.hasRealSkey(loaded) {
+        if LoginURLs.hasGameSession(loaded) {
             persistKeychain(loaded)
         }
     }
 
-    var isLoggedIn: Bool { LoginURLs.hasRealSkey(cookieHeader) }
+    /// skey 或一键 OpenID 会话均可
+    var isLoggedIn: Bool { LoginURLs.hasGameSession(cookieHeader) }
 
     func save(cookieHeader: String) {
         let trimmed = cookieHeader.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -45,11 +46,11 @@ final class SessionStore: ObservableObject {
     // MARK: - Load (Keychain → file)
 
     private func load() -> String? {
-        if let k = loadKeychain(), LoginURLs.hasRealSkey(k) {
+        if let k = loadKeychain(), LoginURLs.hasGameSession(k) {
             persistFile(k)
             return k
         }
-        if let f = loadFile(), LoginURLs.hasRealSkey(f) {
+        if let f = loadFile(), LoginURLs.hasGameSession(f) {
             return f
         }
         return loadFile() ?? loadKeychain()
