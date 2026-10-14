@@ -1,11 +1,50 @@
 import Foundation
 import WebKit
 
-/// 回壳后：用 WebView 里的 qrsig 再 poll `ptqrlogin`，跟 `check_sig` 收 skey。
-/// 一键实测常只落到 openId；本路径尽量补种 skey，且**只 merge 不 clear**。
+/// 拉起 QQ 后立刻后台 poll `ptqrlogin`；用户点同意瞬间收 `check_sig`/skey。
+/// 回壳再 poll 往往已是 65。只 merge，不清 WK。
 @MainActor
 enum OneKeyCheckSigCompleter {
+    private(set) static var pendingSkeyCookies: [HTTPCookie] = []
+    private static var bgTask: Task<Void, Never>?
+
+    static func clearPending() {
+        bgTask?.cancel()
+        bgTask = nil
+        pendingSkeyCookies = []
+    }
+
+    static func takePendingSkeyCookies() -> [HTTPCookie] {
+        let c = pendingSkeyCookies
+        pendingSkeyCookies = []
+        return c
+    }
+
+    /// QQ 已打开：用当前 WebView 的 qrsig 后台收票（与页内 polling 并行）
+    static func startBackgroundHarvest(from webView: WKWebView) {
+        bgTask?.cancel()
+        bgTask = Task { @MainActor in
+            let cookies = await runHarvestLoop(from: webView, maxRounds: 150, gapMs: 800)
+            if !cookies.isEmpty {
+                pendingSkeyCookies = cookies
+                AppViewModel.logOneKey("check_sig", "bg_got_skey n=\(cookies.count)")
+            }
+        }
+    }
+
+    /// 回壳兜底：再试一轮短 poll（票可能已 65）
     static func tryHarvestSkey(from webView: WKWebView) async -> [HTTPCookie] {
+        if !pendingSkeyCookies.isEmpty {
+            return takePendingSkeyCookies()
+        }
+        return await runHarvestLoop(from: webView, maxRounds: 8, gapMs: 600)
+    }
+
+    private static func runHarvestLoop(
+        from webView: WKWebView,
+        maxRounds: Int,
+        gapMs: UInt64
+    ) async -> [HTTPCookie] {
         let existing = await CookieBridge.snapshotQQCookies(from: webView)
         guard let qrsig = existing.first(where: { $0.name.lowercased() == "qrsig" })?.value,
               !qrsig.isEmpty else {
@@ -18,9 +57,7 @@ enum OneKeyCheckSigCompleter {
 
         var jar: [String: String] = [:]
         var jarCookies: [HTTPCookie] = existing
-        for c in existing {
-            jar[c.name] = c.value
-        }
+        for c in existing { jar[c.name] = c.value }
 
         let cfg = URLSessionConfiguration.ephemeral
         cfg.httpCookieAcceptPolicy = .always
@@ -28,14 +65,13 @@ enum OneKeyCheckSigCompleter {
         cfg.timeoutIntervalForRequest = 12
         let session = URLSession(configuration: cfg)
         if let store = cfg.httpCookieStorage {
-            for c in existing {
-                store.setCookie(c)
-            }
+            for c in existing { store.setCookie(c) }
         }
 
-        AppViewModel.logOneKey("check_sig", "poll_begin qrsig_len=\(qrsig.count)")
+        AppViewModel.logOneKey("check_sig", "poll_begin rounds=\(maxRounds) qrsig_len=\(qrsig.count)")
         var jump: URL?
-        for i in 0..<8 {
+        for i in 0..<maxRounds {
+            if Task.isCancelled { return [] }
             let outcome = await pollOnce(
                 session: session,
                 qrsig: qrsig,
@@ -45,15 +81,17 @@ enum OneKeyCheckSigCompleter {
             )
             switch outcome {
             case .waiting:
-                if i == 0 || i == 3 { AppViewModel.logOneKey("check_sig", "poll=66") }
+                if i == 0 || i == 10 || i == 40 {
+                    AppViewModel.logOneKey("check_sig", "poll=66 t=\(i)")
+                }
             case .confirming:
                 AppViewModel.logOneKey("check_sig", "poll=67")
             case .expired:
-                AppViewModel.logOneKey("check_sig", "poll=65_expired")
+                AppViewModel.logOneKey("check_sig", "poll=65_expired t=\(i)")
                 return []
             case .success(let url):
                 jump = url
-                AppViewModel.logOneKey("check_sig", "poll=0")
+                AppViewModel.logOneKey("check_sig", "poll=0 t=\(i)")
             case .other(let code):
                 AppViewModel.logOneKey("check_sig", "poll=\(code)")
                 return []
@@ -61,7 +99,7 @@ enum OneKeyCheckSigCompleter {
                 break
             }
             if jump != nil { break }
-            try? await Task.sleep(nanoseconds: 600_000_000)
+            try? await Task.sleep(nanoseconds: gapMs * 1_000_000)
         }
         guard let jump else {
             AppViewModel.logOneKey("check_sig", "no_jump")
@@ -70,19 +108,15 @@ enum OneKeyCheckSigCompleter {
 
         AppViewModel.logOneKey("check_sig", "follow \(AppViewModel.sanitizeURLLog(jump))")
         _ = await fetch(
-            session: session,
-            url: jump,
+            session: session, url: jump,
             referer: "https://xui.ptlogin2.qq.com/",
-            jar: &jar,
-            jarCookies: &jarCookies
+            jar: &jar, jarCookies: &jarCookies
         )
         if let auth = URL(string: LoginURLs.oneKeyLogin) {
             _ = await fetch(
-                session: session,
-                url: auth,
+                session: session, url: auth,
                 referer: "https://xui.ptlogin2.qq.com/",
-                jar: &jar,
-                jarCookies: &jarCookies
+                jar: &jar, jarCookies: &jarCookies
             )
         }
 
@@ -138,11 +172,9 @@ enum OneKeyCheckSigCompleter {
         ]
         guard let url = comps.url else { return .noResult }
         guard let text = await fetch(
-            session: session,
-            url: url,
+            session: session, url: url,
             referer: "https://xui.ptlogin2.qq.com/",
-            jar: &jar,
-            jarCookies: &jarCookies
+            jar: &jar, jarCookies: &jarCookies
         ) else { return .noResult }
         return parsePtuiCB(text)
     }

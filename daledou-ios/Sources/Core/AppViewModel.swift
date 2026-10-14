@@ -82,6 +82,7 @@ final class AppViewModel: ObservableObject {
         preferDesktopUA = false
         didEnterGameFromCapture = false
         QqOneKeyLogin.clearPending()
+        OneKeyCheckSigCompleter.clearPending()
         session.clear()
         stopAllOneKey()
         oneKeyReturnBusy = false
@@ -89,7 +90,9 @@ final class AppViewModel: ObservableObject {
         oneKeyWebResumeBusy = false
         oauthWaitGeneration &+= 1
         oneKeyPhase = .preflight
-        Self.logOneKey("start", "webview_xlogin")
+        Self.resetOneKeyLogFile()
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"
+        Self.logOneKey("start", "webview_xlogin build=\(build)")
         statusText = "一键登录：打开授权页…"
         loadWaitingPage = false
         // 等拿到 xlogin 再 clear+load，避免 clear 异步把随后写入的 pendingURL 清掉
@@ -142,6 +145,7 @@ final class AppViewModel: ObservableObject {
         oneKeyFetcher = nil
         nativeQqLogin?.cancel()
         nativeQqLogin = nil
+        OneKeyCheckSigCompleter.clearPending()
     }
 
     private func stopNativeOneKey() {
@@ -155,6 +159,10 @@ final class AppViewModel: ObservableObject {
         case .openedQQ:
             oneKeyPhase = .waitingQQConfirm
             statusText = "QQ：倒计时→继续→同意→马上回 App（过期提示可忽略）"
+            // 同意瞬间收 skey（回壳再 poll 多为 65）
+            if let wv = gameWebView {
+                OneKeyCheckSigCompleter.startBackgroundHarvest(from: wv)
+            }
         case .leftAuthPage:
             // 若已打开 QQ，可能是授权跳转；否则停取票
             if oneKeyPhase == .waitingQQConfirm {
@@ -383,6 +391,13 @@ final class AppViewModel: ObservableObject {
         }
     }
 
+    /// 每次一键开始清空旧日志，避免误读历史
+    static func resetOneKeyLogFile() {
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let url = docs.appendingPathComponent("onekey_last.txt")
+        try? "".write(to: url, atomically: true, encoding: .utf8)
+    }
+
     /// GameWebView 主框架导航时调用（脱敏）
     func noteOneKeyNavigation(to url: URL?) {
         guard loginMode == .oneKey || oneKeyPhase != .idle else { return }
@@ -511,11 +526,19 @@ final class AppViewModel: ObservableObject {
         preferDesktopUA = false
         statusText = "等待登录 Cookie…（可点左上角回 App）"
 
-        // 优先：用 qrsig 跟 check_sig 收 skey（OpenID 不够进玩法）
+        // 优先：后台已收 / 再跟 check_sig 收 skey（OpenID 不够进玩法）
         if let wv = gameWebView {
-            let harvested = await OneKeyCheckSigCompleter.tryHarvestSkey(from: wv)
+            var harvested = OneKeyCheckSigCompleter.takePendingSkeyCookies()
+            if harvested.isEmpty {
+                harvested = await OneKeyCheckSigCompleter.tryHarvestSkey(from: wv)
+            }
             if !harvested.isEmpty {
                 await CookieBridge.restore(harvested, into: wv)
+                // 再读全量 Cookie 写入 SessionStore
+                let header = await CookieBridge.readCookieHeader(from: wv)
+                if LoginURLs.hasGameSession(header) {
+                    onCookiesCaptured(header)
+                }
                 await syncSessionFromWebView(reason: "check_sig_merge")
                 if session.isLoggedIn, LoginURLs.hasRealSkey(session.cookieHeader) {
                     Self.logOneKey("oauth_wait", "skey_via_check_sig")
