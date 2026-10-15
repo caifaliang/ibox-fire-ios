@@ -2,7 +2,9 @@ import SwiftUI
 
 /// 对齐 APK `HuoYueDaiWanScreen`（底栏「日志」）：运行状态 + 搜索 + 日志列表。
 struct LogTabView: View {
+    @EnvironmentObject var vm: AppViewModel
     @ObservedObject private var log = TaskLogStore.shared
+    @ObservedObject private var runner = HuoYueRunner.shared
     @State private var query = ""
 
     private var shown: [TaskLogEntry] {
@@ -34,7 +36,44 @@ struct LogTabView: View {
                         ? DlColors.accentBlue : DlColors.inkMuted
                 )
                 .padding(.top, 4)
-                .padding(.bottom, 10)
+                .padding(.bottom, 8)
+
+            HStack(spacing: 8) {
+                Button {
+                    if runner.running {
+                        runner.stop()
+                    } else {
+                        runner.start(cookie: SessionStore.shared.cookieHeader)
+                    }
+                } label: {
+                    Text(runner.running ? "停止活跃" : "一键活跃")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 12)
+                        .frame(height: 34)
+                        .background(runner.running ? Color.orange : DlColors.accentBlue)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    vm.showHuoYue = true
+                } label: {
+                    Text("活跃设置")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(DlColors.accentBlue)
+                        .padding(.horizontal, 10)
+                        .frame(height: 34)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8)
+                                .stroke(DlColors.accentBlue.opacity(0.5), lineWidth: 1)
+                        )
+                }
+                .buttonStyle(.plain)
+
+                Spacer()
+            }
+            .padding(.bottom, 8)
 
             HStack(spacing: 8) {
                 TextField("搜索记录…", text: $query)

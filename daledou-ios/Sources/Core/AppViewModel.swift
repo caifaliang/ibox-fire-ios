@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import UIKit
 import WebKit
 
 @MainActor
@@ -14,6 +15,8 @@ final class AppViewModel: ObservableObject {
     /// 根壳四席 Tab：0首页 1日志 2记录 3我的（对齐 AppRootScaffold）
     @Published var shellTab = 0
     @Published var showShellMenu = false
+    @Published var showAbout = false
+    @Published var showHuoYue = false
     @Published var canGoBack = false
     @Published var canGoForward = false
     /// 页加载中：顶栏刷新位转圈（对齐 APK，无全屏/顶栏进度条）
@@ -621,6 +624,54 @@ final class AppViewModel: ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
             guard let self, let wv = self.gameWebView else { return }
             self.updateShellNav(canBack: wv.canGoBack, canForward: wv.canGoForward)
+        }
+    }
+
+    /// 功能中心 / 我的：已接直接跑；未接只提示（不开空壳页）
+    func openFeature(id: String) {
+        switch id {
+        case "one_login":
+            shellTab = 0
+            openOneKeyLogin()
+        case "scan_login":
+            shellTab = 0
+            openScanLogin()
+        case "logout":
+            logout()
+        case "exit_app":
+            statusText = "请用系统手势划掉 App（iOS 无强制退出）"
+        case "qunxia_luxiang":
+            shellTab = 0
+            openOfficialAnimation()
+        case "about":
+            showAbout = true
+        case "huoyue":
+            showHuoYue = true
+        case "join_qq_group":
+            joinQqGroup(uin: "675796462")
+        default:
+            let label = FeatureCatalog.item(id: id)?.label ?? id
+            statusText = "「\(label)」按 APK 待完整接入"
+            TaskLogStore.shared.append("菜单", "待接：\(label)")
+        }
+    }
+
+    func joinQqGroup(uin: String) {
+        // 对齐 APK ExternalBrowser.joinQqGroup
+        let urls = [
+            "mqqapi://card/show_pslcard?src_type=internal&version=1&uin=\(uin)&card_type=group&source=external",
+            "https://qm.qq.com/cgi-bin/qm/qr?k=&jump_from=webapi&authKey=&group_code=\(uin)",
+        ]
+        for s in urls {
+            if let u = URL(string: s), UIApplication.shared.canOpenURL(u) {
+                UIApplication.shared.open(u)
+                statusText = "正在打开 QQ 群 \(uin)"
+                return
+            }
+        }
+        if let u = URL(string: "https://jq.qq.com/?_wv=1027&k=&group_code=\(uin)") {
+            UIApplication.shared.open(u)
+            statusText = "打开加群页 \(uin)"
         }
     }
 

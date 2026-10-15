@@ -36,17 +36,15 @@ struct RootView: View {
                         Group {
                             switch vm.shellTab {
                             case 1:
-                                ShellPlaceholderTab(
-                                    title: "日志",
-                                    subtitle: "挂机监听 · 定时脚本 · 代玩入口（待接）"
-                                )
+                                LogTabView()
+                                    .environmentObject(vm)
                             case 2:
                                 ShellPlaceholderTab(
                                     title: "记录",
-                                    subtitle: "排行 / 战斗记录（待接）"
+                                    subtitle: "排行 / 战斗记录（待接 APK JiLu）"
                                 )
                             default:
-                                MineHubPlaceholder()
+                                MineHubView()
                                     .environmentObject(vm)
                             }
                         }
@@ -88,8 +86,14 @@ struct RootView: View {
         }
         .onAppear { vm.bootstrap() }
         .sheet(isPresented: $vm.showShellMenu) {
-            ShellMenuSheet()
+            MainMenuView()
                 .environmentObject(vm)
+        }
+        .sheet(isPresented: $vm.showAbout) {
+            AboutView()
+        }
+        .sheet(isPresented: $vm.showHuoYue) {
+            HuoYueView()
         }
         .sheet(isPresented: $vm.showCookieSheet) {
             CookiePasteSheet()

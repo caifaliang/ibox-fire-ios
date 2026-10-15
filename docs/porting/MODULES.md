@@ -9,14 +9,14 @@
 | 顶栏+底栏壳 | done | fd89–90 |
 | **主菜单 UI（FeatureCatalog 三区）** | **done** | fd91：对齐 MainMenuScreen |
 | **我的 Hub（ShellCatalog.mine）** | **done** | fd91 |
-| 日志 Tab UI | partial | 有日志列表；活跃引擎未接 |
+| 日志 Tab UI | done | fd92：一键活跃 + 活跃设置入口 |
 | 记录 Tab | todo | JiLu |
-| 活跃 / 领奖 / 代玩业务 | todo | 下一刀完整面 |
+| **活跃代玩（设置页 + CGI）** | **partial** | fd92：整页勾选 + 冲分/礼包/街机 CGI；历练战斗循环下一刀 |
 
 ## 已接线（iosWired）
 
-一键、扫码、退出登陆、退出 App 提示、群侠录像、关于、加入群聊。
+一键、扫码、退出登陆、退出 App 提示、群侠录像、关于、加入群聊、**活跃代玩**。
 
 ## 下一切片
 
-**活跃代玩整页**（日志 Tab / 菜单 huoyue）：UI 对拍 + CGI 全通。
+历练 / 画卷 / 幻境 / 深渊战斗循环补全；或领奖报名整页。
