@@ -100,7 +100,7 @@ enum FeatureCatalog {
         .init(id: "zidong_qianghua", label: "自动强化", section: .more),
         .init(id: "beibao", label: "背包查询", section: .more),
         .init(id: "chaqu", label: "武林查区", section: .more, pageTitle: "查区"),
-        .init(id: "daiwan_ui", label: "代玩界面", section: .more, pageTitle: "代玩-记录"),
+        .init(id: "daiwan_ui", label: "代玩界面", section: .more, pageTitle: "代玩-记录", iosWired: true),
         .init(id: "piliang_douyou", label: "批量斗友", section: .more),
         .init(id: "doudou_mall", label: "斗豆商城", section: .more, pageTitle: "斗豆红包商城"),
         .init(id: "xianshi_qianggou", label: "限时抢购", section: .more),

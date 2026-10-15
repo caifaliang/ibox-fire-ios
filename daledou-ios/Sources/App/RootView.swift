@@ -60,6 +60,24 @@ struct RootView: View {
             }
             .background(DlColors.canvas)
 
+            // 首页悬浮钮 → 代玩-记录（对齐 APK DraggableNoteFab）
+            if vm.shellTab == 0 && !vm.suspendGameWebForReplay {
+                Button {
+                    vm.showDaiWanRecord = true
+                } label: {
+                    Text("代玩")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 52, height: 52)
+                        .background(DlColors.brand.opacity(0.92))
+                        .clipShape(Circle())
+                        .shadow(color: .black.opacity(0.28), radius: 6, y: 2)
+                }
+                .padding(.trailing, 16)
+                .padding(.bottom, vm.showViewFightFab ? 140 : 72)
+                .accessibilityLabel("代玩记录")
+            }
+
             if vm.showViewFightFab && vm.shellTab == 0 {
                 Button {
                     vm.openOfficialAnimation()
@@ -100,6 +118,10 @@ struct RootView: View {
         }
         .sheet(isPresented: $vm.showDaiWan) {
             DaiWanView()
+        }
+        .sheet(isPresented: $vm.showDaiWanRecord) {
+            DaiWanRecordView()
+                .environmentObject(vm)
         }
         .sheet(isPresented: $vm.showListenFeature) {
             ListenHostView(featureId: vm.listenFeatureId)

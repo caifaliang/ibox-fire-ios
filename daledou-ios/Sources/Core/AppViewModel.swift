@@ -19,6 +19,8 @@ final class AppViewModel: ObservableObject {
     @Published var showHuoYue = false
     @Published var showLingJiang = false
     @Published var showDaiWan = false
+    /// 悬浮钮「代玩-记录」
+    @Published var showDaiWanRecord = false
     /// 后台监听页：kuangdong / jiebiao / liangcao / wending / fuchou_wending / open_kd
     @Published var showListenFeature = false
     @Published var listenFeatureId = ""
@@ -657,6 +659,8 @@ final class AppViewModel: ObservableObject {
             showLingJiang = true
         case "daiwan":
             showDaiWan = true
+        case "daiwan_ui":
+            showDaiWanRecord = true
         case "kuangdong", "jiebiao", "liangcao", "wending",
              "fuchou_wending", "open_kd", "change_guard", "paiqian":
             listenFeatureId = id
