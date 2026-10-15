@@ -657,7 +657,8 @@ final class AppViewModel: ObservableObject {
             showLingJiang = true
         case "daiwan":
             showDaiWan = true
-        case "kuangdong", "jiebiao", "liangcao", "wending", "fuchou_wending", "open_kd":
+        case "kuangdong", "jiebiao", "liangcao", "wending",
+             "fuchou_wending", "open_kd", "change_guard", "paiqian":
             listenFeatureId = id
             showListenFeature = true
         case "join_qq_group":

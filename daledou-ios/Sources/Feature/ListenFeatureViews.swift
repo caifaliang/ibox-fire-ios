@@ -13,6 +13,8 @@ struct ListenHostView: View {
         case "wending": WenDingListenView(onClose: { dismiss() })
         case "fuchou_wending": FuChouWenDingListenView(onClose: { dismiss() })
         case "open_kd": OpenKdListenView(onClose: { dismiss() })
+        case "change_guard": ChangeGuardListenView(onClose: { dismiss() })
+        case "paiqian": PaiQianListenView(onClose: { dismiss() })
         default:
             NavigationStack {
                 Text("未知监听：\(featureId)")
@@ -1003,5 +1005,255 @@ struct OpenKdListenView: View {
             .background(DlColors.surface)
             .overlay(RoundedRectangle(cornerRadius: 6).stroke(DlColors.border, lineWidth: 1))
             .disabled(listening)
+    }
+}
+
+// MARK: - 换守护神
+
+struct ChangeGuardListenView: View {
+    var onClose: () -> Void
+    @ObservedObject private var runner = BackgroundListenRunner.shared
+    private let fid = "change_guard"
+    private let store = FeatureToggleStore.shared
+    @State private var qinglong = true
+    @State private var allBaihu = false
+    @State private var h1 = "0"
+    @State private var m1 = "0"
+    @State private var h2 = "12"
+    @State private var m2 = "0"
+    @State private var tip = ""
+    @State private var tick = 0
+
+    private var listening: Bool { runner.isActive(fid) || store.isEnabled(fid) }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("更换青龙守护神(攻击) 时间为24小时制")
+                        .font(.system(size: 13, weight: .semibold))
+                    check("优先青龙(关=白虎)", qinglong) { qinglong = $0; persist() }
+                    HStack {
+                        Text("更换时间1:").font(.system(size: 12))
+                        numField($h1)
+                        Text(":").font(.system(size: 12))
+                        numField($m1)
+                    }
+                    HStack {
+                        Text("更换时间2:").font(.system(size: 12))
+                        numField($h2)
+                        Text(":").font(.system(size: 12))
+                        numField($m2)
+                    }
+                    Text("更换白虎守护神(速度)")
+                        .font(.system(size: 13, weight: .semibold))
+                        .padding(.top, 4)
+                    check("其他时间全部换白虎", allBaihu) { allBaihu = $0; persist() }
+                    if !tip.isEmpty {
+                        Text(tip).font(.system(size: 12)).foregroundStyle(DlColors.inkMuted)
+                    }
+                }
+                .padding(16)
+            }
+            .background(DlColors.canvas)
+            .navigationTitle("换守护神设置")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("关闭") { onClose() }
+                }
+            }
+            .safeAreaInset(edge: .bottom) {
+                Button {
+                    if listening {
+                        runner.stop(fid)
+                    } else {
+                        persist()
+                        runner.start(fid)
+                    }
+                    tick &+= 1
+                } label: {
+                    Text(listening ? "停止监听" : "开始监听")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 46)
+                        .background(listening ? Color.orange : DlColors.accentBlue)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(DlColors.canvas.opacity(0.96))
+            }
+            .onAppear { load() }
+            .onChange(of: h1) { _ in persist() }
+            .onChange(of: m1) { _ in persist() }
+            .onChange(of: h2) { _ in persist() }
+            .onChange(of: m2) { _ in persist() }
+        }
+    }
+
+    private func load() {
+        qinglong = store.getBool(fid, "qinglong", default: true)
+        allBaihu = store.getBool(fid, "all_baihu")
+        h1 = store.getString(fid, "h1", default: "0")
+        m1 = store.getString(fid, "m1", default: "0")
+        h2 = store.getString(fid, "h2", default: "12")
+        m2 = store.getString(fid, "m2", default: "0")
+    }
+
+    private func persist() {
+        store.setBool(fid, "qinglong", qinglong)
+        store.setBool(fid, "all_baihu", allBaihu)
+        store.setString(fid, "h1", h1)
+        store.setString(fid, "m1", m1)
+        store.setString(fid, "h2", h2)
+        store.setString(fid, "m2", m2)
+    }
+
+    private func check(_ title: String, _ on: Bool, set: @escaping (Bool) -> Void) -> some View {
+        Button {
+            guard !listening else { return }
+            set(!on)
+        } label: {
+            HStack {
+                Image(systemName: on ? "checkmark.square.fill" : "square")
+                    .foregroundStyle(on ? DlColors.accentBlue : DlColors.inkMuted)
+                Text(title).font(.system(size: 13)).foregroundStyle(DlColors.ink)
+                Spacer()
+            }
+        }
+        .buttonStyle(.plain)
+        .disabled(listening)
+    }
+
+    private func numField(_ text: Binding<String>) -> some View {
+        TextField("0", text: text)
+            .font(.system(size: 13))
+            .keyboardType(.numberPad)
+            .padding(.horizontal, 8)
+            .frame(width: 48, height: 32)
+            .background(DlColors.surface)
+            .overlay(RoundedRectangle(cornerRadius: 6).stroke(DlColors.border, lineWidth: 1))
+            .disabled(listening)
+    }
+}
+
+// MARK: - 任务派遣
+
+struct PaiQianListenView: View {
+    var onClose: () -> Void
+    @ObservedObject private var runner = BackgroundListenRunner.shared
+    private let fid = "paiqian"
+    private let store = FeatureToggleStore.shared
+    @State private var acceptS = true
+    @State private var acceptA = true
+    @State private var acceptB = false
+    @State private var bx = false
+    @State private var claim = true
+    @State private var refresh = false
+    @State private var tip = ""
+    @State private var tick = 0
+
+    private var listening: Bool { runner.isActive(fid) || store.isEnabled(fid) }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("设置").font(.system(size: 13, weight: .semibold))
+                    check("S级任务", acceptS) { acceptS = $0; persist() }
+                    check("A级任务", acceptA) { acceptA = $0; persist() }
+                    check("B级任务", acceptB) { acceptB = $0; persist() }
+                    check("优先宝匣", bx) { bx = $0; persist() }
+                    check("优先领奖", claim) { claim = $0; persist() }
+                    check("没有可派遣时自动刷新", refresh) { refresh = $0; persist() }
+
+                    Button("立即跑一轮") {
+                        persist()
+                        Task {
+                            let cookie = SessionStore.shared.cookieHeader
+                            let msg = await DailyListenActions.farmPaiQian(cookie: cookie) { line in
+                                Task { @MainActor in TaskLogStore.shared.append("任务派遣", line) }
+                            }
+                            await MainActor.run { tip = msg }
+                        }
+                    }
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(DlColors.accentBlue)
+                    .frame(maxWidth: .infinity)
+
+                    if !tip.isEmpty {
+                        Text(tip).font(.system(size: 12)).foregroundStyle(DlColors.inkMuted)
+                    }
+                }
+                .padding(16)
+            }
+            .background(DlColors.canvas)
+            .navigationTitle("任务派遣")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("关闭") { onClose() }
+                }
+            }
+            .safeAreaInset(edge: .bottom) {
+                Button {
+                    if listening {
+                        runner.stop(fid)
+                    } else {
+                        persist()
+                        runner.start(fid)
+                    }
+                    tick &+= 1
+                } label: {
+                    Text(listening ? "停止监听" : "开始监听")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 46)
+                        .background(listening ? Color.orange : DlColors.accentBlue)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(DlColors.canvas.opacity(0.96))
+            }
+            .onAppear { load() }
+        }
+    }
+
+    private func load() {
+        acceptS = store.getBool(fid, "accept_s", default: true)
+        acceptA = store.getBool(fid, "accept_a", default: true)
+        acceptB = store.getBool(fid, "accept_b")
+        bx = store.getBool(fid, "bx")
+        claim = store.getBool(fid, "claim", default: true)
+        refresh = store.getBool(fid, "refresh")
+    }
+
+    private func persist() {
+        store.setBool(fid, "accept_s", acceptS)
+        store.setBool(fid, "accept_a", acceptA)
+        store.setBool(fid, "accept_b", acceptB)
+        store.setBool(fid, "bx", bx)
+        store.setBool(fid, "claim", claim)
+        store.setBool(fid, "refresh", refresh)
+    }
+
+    private func check(_ title: String, _ on: Bool, set: @escaping (Bool) -> Void) -> some View {
+        Button {
+            guard !listening else { return }
+            set(!on)
+        } label: {
+            HStack {
+                Image(systemName: on ? "checkmark.square.fill" : "square")
+                    .foregroundStyle(on ? DlColors.accentBlue : DlColors.inkMuted)
+                Text(title).font(.system(size: 13)).foregroundStyle(DlColors.ink)
+                Spacer()
+            }
+        }
+        .buttonStyle(.plain)
+        .disabled(listening)
     }
 }

@@ -732,6 +732,201 @@ enum DailyListenActions {
         onLog(msg)
         return msg
     }
+
+    // MARK: - 换守护神
+
+    static func farmChangeGuard(
+        cookie: String,
+        onLog: @escaping (String) -> Void
+    ) async -> String {
+        let t = FeatureToggleStore.shared
+        let fid = "change_guard"
+        let qinglong = t.getBool(fid, "qinglong", default: true)
+        let allBaihu = t.getBool(fid, "all_baihu", default: false)
+        let h1 = Int(t.getString(fid, "h1", default: "0")) ?? 0
+        let m1 = Int(t.getString(fid, "m1", default: "0")) ?? 0
+        let h2 = Int(t.getString(fid, "h2", default: "12")) ?? 12
+        let m2 = Int(t.getString(fid, "m2", default: "0")) ?? 0
+
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "Asia/Shanghai")!
+        let now = Date()
+        let hour = cal.component(.hour, from: now)
+        let minute = cal.component(.minute, from: now)
+        let nowMin = hour * 60 + minute
+        let t1 = h1 * 60 + m1
+        let t2 = h2 * 60 + m2
+        let inQingLongWindow: Bool = {
+            if t1 == t2 { return true }
+            if t1 < t2 { return nowMin >= t1 && nowMin < t2 }
+            // 跨午夜：t1→24:00 或 0→t2
+            return nowMin >= t1 || nowMin < t2
+        }()
+
+        let preferQingLong: Bool = {
+            if inQingLongWindow { return qinglong }
+            if allBaihu { return false }
+            return qinglong
+        }()
+
+        let (_, check) = await LedouCGI.getPhonePk(
+            cmd: "factionop", extra: ["subtype": "12"], cookie: cookie
+        )
+        try? await Task.sleep(nanoseconds: gapNs)
+        let checkMsg = CombatLog.fromBody(check)
+        if !checkMsg.isEmpty { onLog("查询：\(checkMsg)") }
+
+        let protectId = preferQingLong ? "101" : "103"
+        let name = preferQingLong ? "青龙" : "白虎"
+        let (_, set) = await LedouCGI.getPhonePk(
+            cmd: "setprotect", extra: ["id": protectId], cookie: cookie
+        )
+        try? await Task.sleep(nanoseconds: gapNs)
+        let sm = CombatLog.fromBody(set).ifBlank("已请求")
+        let msg = "换\(name)：\(sm)"
+        onLog(msg)
+        return msg
+    }
+
+    // MARK: - 任务派遣
+
+    static func farmPaiQian(
+        cookie: String,
+        onLog: @escaping (String) -> Void
+    ) async -> String {
+        let t = FeatureToggleStore.shared
+        let fid = "paiqian"
+        func b(_ key: String, _ def: Bool = false) -> Bool { t.getBool(fid, key, default: def) }
+        let wantS = b("accept_s", true)
+        let wantA = b("accept_a", true)
+        let wantB = b("accept_b")
+        let preferBx = b("bx")
+        let canRefresh = b("refresh")
+        let doClaim = b("claim", true)
+
+        func typeOk(_ type: Int) -> Bool {
+            switch type {
+            case 1: return wantS
+            case 2: return wantA
+            case 3: return wantB
+            default: return wantS || wantA || wantB
+            }
+        }
+
+        var page = await LedouCGI.getPhonePk(
+            cmd: "assignment", extra: ["op": "0"], cookie: cookie
+        ).1
+        try? await Task.sleep(nanoseconds: gapNs)
+        var claimed = 0
+        var accepted = 0
+
+        if doClaim {
+            let acceptedList = CombatLog.jsonChunks(page, "acceptedMissionInfo")
+                .ifEmpty(CombatLog.jsonChunks(page, "accepted"))
+            for m in acceptedList {
+                let remain = CombatLog.jsonInt(m, "remainTime") ?? -1
+                let status = CombatLog.jsonInt(m, "status") ?? 0
+                let mid = (CombatLog.jsonField(m, "mission_id") ?? "")
+                    .ifBlank(CombatLog.jsonField(m, "id") ?? "")
+                if mid.isEmpty { continue }
+                if remain == 0 || status == 1 || m.contains("可领取") {
+                    let (_, c) = await LedouCGI.getPhonePk(
+                        cmd: "assignment", extra: ["op": "2", "mission_id": mid], cookie: cookie
+                    )
+                    try? await Task.sleep(nanoseconds: gapNs)
+                    onLog("领奖：\(mid) \(CombatLog.fromBody(c))")
+                    _ = await LedouCGI.getPhonePk(
+                        cmd: "assignment", extra: ["op": "8", "mission_id": mid], cookie: cookie
+                    )
+                    try? await Task.sleep(nanoseconds: gapNs)
+                    claimed += 1
+                }
+            }
+            if claimed > 0 {
+                page = await LedouCGI.getPhonePk(
+                    cmd: "assignment", extra: ["op": "0"], cookie: cookie
+                ).1
+                try? await Task.sleep(nanoseconds: gapNs)
+            }
+        }
+
+        let acceptedCount = CombatLog.jsonChunks(page, "acceptedMissionInfo").count
+        if acceptedCount >= 3 {
+            let tip = "已满 3 个派遣"
+            onLog(tip)
+            return tip
+        }
+
+        func tryAcceptOnce(_ from: [String]) async -> Bool {
+            let ordered = preferBx
+                ? from.sorted { $0.contains("宝匣") && !$1.contains("宝匣") }
+                : from
+            for m in ordered {
+                let mid = (CombatLog.jsonField(m, "mission_id") ?? "")
+                    .ifBlank(CombatLog.jsonField(m, "id") ?? "")
+                if mid.isEmpty { continue }
+                let type = CombatLog.jsonInt(m, "type") ?? 0
+                let acceptedFlag = CombatLog.jsonInt(m, "accepted") ?? 0
+                if acceptedFlag != 0 { continue }
+                if !typeOk(type) { continue }
+                let (_, a) = await LedouCGI.getPhonePk(
+                    cmd: "assignment", extra: ["op": "4", "mission_id": mid], cookie: cookie
+                )
+                try? await Task.sleep(nanoseconds: gapNs)
+                onLog("接取\(mid)：\(CombatLog.fromBody(a))")
+                let (_, d) = await LedouCGI.getPhonePk(
+                    cmd: "assignment", extra: ["op": "6", "mission_id": mid], cookie: cookie
+                )
+                try? await Task.sleep(nanoseconds: gapNs)
+                let dm = CombatLog.fromBody(d)
+                onLog("派遣：\(dm)")
+                if dm.contains("成功") || CombatLog.jsonInt(d, "result") == 0 {
+                    _ = await LedouCGI.getPhonePk(
+                        cmd: "assignment", extra: ["op": "7", "mission_id": mid], cookie: cookie
+                    )
+                    try? await Task.sleep(nanoseconds: gapNs)
+                }
+                return true
+            }
+            return false
+        }
+
+        let standy = CombatLog.jsonChunks(page, "standyMissionInfo")
+            .ifEmpty(CombatLog.jsonChunks(page, "standby"))
+        if await tryAcceptOnce(standy) {
+            accepted += 1
+        } else if canRefresh {
+            let dayFmt = DateFormatter()
+            dayFmt.timeZone = TimeZone(identifier: "Asia/Shanghai")
+            dayFmt.dateFormat = "yyyyMMdd"
+            let day = dayFmt.string(from: Date())
+            let usedDay = t.getString(fid, "refresh_day")
+            var used = usedDay == day ? (Int(t.getString(fid, "refresh_count")) ?? 0) : 0
+            if used < 3 {
+                _ = await LedouCGI.getPhonePk(
+                    cmd: "assignment", extra: ["op": "1"], cookie: cookie
+                )
+                try? await Task.sleep(nanoseconds: gapNs)
+                used += 1
+                t.setString(fid, "refresh_day", day)
+                t.setString(fid, "refresh_count", "\(used)")
+                onLog("刷新任务（\(used)/3）")
+                page = await LedouCGI.getPhonePk(
+                    cmd: "assignment", extra: ["op": "0"], cookie: cookie
+                ).1
+                try? await Task.sleep(nanoseconds: gapNs)
+                if await tryAcceptOnce(
+                    CombatLog.jsonChunks(page, "standyMissionInfo")
+                        .ifEmpty(CombatLog.jsonChunks(page, "standby"))
+                ) {
+                    accepted += 1
+                }
+            }
+        }
+        let tip = "派遣 领\(claimed) 接\(accepted)"
+        onLog(tip)
+        return tip
+    }
 }
 
 private extension String {
