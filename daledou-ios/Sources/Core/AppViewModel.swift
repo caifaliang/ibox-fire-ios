@@ -16,6 +16,8 @@ final class AppViewModel: ObservableObject {
     @Published var showShellMenu = false
     @Published var canGoBack = false
     @Published var canGoForward = false
+    /// 页加载中：顶栏刷新位转圈（对齐 APK，无全屏/顶栏进度条）
+    @Published var pageLoading = false
     /// 后台开关 UI（Worker 未接，仅落盘）
     @Published var backgroundEnabled: Bool = UserDefaults.standard.bool(forKey: "daledou.shell.bg_enabled") {
         didSet { UserDefaults.standard.set(backgroundEnabled, forKey: "daledou.shell.bg_enabled") }

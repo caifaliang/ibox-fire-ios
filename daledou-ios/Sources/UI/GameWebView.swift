@@ -261,8 +261,25 @@ struct GameWebView: UIViewRepresentable {
             }
         }
 
+        func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+            Task { @MainActor in vm.pageLoading = true }
+        }
+
+        func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+            Task { @MainActor in vm.pageLoading = false }
+        }
+
+        func webView(
+            _ webView: WKWebView,
+            didFailProvisionalNavigation navigation: WKNavigation!,
+            withError error: Error
+        ) {
+            Task { @MainActor in vm.pageLoading = false }
+        }
+
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             Task { @MainActor in
+                vm.pageLoading = false
                 vm.onNavigated(to: webView.url)
                 vm.updateShellNav(canBack: webView.canGoBack, canForward: webView.canGoForward)
             }

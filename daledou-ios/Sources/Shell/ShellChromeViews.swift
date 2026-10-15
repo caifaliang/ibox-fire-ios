@@ -32,9 +32,25 @@ struct ShellToolStrip: View {
             toolIcon(system: "camera.viewfinder", tint: DlColors.inkSecondary) {
                 vm.statusText = "截长图：下一刀按 APK 接入"
             }
-            toolIcon(system: "arrow.clockwise", tint: DlColors.inkSecondary) {
+            // APK：加载中用刷新位转圈替换图标，无全屏/顶栏进度条
+            Button {
                 vm.reload()
+            } label: {
+                Group {
+                    if vm.pageLoading {
+                        ProgressView()
+                            .controlSize(.small)
+                            .tint(DlColors.accentBlue)
+                    } else {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 17, weight: .medium))
+                            .foregroundStyle(DlColors.inkSecondary)
+                    }
+                }
+                .frame(width: 36, height: 36)
             }
+            .buttonStyle(.plain)
+            .disabled(vm.pageLoading)
             toolIcon(system: "magnifyingglass", tint: DlColors.accentBlue) {
                 vm.statusText = "查询：下一刀按 APK 接入"
             }
