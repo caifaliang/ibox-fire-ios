@@ -18,6 +18,9 @@ final class AppViewModel: ObservableObject {
     @Published var showAbout = false
     @Published var showHuoYue = false
     @Published var showLingJiang = false
+    /// 后台监听页：kuangdong / jiebiao / liangcao
+    @Published var showListenFeature = false
+    @Published var listenFeatureId = ""
     @Published var canGoBack = false
     @Published var canGoForward = false
     /// 页加载中：顶栏刷新位转圈（对齐 APK，无全屏/顶栏进度条）
@@ -89,6 +92,7 @@ final class AppViewModel: ObservableObject {
             return
         }
         didBootstrap = true
+        BackgroundListenRunner.shared.restoreFromStore()
 
         // 进程在 QQ 期间被杀：用落盘的 qrsig 恢复一键，等用户回 App 再收尾
         if QqOneKeyLogin.persistedAwaitingReturn {
@@ -650,6 +654,9 @@ final class AppViewModel: ObservableObject {
             showHuoYue = true
         case "lingjiang":
             showLingJiang = true
+        case "kuangdong", "jiebiao", "liangcao":
+            listenFeatureId = id
+            showListenFeature = true
         case "join_qq_group":
             joinQqGroup(uin: "675796462")
         default:

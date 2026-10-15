@@ -56,4 +56,42 @@ enum CombatLog {
     static func jsonInt(_ raw: String, _ key: String) -> Int? {
         jsonField(raw, key).flatMap(Int.init)
     }
+
+    /// 抽取 JSON 数组 `"name":[{...},{...}]` 中的对象切片。
+    static func jsonChunks(_ body: String, _ arrayName: String) -> [String] {
+        guard let keyAt = body.range(of: "\"\(arrayName)\"")?.lowerBound else { return [] }
+        guard let openRel = body[keyAt...].firstIndex(of: "[") else { return [] }
+        var depth = 0
+        var end = openRel
+        var i = openRel
+        while i < body.endIndex {
+            let c = body[i]
+            if c == "[" { depth += 1 }
+            else if c == "]" {
+                depth -= 1
+                if depth == 0 { end = i; break }
+            }
+            i = body.index(after: i)
+        }
+        let slice = String(body[openRel...end])
+        var out: [String] = []
+        var d = 0
+        var start: String.Index?
+        var j = slice.startIndex
+        while j < slice.endIndex {
+            let c = slice[j]
+            if c == "{" {
+                if d == 0 { start = j }
+                d += 1
+            } else if c == "}" {
+                d -= 1
+                if d == 0, let s = start {
+                    out.append(String(slice[s...j]))
+                    start = nil
+                }
+            }
+            j = slice.index(after: j)
+        }
+        return out
+    }
 }

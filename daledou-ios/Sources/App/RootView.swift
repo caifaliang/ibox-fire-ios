@@ -98,6 +98,9 @@ struct RootView: View {
         .sheet(isPresented: $vm.showLingJiang) {
             LingJiangView()
         }
+        .sheet(isPresented: $vm.showListenFeature) {
+            ListenHostView(featureId: vm.listenFeatureId)
+        }
         .sheet(isPresented: $vm.showCookieSheet) {
             CookiePasteSheet()
                 .environmentObject(vm)

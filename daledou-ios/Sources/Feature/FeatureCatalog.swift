@@ -60,9 +60,9 @@ enum FeatureCatalog {
     static let items: [FeatureItem] = [
         // —— 后台 ——
         .init(id: "hejiu", label: "喝酒", section: .background),
-        .init(id: "jiebiao", label: "劫镖", section: .background),
-        .init(id: "kuangdong", label: "矿洞", section: .background),
-        .init(id: "liangcao", label: "粮草", section: .background, pageTitle: "粮草掠夺"),
+        .init(id: "jiebiao", label: "劫镖", section: .background, iosWired: true),
+        .init(id: "kuangdong", label: "矿洞", section: .background, iosWired: true),
+        .init(id: "liangcao", label: "粮草", section: .background, pageTitle: "粮草掠夺", iosWired: true),
         .init(id: "wending", label: "问鼎", section: .background),
         .init(id: "fuchou_wending", label: "复仇问鼎", section: .background, pageTitle: "问鼎复仇"),
         .init(id: "open_kd", label: "开启矿洞", section: .background, pageTitle: "开矿洞设置"),

@@ -210,6 +210,21 @@ final class HuoYueRunner: ObservableObject {
             let msg = await HuoYueCombat.farmHuiWu(cookie: cookie, onLog: live("会武"))
             log.append("会武", msg)
         }
+        if on("cb_dw_jb") {
+            if Task.isCancelled { return }
+            let msg = await DailyListenActions.farmJieBiao(cookie: cookie, onLog: live("劫镖"))
+            log.append("劫镖", msg)
+        }
+        if on("cb_dw_kd") {
+            if Task.isCancelled { return }
+            let msg = await DailyListenActions.farmKuangDong(cookie: cookie, onLog: live("矿洞"))
+            log.append("矿洞", msg)
+        }
+        if on("cb_dw_lc") {
+            if Task.isCancelled { return }
+            let msg = await DailyListenActions.claimLiangCao(cookie: cookie, onLog: live("粮草"))
+            log.append("粮草", msg)
+        }
     }
 
     private func phaseTasks(cookie: String) async {
