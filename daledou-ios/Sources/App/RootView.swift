@@ -57,7 +57,6 @@ struct RootView: View {
         .confirmationDialog("快捷菜单", isPresented: $vm.showMenu, titleVisibility: .visible) {
             Button("一键登录") { vm.openOneKeyLogin() }
             Button("扫码登录") { vm.openScanLogin() }
-            Button("官方动画") { vm.openOfficialAnimation() }
             Button("刷新") { vm.reload() }
             Button("退出登录", role: .destructive) { vm.logout() }
             Button("取消", role: .cancel) {}
