@@ -17,6 +17,7 @@ final class AppViewModel: ObservableObject {
     @Published var showShellMenu = false
     @Published var showAbout = false
     @Published var showHuoYue = false
+    @Published var showLingJiang = false
     @Published var canGoBack = false
     @Published var canGoForward = false
     /// 页加载中：顶栏刷新位转圈（对齐 APK，无全屏/顶栏进度条）
@@ -647,6 +648,8 @@ final class AppViewModel: ObservableObject {
             showAbout = true
         case "huoyue":
             showHuoYue = true
+        case "lingjiang":
+            showLingJiang = true
         case "join_qq_group":
             joinQqGroup(uin: "675796462")
         default:

@@ -95,6 +95,9 @@ struct RootView: View {
         .sheet(isPresented: $vm.showHuoYue) {
             HuoYueView()
         }
+        .sheet(isPresented: $vm.showLingJiang) {
+            LingJiangView()
+        }
         .sheet(isPresented: $vm.showCookieSheet) {
             CookiePasteSheet()
                 .environmentObject(vm)

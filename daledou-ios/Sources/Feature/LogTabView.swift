@@ -5,6 +5,7 @@ struct LogTabView: View {
     @EnvironmentObject var vm: AppViewModel
     @ObservedObject private var log = TaskLogStore.shared
     @ObservedObject private var runner = HuoYueRunner.shared
+    @ObservedObject private var lingJiang = LingJiangRunner.shared
     @State private var query = ""
 
     private var shown: [TaskLogEntry] {
@@ -57,9 +58,41 @@ struct LogTabView: View {
                 .buttonStyle(.plain)
 
                 Button {
+                    if lingJiang.running {
+                        lingJiang.stop()
+                    } else {
+                        lingJiang.start(cookie: SessionStore.shared.cookieHeader)
+                    }
+                } label: {
+                    Text(lingJiang.running ? "停止领奖" : "一键领奖")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 12)
+                        .frame(height: 34)
+                        .background(lingJiang.running ? Color.orange : DlColors.brand)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                }
+                .buttonStyle(.plain)
+
+                Button {
                     vm.showHuoYue = true
                 } label: {
                     Text("活跃设置")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(DlColors.accentBlue)
+                        .padding(.horizontal, 10)
+                        .frame(height: 34)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8)
+                                .stroke(DlColors.accentBlue.opacity(0.5), lineWidth: 1)
+                        )
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    vm.showLingJiang = true
+                } label: {
+                    Text("领奖设置")
                         .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(DlColors.accentBlue)
                         .padding(.horizontal, 10)

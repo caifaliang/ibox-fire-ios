@@ -14,7 +14,7 @@ settings:
     PRODUCT_BUNDLE_IDENTIFIER: com.daledou.app
     PRODUCT_NAME: DaLedou
     MARKETING_VERSION: "0.1.1"
-    CURRENT_PROJECT_VERSION: "138fd96"
+    CURRENT_PROJECT_VERSION: "138fd97"
     GENERATE_INFOPLIST_FILE: NO
     INFOPLIST_FILE: Resources/Info.plist
     CODE_SIGNING_ALLOWED: NO
@@ -38,6 +38,10 @@ targets:
         buildPhase: resources
       - path: Resources/Info.plist
         buildPhase: none
+      - path: Resources/lingjiang_keymap.json
+        buildPhase: resources
+      - path: Resources/lingjiang_cb_to_key.json
+        buildPhase: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.daledou.app
