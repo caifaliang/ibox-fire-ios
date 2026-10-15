@@ -11,6 +11,8 @@ struct ListenHostView: View {
         case "jiebiao": JieBiaoListenView(onClose: { dismiss() })
         case "liangcao": LiangCaoListenView(onClose: { dismiss() })
         case "wending": WenDingListenView(onClose: { dismiss() })
+        case "fuchou_wending": FuChouWenDingListenView(onClose: { dismiss() })
+        case "open_kd": OpenKdListenView(onClose: { dismiss() })
         default:
             NavigationStack {
                 Text("未知监听：\(featureId)")
@@ -690,5 +692,316 @@ struct WenDingListenView: View {
         }
         .buttonStyle(.plain)
         .disabled(listening)
+    }
+}
+
+// MARK: - 问鼎复仇
+
+struct FuChouWenDingListenView: View {
+    var onClose: () -> Void
+    @ObservedObject private var runner = BackgroundListenRunner.shared
+    private let fid = "fuchou_wending"
+    private let store = FeatureToggleStore.shared
+    @State private var factionName = ""
+    @State private var factionId = ""
+    @State private var qyDh = true
+    @State private var qyNh = true
+    @State private var qyXz = true
+    @State private var qyBh = true
+    @State private var autoOccupy = false
+    @State private var tip = ""
+    @State private var tick = 0
+
+    private var listening: Bool { runner.isActive(fid) || store.isEnabled(fid) }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 10) {
+                    TextField("目标帮派名", text: $factionName)
+                        .font(.system(size: 13))
+                        .padding(.horizontal, 10)
+                        .frame(height: 34)
+                        .background(DlColors.surface)
+                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(DlColors.border, lineWidth: 1))
+                        .disabled(listening)
+                    TextField("帮派ID（名称为空时用来查）", text: $factionId)
+                        .font(.system(size: 13))
+                        .keyboardType(.numberPad)
+                        .padding(.horizontal, 10)
+                        .frame(height: 34)
+                        .background(DlColors.surface)
+                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(DlColors.border, lineWidth: 1))
+                        .disabled(listening)
+
+                    check("东海", qyDh) { qyDh = $0; persist() }
+                    check("南荒", qyNh) { qyNh = $0; persist() }
+                    check("西泽", qyXz) { qyXz = $0; persist() }
+                    check("北寒", qyBh) { qyBh = $0; persist() }
+                    check("自动占领战力最低", autoOccupy) { autoOccupy = $0; persist() }
+
+                    Button("立即查询") {
+                        persist()
+                        Task {
+                            let cookie = SessionStore.shared.cookieHeader
+                            let msg = await DailyListenActions.farmFuChouWenDing(cookie: cookie) { line in
+                                Task { @MainActor in TaskLogStore.shared.append("问鼎复仇", line) }
+                            }
+                            await MainActor.run { tip = msg }
+                        }
+                    }
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(DlColors.accentBlue)
+                    .frame(maxWidth: .infinity)
+
+                    if !tip.isEmpty {
+                        Text(tip).font(.system(size: 12)).foregroundStyle(DlColors.inkMuted)
+                    }
+                }
+                .padding(16)
+            }
+            .background(DlColors.canvas)
+            .navigationTitle("问鼎复仇")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("关闭") { onClose() }
+                }
+            }
+            .safeAreaInset(edge: .bottom) {
+                Button {
+                    if listening {
+                        runner.stop(fid)
+                    } else {
+                        persist()
+                        if factionName.trimmingCharacters(in: .whitespaces).isEmpty
+                            && factionId.trimmingCharacters(in: .whitespaces).isEmpty
+                        {
+                            tip = "请填写目标帮派名或帮派 ID"
+                            return
+                        }
+                        runner.start(fid)
+                    }
+                    tick &+= 1
+                } label: {
+                    Text(listening ? "停止监听" : "开始监听")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 46)
+                        .background(listening ? Color.orange : DlColors.accentBlue)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(DlColors.canvas.opacity(0.96))
+            }
+            .onAppear { load() }
+            .onChange(of: factionName) { _ in persist() }
+            .onChange(of: factionId) { _ in persist() }
+        }
+    }
+
+    private func load() {
+        factionName = store.getString(fid, "faction_name")
+        factionId = store.getString(fid, "faction_id")
+        qyDh = store.getBool(fid, "qy_dh", default: true)
+        qyNh = store.getBool(fid, "qy_nh", default: true)
+        qyXz = store.getBool(fid, "qy_xz", default: true)
+        qyBh = store.getBool(fid, "qy_bh", default: true)
+        autoOccupy = store.getBool(fid, "auto_occupy")
+    }
+
+    private func persist() {
+        store.setString(fid, "faction_name", factionName)
+        store.setString(fid, "faction_id", factionId.filter(\.isNumber))
+        store.setBool(fid, "qy_dh", qyDh)
+        store.setBool(fid, "qy_nh", qyNh)
+        store.setBool(fid, "qy_xz", qyXz)
+        store.setBool(fid, "qy_bh", qyBh)
+        store.setBool(fid, "auto_occupy", autoOccupy)
+    }
+
+    private func check(_ title: String, _ on: Bool, set: @escaping (Bool) -> Void) -> some View {
+        Button {
+            guard !listening else { return }
+            set(!on)
+        } label: {
+            HStack {
+                Image(systemName: on ? "checkmark.square.fill" : "square")
+                    .foregroundStyle(on ? DlColors.accentBlue : DlColors.inkMuted)
+                Text(title).font(.system(size: 13)).foregroundStyle(DlColors.ink)
+                Spacer()
+            }
+        }
+        .buttonStyle(.plain)
+        .disabled(listening)
+    }
+}
+
+// MARK: - 开矿洞
+
+struct OpenKdListenView: View {
+    var onClose: () -> Void
+    @ObservedObject private var runner = BackgroundListenRunner.shared
+    private let fid = "open_kd"
+    private let store = FeatureToggleStore.shared
+    @State private var is7 = false
+    @State private var is1 = false
+    @State private var isNew1 = false
+    @State private var is2 = false
+    @State private var is3 = false
+    @State private var isOther = true
+    @State private var isMax = false
+    @State private var hours = "22"
+    @State private var minute = "0"
+    @State private var hourEnd = "6"
+    @State private var minutesEnd = "0"
+    @State private var tip = ""
+    @State private var tick = 0
+
+    private var listening: Bool { runner.isActive(fid) || store.isEnabled(fid) }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("开启矿洞五层困难（开启时间小于六点时，为周一）")
+                        .font(.system(size: 13, weight: .semibold))
+                    check("周日/周一", is7) { is7 = $0; persist() }
+                    if is7 {
+                        HStack {
+                            Text("开启时间:").font(.system(size: 12))
+                            numField($hours)
+                            Text(":").font(.system(size: 12))
+                            numField($minute)
+                            Text("后开启困难").font(.system(size: 12))
+                        }
+                    }
+                    check("周一结束", isNew1) { isNew1 = $0; persist() }
+                    if isNew1 {
+                        HStack {
+                            Text("关闭时间:").font(.system(size: 12))
+                            numField($hourEnd)
+                            Text(":").font(.system(size: 12))
+                            numField($minutesEnd)
+                            Text("后关闭困难").font(.system(size: 12))
+                        }
+                    }
+                    check("周一全天", is1) { is1 = $0; persist() }
+                    check("周二全天", is2) { is2 = $0; persist() }
+                    check("周三全天", is3) { is3 = $0; persist() }
+
+                    Text("开启矿洞一层简单")
+                        .font(.system(size: 13, weight: .semibold))
+                        .padding(.top, 4)
+                    check("其他时间全开一层简单", isOther) { isOther = $0; persist() }
+
+                    Text("开启矿洞最高层")
+                        .font(.system(size: 13, weight: .semibold))
+                        .padding(.top, 4)
+                    check("开启矿洞最高层", isMax) { isMax = $0; persist() }
+
+                    if !tip.isEmpty {
+                        Text(tip).font(.system(size: 12)).foregroundStyle(DlColors.inkMuted)
+                    }
+                }
+                .padding(16)
+            }
+            .background(DlColors.canvas)
+            .navigationTitle("开矿洞设置")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("关闭") { onClose() }
+                }
+            }
+            .safeAreaInset(edge: .bottom) {
+                Button {
+                    if listening {
+                        runner.stop(fid)
+                    } else {
+                        persist()
+                        if !is7 && !is1 && !isNew1 && !is2 && !is3 && !isOther && !isMax {
+                            tip = "没有勾选功能，请检查设置"
+                            return
+                        }
+                        runner.start(fid)
+                    }
+                    tick &+= 1
+                } label: {
+                    Text(listening ? "停止监听" : "开始监听")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 46)
+                        .background(listening ? Color.orange : DlColors.accentBlue)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(DlColors.canvas.opacity(0.96))
+            }
+            .onAppear { load() }
+            .onChange(of: hours) { _ in persist() }
+            .onChange(of: minute) { _ in persist() }
+            .onChange(of: hourEnd) { _ in persist() }
+            .onChange(of: minutesEnd) { _ in persist() }
+        }
+    }
+
+    private func load() {
+        is7 = store.getBool(fid, "is7")
+        is1 = store.getBool(fid, "is1")
+        isNew1 = store.getBool(fid, "is_new_1")
+        is2 = store.getBool(fid, "is2")
+        is3 = store.getBool(fid, "is3")
+        isOther = store.getBool(fid, "isOther", default: true)
+        isMax = store.getBool(fid, "isMax")
+        hours = store.getString(fid, "hours", default: "22")
+        minute = store.getString(fid, "minute", default: "0")
+        hourEnd = store.getString(fid, "hour_end", default: "6")
+        minutesEnd = store.getString(fid, "minutes_end", default: "0")
+    }
+
+    private func persist() {
+        store.setBool(fid, "is7", is7)
+        store.setBool(fid, "is1", is1)
+        store.setBool(fid, "is_new_1", isNew1)
+        store.setBool(fid, "is2", is2)
+        store.setBool(fid, "is3", is3)
+        store.setBool(fid, "isOther", isOther)
+        store.setBool(fid, "isMax", isMax)
+        store.setString(fid, "hours", hours)
+        store.setString(fid, "minute", minute)
+        store.setString(fid, "hour_end", hourEnd)
+        store.setString(fid, "minutes_end", minutesEnd)
+    }
+
+    private func check(_ title: String, _ on: Bool, set: @escaping (Bool) -> Void) -> some View {
+        Button {
+            guard !listening else { return }
+            set(!on)
+        } label: {
+            HStack {
+                Image(systemName: on ? "checkmark.square.fill" : "square")
+                    .foregroundStyle(on ? DlColors.accentBlue : DlColors.inkMuted)
+                Text(title).font(.system(size: 13)).foregroundStyle(DlColors.ink)
+                Spacer()
+            }
+        }
+        .buttonStyle(.plain)
+        .disabled(listening)
+    }
+
+    private func numField(_ text: Binding<String>) -> some View {
+        TextField("0", text: text)
+            .font(.system(size: 13))
+            .keyboardType(.numberPad)
+            .padding(.horizontal, 8)
+            .frame(width: 48, height: 32)
+            .background(DlColors.surface)
+            .overlay(RoundedRectangle(cornerRadius: 6).stroke(DlColors.border, lineWidth: 1))
+            .disabled(listening)
     }
 }

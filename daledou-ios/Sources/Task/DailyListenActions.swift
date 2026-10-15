@@ -520,6 +520,218 @@ enum DailyListenActions {
         onLog(tip)
         return tip
     }
+
+    // MARK: - 问鼎复仇
+
+    static func farmFuChouWenDing(
+        cookie: String,
+        onLog: @escaping (String) -> Void
+    ) async -> String {
+        let t = FeatureToggleStore.shared
+        let fid = "fuchou_wending"
+        func b(_ key: String, _ def: Bool = false) -> Bool { t.getBool(fid, key, default: def) }
+
+        var factionName = t.getString(fid, "faction_name").trimmingCharacters(in: .whitespacesAndNewlines)
+        let factionId = t.getString(fid, "faction_id").trimmingCharacters(in: .whitespacesAndNewlines)
+        if factionName.isEmpty && !factionId.isEmpty {
+            let (_, vf) = await LedouCGI.getPetPk(
+                cmd: "viewfaction", extra: ["id": factionId], cookie: cookie
+            )
+            try? await Task.sleep(nanoseconds: gapNs)
+            factionName = (CombatLog.jsonField(vf, "name") ?? "").ifBlank({
+                if let m = vf.range(of: #"帮派[：:]([^<\n]+)"#, options: .regularExpression) {
+                    return String(vf[m]).replacingOccurrences(of: #"帮派[：:]"#, with: "", options: .regularExpression)
+                        .trimmingCharacters(in: .whitespaces)
+                }
+                return ""
+            }())
+            if !factionName.isEmpty {
+                t.setString(fid, "faction_name", factionName)
+            }
+        }
+        if factionName.isEmpty {
+            let tip = "请填写目标帮派名或帮派 ID"
+            onLog(tip)
+            return tip
+        }
+
+        var regions: [Int] = []
+        if b("qy_dh", true) { regions.append(1) }
+        if b("qy_nh", true) { regions.append(2) }
+        if b("qy_xz", true) { regions.append(3) }
+        if b("qy_bh", true) { regions.append(4) }
+        if regions.isEmpty { regions = [1, 2, 3, 4] }
+
+        struct Hit {
+            let id: String
+            let name: String
+            let combat: Int
+            let region: Int
+        }
+        var hits: [Hit] = []
+        for region in regions {
+            for tli in ["0", "1", "2"] {
+                let (_, page) = await LedouCGI.getPetPk(
+                    cmd: "tbattle",
+                    extra: [
+                        "level": "3",
+                        "region": "\(region)",
+                        "occupied": "1",
+                        "time_left_index": tli,
+                        "op": "fuzzysearch",
+                    ],
+                    cookie: cookie
+                )
+                try? await Task.sleep(nanoseconds: 80_000_000)
+                var chunks = CombatLog.jsonChunks(page, "territories")
+                    .ifEmpty(CombatLog.jsonChunks(page, "level_3_territories"))
+                if chunks.isEmpty {
+                    let re = try? NSRegularExpression(pattern: #"\{[^{}]*"canoncial_id"[^{}]*\}"#)
+                    let ns = page as NSString
+                    re?.enumerateMatches(in: page, range: NSRange(location: 0, length: ns.length)) { m, _, _ in
+                        guard let m else { return }
+                        chunks.append(ns.substring(with: m.range))
+                    }
+                }
+                for c in chunks {
+                    let fac = CombatLog.jsonField(c, "owner_faction_name") ?? ""
+                    if !fac.contains(factionName) && fac != factionName { continue }
+                    let id = (CombatLog.jsonField(c, "canoncial_id") ?? "")
+                        .ifBlank(CombatLog.jsonField(c, "id") ?? "")
+                    if id.isEmpty { continue }
+                    if hits.contains(where: { $0.id == id }) { continue }
+                    hits.append(Hit(
+                        id: id,
+                        name: (CombatLog.jsonField(c, "name") ?? "").ifBlank(id),
+                        combat: CombatLog.jsonInt(c, "owner_combat_points") ?? 999_999,
+                        region: region
+                    ))
+                }
+            }
+        }
+        if hits.isEmpty {
+            let tip = "未找到帮派「\(factionName)」的地盘"
+            onLog(tip)
+            return tip
+        }
+        let sorted = hits.sorted { $0.combat < $1.combat }
+        let preview = sorted.prefix(5).map { "\($0.name)(\($0.combat))" }.joined(separator: ",")
+        onLog("命中 \(sorted.count)：\(preview)")
+        if !b("auto_occupy") {
+            return "查询到\(sorted.count)块"
+        }
+        let target = sorted[0]
+        onLog("占领 \(target.name) id=\(target.id)")
+        let (_, occ) = await LedouCGI.getPetPk(
+            cmd: "tbattle", extra: ["op": "occupy", "id": target.id], cookie: cookie
+        )
+        try? await Task.sleep(nanoseconds: gapNs)
+        let om = CombatLog.fromBody(occ).ifBlank("已请求")
+        onLog(om)
+        return om
+    }
+
+    // MARK: - 开矿洞
+
+    /// 按 OpenKdScreen 日程决定 floor/mode，再 `factionmine op=start`。
+    static func farmOpenKd(
+        cookie: String,
+        onLog: @escaping (String) -> Void
+    ) async -> String {
+        let t = FeatureToggleStore.shared
+        let fid = "open_kd"
+        func b(_ key: String, _ def: Bool = false) -> Bool { t.getBool(fid, key, default: def) }
+
+        let any = b("is7") || b("is1") || b("is_new_1") || b("is2") || b("is3") || b("isOther", true) || b("isMax")
+        if !any {
+            let tip = "没有勾选功能，请检查设置"
+            onLog(tip)
+            return tip
+        }
+
+        let wd = weekdayMon1()
+        let hour = hourGmt8()
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "Asia/Shanghai")!
+        let minute = cal.component(.minute, from: Date())
+        let nowMin = hour * 60 + minute
+
+        let openH = Int(t.getString(fid, "hours", default: "22")) ?? 22
+        let openM = Int(t.getString(fid, "minute", default: "0")) ?? 0
+        let endH = Int(t.getString(fid, "hour_end", default: "6")) ?? 6
+        let endM = Int(t.getString(fid, "minutes_end", default: "0")) ?? 0
+        let openAt = openH * 60 + openM
+        let endAt = endH * 60 + endM
+
+        // 困难五层：周日/周一时段、周一全天、周二/周三全天
+        var wantHard = false
+        if b("is1") && wd == 1 { wantHard = true }
+        if b("is2") && wd == 2 { wantHard = true }
+        if b("is3") && wd == 3 { wantHard = true }
+        if b("is7") {
+            // 开启时间后开困难；hour<6 视为周一
+            let inWindow: Bool = {
+                if wd == 7 { return nowMin >= openAt }
+                if wd == 1 {
+                    if b("is_new_1") { return nowMin < endAt }
+                    return nowMin >= openAt || hour < 6
+                }
+                return false
+            }()
+            if inWindow { wantHard = true }
+        }
+        if b("is_new_1") && wd == 1 && nowMin >= endAt {
+            wantHard = false
+        }
+
+        let floor: String
+        let mode: String
+        let label: String
+        if b("isMax") && !wantHard {
+            floor = "99"
+            mode = "3"
+            label = "最高层"
+        } else if wantHard {
+            floor = "5"
+            mode = "3"
+            label = "五层困难"
+        } else if b("isOther", true) {
+            floor = "1"
+            mode = "1"
+            label = "一层简单"
+        } else {
+            let tip = "当前时段无匹配开矿规则"
+            onLog(tip)
+            return tip
+        }
+
+        let (_, status) = await LedouCGI.getPetPk(cmd: "factionmine", cookie: cookie)
+        try? await Task.sleep(nanoseconds: gapNs)
+        let stMsg = CombatLog.fromBody(status)
+        if !stMsg.isEmpty { onLog("状态：\(stMsg)") }
+
+        let floorNow = CombatLog.jsonInt(status, "current_dungeon_floor") ?? 0
+        let modeNow = CombatLog.jsonInt(status, "current_dungeon_mode") ?? 0
+        let hp = CombatLog.jsonInt(status, "current_hp") ?? 0
+        let npc = CombatLog.jsonField(status, "npc_name") ?? ""
+        let alreadyOpen = floorNow > 0 || !npc.isEmpty || hp > 0
+        if alreadyOpen {
+            let tip = "矿洞已开 F\(floorNow)/M\(modeNow)，跳过 start"
+            onLog(tip)
+            return tip
+        }
+
+        let (_, start) = await LedouCGI.getPhonePk(
+            cmd: "factionmine",
+            extra: ["op": "start", "floor": floor, "mode": mode],
+            cookie: cookie
+        )
+        try? await Task.sleep(nanoseconds: gapNs)
+        let sm = CombatLog.fromBody(start).ifBlank("已请求开矿")
+        let msg = "开启\(label) F\(floor)/M\(mode)：\(sm)"
+        onLog(msg)
+        return msg
+    }
 }
 
 private extension String {

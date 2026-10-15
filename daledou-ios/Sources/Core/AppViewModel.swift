@@ -19,7 +19,7 @@ final class AppViewModel: ObservableObject {
     @Published var showHuoYue = false
     @Published var showLingJiang = false
     @Published var showDaiWan = false
-    /// 后台监听页：kuangdong / jiebiao / liangcao / wending
+    /// 后台监听页：kuangdong / jiebiao / liangcao / wending / fuchou_wending / open_kd
     @Published var showListenFeature = false
     @Published var listenFeatureId = ""
     @Published var canGoBack = false
@@ -657,7 +657,7 @@ final class AppViewModel: ObservableObject {
             showLingJiang = true
         case "daiwan":
             showDaiWan = true
-        case "kuangdong", "jiebiao", "liangcao", "wending":
+        case "kuangdong", "jiebiao", "liangcao", "wending", "fuchou_wending", "open_kd":
             listenFeatureId = id
             showListenFeature = true
         case "join_qq_group":
