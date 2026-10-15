@@ -124,8 +124,40 @@ final class HuoYueRunner: ObservableObject {
             let (_, b) = await LedouCGI.getPetPk(cmd: "intfmerid", extra: ["sub": "3"], cookie: cookie)
             log.append("传功", LedouCGI.shortBody(b, code: 200))
         }
-        if on("cb_dw_ll") || on("cb_dw_hj") || on("cb_dw_hjpm") || on("cb_gd_sy") {
-            log.append("活跃", "历练/画卷/幻境/深渊战斗循环下一刀补全（设置已保存）")
+        await phaseCombat(cookie: cookie)
+    }
+
+    /// 真源 HuoYueRunner.phaseDaiWanMatrix 中的战斗项（本切片：历练/画卷/幻境/深渊）。
+    private func phaseCombat(cookie: String) async {
+        func live(_ tag: String) -> (String) -> Void {
+            { line in
+                Task { @MainActor in TaskLogStore.shared.append(tag, line) }
+            }
+        }
+        if on("cb_dw_ll") {
+            if Task.isCancelled { return }
+            let msg = await HuoYueCombat.farmLilian(cookie: cookie, onLog: live("历练"))
+            log.append("历练", msg)
+        }
+        if on("cb_dw_fxll") {
+            if Task.isCancelled { return }
+            let msg = await HuoYueCombat.farmLilian(cookie: cookie, reverse: true, onLog: live("反向历练"))
+            log.append("反向历练", msg)
+        }
+        if on("cb_dw_hj") {
+            if Task.isCancelled { return }
+            let msg = await HuoYueCombat.farmHuaJuan(cookie: cookie, onLog: live("画卷"))
+            log.append("画卷", msg)
+        }
+        if on("cb_dw_hjpm") {
+            if Task.isCancelled { return }
+            let msg = await HuoYueCombat.farmHuanJing(cookie: cookie, onLog: live("幻境"))
+            log.append("幻境", msg)
+        }
+        if on("cb_gd_sy") {
+            if Task.isCancelled { return }
+            let msg = await HuoYueCombat.farmShenYuan(cookie: cookie, onLog: live("深渊"))
+            log.append("深渊", msg)
         }
     }
 
