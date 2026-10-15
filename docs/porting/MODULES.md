@@ -19,8 +19,8 @@
 | M10 | 背包查询 | partial | beibao | BeiBao* | fd84 |
 | M11 | 武林查区 | partial | chaqu | ChaQuView | fd84 |
 | M12 | 代玩设置 + Workers | partial | daiwan / DaiWanWorkers | Task/* + DaiWan* | fd85 |
-| M13 | 活跃代玩 | partial | huoyue / HuoYueRunner | HuoYue* + LivenessCatalog | fd86：冲分/大厅/礼包；乐斗池未接 |
-| M14 | 领奖报名 | todo | lingjiang | — | |
+| M13 | 活跃代玩 | partial | huoyue / HuoYueRunner | HuoYue* | fd86 |
+| M14 | 领奖报名 | partial | lingjiang / LingJiangRunner | LingJiang* + Resources/lingjiang | fd87：keymap 串行；QQ 列表跳过 |
 | M15 | 任务设置 | todo | renwu | — | |
 | M16 | 跑马灯 / 更多设置 | todo | paomadeng / more_settings | — | |
 | M17 | 战场监听族 | todo | kuangdong…wending | — | 后台受限 |
@@ -34,6 +34,6 @@
 
 ## 下一切片（建议）
 
-**M14 领奖报名** 或 **乐斗目标池**（补 M13 缺口）。
+**M15 任务设置** 或 **乐斗目标池**（补 M13）。
 
-fd86：活跃设置 + 一键编排骨架已落地。
+fd87：领奖报名 keymap + 一键领奖已落地。

@@ -23,6 +23,8 @@ final class AppViewModel: ObservableObject {
     @Published var showDaiWanHub = false
     /// M13：活跃代玩
     @Published var showHuoYue = false
+    /// M14：领奖报名
+    @Published var showLingJiang = false
     @Published var showCookieSheet = false
     @Published var cookieDraft = ""
     @Published var cookieError = ""
@@ -1162,6 +1164,9 @@ final class AppViewModel: ObservableObject {
         case "huoyue":
             showHuoYue = true
             return .handled
+        case "lingjiang":
+            showLingJiang = true
+            return .handled
         default:
             return .needsPlaceholder
         }
@@ -1181,6 +1186,7 @@ final class AppViewModel: ObservableObject {
         showDaiWanSettings = false
         showDaiWanHub = false
         showHuoYue = false
+        showLingJiang = false
         showAccountSwitch = false
         pendingURL = url
         statusText = "已打开 \(url.host ?? "")\(url.path)"

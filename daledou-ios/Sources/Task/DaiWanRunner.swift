@@ -77,7 +77,7 @@ final class DaiWanRunner: ObservableObject {
             log.append(typeName, tip)
             return tip
         case typeName.contains("一键领奖"):
-            let tip = "领奖引擎未接（见 M14）"
+            let tip = await LingJiangRunner.shared.runOnceAwait(cookie: cookie)
             log.append(typeName, tip)
             return tip
         case typeName.contains("手机武林"):
