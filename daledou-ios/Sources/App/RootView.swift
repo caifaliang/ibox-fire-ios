@@ -55,49 +55,12 @@ struct RootView: View {
         }
         .onAppear { vm.bootstrap() }
         .confirmationDialog("快捷菜单", isPresented: $vm.showMenu, titleVisibility: .visible) {
-            Button("功能中心") { vm.showFeatureHub = true }
             Button("一键登录") { vm.openOneKeyLogin() }
             Button("扫码登录") { vm.openScanLogin() }
-            Button("粘贴 Cookie") { vm.openCookieLoginSheet() }
+            Button("官方动画") { vm.openOfficialAnimation() }
             Button("刷新") { vm.reload() }
             Button("退出登录", role: .destructive) { vm.logout() }
             Button("取消", role: .cancel) {}
-        }
-        .sheet(isPresented: $vm.showFeatureHub) {
-            FeatureHubView()
-                .environmentObject(vm)
-        }
-        .sheet(isPresented: $vm.showAccountSwitch) {
-            AccountSwitchView()
-                .environmentObject(vm)
-        }
-        .sheet(isPresented: $vm.showBookmark) {
-            BookmarkView()
-                .environmentObject(vm)
-        }
-        .sheet(isPresented: $vm.showBeiBao) {
-            BeiBaoView()
-                .environmentObject(vm)
-        }
-        .sheet(isPresented: $vm.showChaQu) {
-            ChaQuView()
-                .environmentObject(vm)
-        }
-        .sheet(isPresented: $vm.showDaiWanSettings) {
-            DaiWanSettingsView()
-                .environmentObject(vm)
-        }
-        .sheet(isPresented: $vm.showDaiWanHub) {
-            DaiWanHubView()
-                .environmentObject(vm)
-        }
-        .sheet(isPresented: $vm.showHuoYue) {
-            HuoYueView()
-                .environmentObject(vm)
-        }
-        .sheet(isPresented: $vm.showLingJiang) {
-            LingJiangView()
-                .environmentObject(vm)
         }
         .sheet(isPresented: $vm.showCookieSheet) {
             CookiePasteSheet()
@@ -121,14 +84,6 @@ struct RootView: View {
                 }
             }
             Spacer()
-            Button {
-                vm.showFeatureHub = true
-            } label: {
-                Image(systemName: "square.grid.2x2")
-                    .font(.title3)
-                    .padding(8)
-            }
-            .accessibilityLabel("功能中心")
             Button {
                 vm.showMenu = true
             } label: {

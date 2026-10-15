@@ -11,7 +11,8 @@ description: >-
 
 ## When to use
 
-- Aligning a feature with Android (`F:\daledou`) or competitor (FandianAssistant)
+- Aligning a feature with Android (`F:\DaLedou_App_Dev\daledou`) or competitor (FandianAssistant)
+- **Do not** use `F:\daledou` as port source (wrong tree; purged fd88)
 - Login / WebView / Ruffle / scheme / Cookie issues after a “copy competitor” attempt
 - User asks for 对齐、对拍、规格、不要乱试
 
@@ -21,7 +22,7 @@ description: >-
 2. **Rewrite against the spec** with own assets. Do not ship competitor art/binary blobs.
 3. **One screen or one feature per change.** Verify before stacking more.
 4. **Log timeline + falsify.** Record what was tried and ruled out; do not re-try a killed approach without new evidence.
-5. **One-key follows Fandian iOS IPA** (`qrcode` + `schemacallback`). Android `p=` causes iOS「授权失败」— forbidden.
+5. **One-key iOS path:** `qrcode` + `schemacallback` (Android `p=` →「授权失败」— forbidden). **Do not 对拍饭点 one-key** (user: 无参考意义). Auto-return after Agree is not available; manual return + harvest is accepted.
 
 ## Workflow
 
@@ -72,9 +73,13 @@ Extract from screenshots: color, type size, spacing, radius, animation ms → to
 
 实测：QQ 同意后常无 schemacallback；手动回 App → `index.php` 种 OpenID → phonepk。须把 OpenID Cookie 写入 SessionStore，标题才变「大乐斗」。
 
+**GOLDEN baseline (2026-10-14 user OK):** build `138fd75` / `74977a8`. See `.cursor/memory/MEMORY.md`. Do not regress: fetcher-only-on-`fetchingTicket`, UInt32 `hash33`, jetsam cookie persist + restore harvest.
+
 | Forbidden | Why |
 |-----------|-----|
 | 打开 QQ 后仍 `ptqrshow` / 加载新 xlogin | 作废当前票 |
+| `waitingQQConfirm` 再挂 OneKeyTicketFetcher | 杀进程恢复后再开 QQ → 回壳闪退 |
+| Int `hash33`（非 UInt32 wrap） | 冷启 restore poll → SIGTRAP |
 | `*` → `%2A` | 票校验失败 |
 | `wtlogin?p=` | iOS 授权失败 |
 | 进游戏却不 `onCookiesCaptured` | 动画/战斗无 skey |

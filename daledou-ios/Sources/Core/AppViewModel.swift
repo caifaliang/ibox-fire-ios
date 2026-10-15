@@ -10,21 +10,6 @@ final class AppViewModel: ObservableObject {
 
     @Published var statusText = ""
     @Published var showMenu = false
-    /// M7：功能中心（对齐 Android FeatureCatalog）
-    @Published var showFeatureHub = false
-    /// M8：账号切换
-    @Published var showAccountSwitch = false
-    /// M9：书签 / 背包 / 查区
-    @Published var showBookmark = false
-    @Published var showBeiBao = false
-    @Published var showChaQu = false
-    /// M12：代玩设置 / 代玩界面
-    @Published var showDaiWanSettings = false
-    @Published var showDaiWanHub = false
-    /// M13：活跃代玩
-    @Published var showHuoYue = false
-    /// M14：领奖报名
-    @Published var showLingJiang = false
     @Published var showCookieSheet = false
     @Published var cookieDraft = ""
     @Published var cookieError = ""
@@ -1118,85 +1103,6 @@ final class AppViewModel: ObservableObject {
         forceEnterGame()
     }
 
-    enum FeatureOpenResult {
-        case handled
-        case needsPlaceholder
-    }
-
-    /// M7 路由：已接功能直接跑；其余由 UI 出占位页
-    @discardableResult
-    func openFeature(id: String) -> FeatureOpenResult {
-        Self.logOneKey("feature_tap", id)
-        switch id {
-        case "one_login":
-            openOneKeyLogin()
-            return .handled
-        case "scan_login":
-            openScanLogin()
-            return .handled
-        case "logout":
-            logout()
-            return .handled
-        case "qunxia_luxiang":
-            openOfficialAnimation()
-            return .handled
-        case "exit_app":
-            statusText = "请用系统手势划掉 App（iOS 无强制退出）"
-            return .handled
-        case "account_switch":
-            showAccountSwitch = true
-            return .handled
-        case "shuqian":
-            showBookmark = true
-            return .handled
-        case "beibao":
-            showBeiBao = true
-            return .handled
-        case "chaqu":
-            showChaQu = true
-            return .handled
-        case "daiwan":
-            showDaiWanSettings = true
-            return .handled
-        case "daiwan_ui":
-            showDaiWanHub = true
-            return .handled
-        case "huoyue":
-            showHuoYue = true
-            return .handled
-        case "lingjiang":
-            showLingJiang = true
-            return .handled
-        default:
-            return .needsPlaceholder
-        }
-    }
-
-    /// 功能页打开游戏内 URL（关中心后进壳）
-    func openExternalGameURL(_ url: URL) {
-        guard LedouCGI.isAllowedHost(url.host) else {
-            statusText = "拒绝非腾讯域名"
-            return
-        }
-        preferDesktopUA = false
-        showFeatureHub = false
-        showBookmark = false
-        showBeiBao = false
-        showChaQu = false
-        showDaiWanSettings = false
-        showDaiWanHub = false
-        showHuoYue = false
-        showLingJiang = false
-        showAccountSwitch = false
-        pendingURL = url
-        statusText = "已打开 \(url.host ?? "")\(url.path)"
-    }
-
-    /// M8：切换已存账号 → Session + 注入 WK + 进游戏
-    func applySavedAccount(_ account: SavedAccount) {
-        applyCookieHeader(account.cookie, status: "已切换到 \(account.name)")
-    }
-
     func applyCookieHeader(_ header: String, status: String) {
         let normalized = Self.normalizeCookieHeader(header)
         guard LoginURLs.hasGameSession(normalized) else {
@@ -1208,13 +1114,10 @@ final class AppViewModel: ObservableObject {
         loginMode = .idle
         preferDesktopUA = false
         session.save(cookieHeader: normalized)
-        showFeatureHub = false
-        showAccountSwitch = false
         cookieInjectToken &+= 1
         pendingURL = URL(string: LoginURLs.ledouEntry)
         refreshStatus()
         statusText = status
-        AppViewModel.logOneKey("account_switch", "qq=\(session.qq)")
     }
 
     func logout() {
