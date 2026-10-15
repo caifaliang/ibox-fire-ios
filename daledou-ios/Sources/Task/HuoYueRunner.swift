@@ -134,16 +134,31 @@ final class HuoYueRunner: ObservableObject {
                 Task { @MainActor in TaskLogStore.shared.append(tag, line) }
             }
         }
-        // 顺序对齐 APK matrix：12宫 → Boss → 幻境 → 历练 → 深渊 → 画卷 → 门派 → 反向历练 → 会武
+        // 顺序对齐 APK matrix
         if on("cb_dw_12") {
             if Task.isCancelled { return }
             let msg = await HuoYueCombat.farmGong12(cookie: cookie, onLog: live("12宫"))
             log.append("12宫", msg)
         }
+        if on("cb_gd_jjc") {
+            if Task.isCancelled { return }
+            let msg = await HuoYueCombat.farmJingJiChang(cookie: cookie, onLog: live("竞技场"))
+            log.append("竞技场", msg)
+        }
+        if on("cb_gd_qdp") {
+            if Task.isCancelled { return }
+            let msg = await HuoYueCombat.farmQiangDiPan(cookie: cookie, onLog: live("抢地盘"))
+            log.append("抢地盘", msg)
+        }
         if on("cb_dw_boss") {
             if Task.isCancelled { return }
             let msg = await HuoYueCombat.farmBoss(cookie: cookie, onLog: live("Boss"))
             log.append("Boss", msg)
+        }
+        if on("cb_dw_df") {
+            if Task.isCancelled { return }
+            let msg = await HuoYueCombat.farmDianFeng(cookie: cookie, onLog: live("巅峰"))
+            log.append("巅峰", msg)
         }
         if on("cb_dw_hjpm") {
             if Task.isCancelled { return }
