@@ -98,6 +98,9 @@ struct RootView: View {
         .sheet(isPresented: $vm.showLingJiang) {
             LingJiangView()
         }
+        .sheet(isPresented: $vm.showDaiWan) {
+            DaiWanView()
+        }
         .sheet(isPresented: $vm.showListenFeature) {
             ListenHostView(featureId: vm.listenFeatureId)
         }

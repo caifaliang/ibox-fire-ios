@@ -10,6 +10,7 @@ struct ListenHostView: View {
         case "kuangdong": KuangDongListenView(onClose: { dismiss() })
         case "jiebiao": JieBiaoListenView(onClose: { dismiss() })
         case "liangcao": LiangCaoListenView(onClose: { dismiss() })
+        case "wending": WenDingListenView(onClose: { dismiss() })
         default:
             NavigationStack {
                 Text("未知监听：\(featureId)")
@@ -502,6 +503,175 @@ struct LiangCaoListenView: View {
             await MainActor.run {
                 tip = CombatLog.fromBody(body)
                 TaskLogStore.shared.append("粮草", tip)
+            }
+        }
+    }
+
+    private func check(_ title: String, _ on: Bool, set: @escaping (Bool) -> Void) -> some View {
+        Button {
+            guard !listening else { return }
+            set(!on)
+        } label: {
+            HStack {
+                Image(systemName: on ? "checkmark.square.fill" : "square")
+                    .foregroundStyle(on ? DlColors.accentBlue : DlColors.inkMuted)
+                Text(title).font(.system(size: 13)).foregroundStyle(DlColors.ink)
+                Spacer()
+            }
+        }
+        .buttonStyle(.plain)
+        .disabled(listening)
+    }
+}
+
+// MARK: - 问鼎
+
+struct WenDingListenView: View {
+    var onClose: () -> Void
+    @ObservedObject private var runner = BackgroundListenRunner.shared
+    private let fid = "wending"
+    private let store = FeatureToggleStore.shared
+    @State private var occupy = true
+    @State private var noCd = false
+    @State private var draw = false
+    @State private var qyDh = false
+    @State private var qyNh = false
+    @State private var qyXz = false
+    @State private var qyBh = false
+    @State private var s2j = false
+    @State private var s3j = true
+    @State private var zbNot = false
+    @State private var tzNotify = false
+    @State private var ziYuan = "200"
+    @State private var zhanliMax = "500"
+    @State private var tip = ""
+    @State private var tick = 0
+
+    private var listening: Bool { runner.isActive(fid) || store.isEnabled(fid) }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 10) {
+                    if !tip.isEmpty {
+                        Text(tip).font(.system(size: 12)).foregroundStyle(DlColors.inkMuted)
+                    }
+                    Button("刷新状态") { refresh() }
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(DlColors.accentBlue)
+                        .frame(maxWidth: .infinity)
+
+                    Text("设置").font(.system(size: 13, weight: .semibold))
+                    check("自动占领", occupy) { occupy = $0; persist() }
+                    check("无次数时跳过", noCd) { noCd = $0; persist() }
+                    check("领取奖励/枯竭奖", draw) { draw = $0; persist() }
+                    check("东海", qyDh) { qyDh = $0; persist() }
+                    check("南荒", qyNh) { qyNh = $0; persist() }
+                    check("西泽", qyXz) { qyXz = $0; persist() }
+                    check("北寒", qyBh) { qyBh = $0; persist() }
+                    check("占二级", s2j) { s2j = $0; persist() }
+                    check("占三级", s3j) { s3j = $0; persist() }
+                    check("跳过战败点", zbNot) { zbNot = $0; persist() }
+                    check("无空地时提示", tzNotify) { tzNotify = $0; persist() }
+
+                    TextField("最低资源", text: $ziYuan)
+                        .font(.system(size: 13))
+                        .keyboardType(.numberPad)
+                        .padding(.horizontal, 10)
+                        .frame(height: 34)
+                        .background(DlColors.surface)
+                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(DlColors.border, lineWidth: 1))
+                        .disabled(listening)
+                    TextField("最高战力", text: $zhanliMax)
+                        .font(.system(size: 13))
+                        .keyboardType(.numberPad)
+                        .padding(.horizontal, 10)
+                        .frame(height: 34)
+                        .background(DlColors.surface)
+                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(DlColors.border, lineWidth: 1))
+                        .disabled(listening)
+
+                    Text("周一全天 / 周六 6 点后不做占领（领奖仍可）")
+                        .font(.system(size: 11))
+                        .foregroundStyle(DlColors.inkMuted)
+                }
+                .padding(16)
+            }
+            .background(DlColors.canvas)
+            .navigationTitle("问鼎")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("关闭") { onClose() }
+                }
+            }
+            .safeAreaInset(edge: .bottom) {
+                Button {
+                    if listening {
+                        runner.stop(fid)
+                    } else {
+                        persist()
+                        runner.start(fid)
+                    }
+                    tick &+= 1
+                } label: {
+                    Text(listening ? "停止监听" : "开始监听")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 46)
+                        .background(listening ? Color.orange : DlColors.accentBlue)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(DlColors.canvas.opacity(0.96))
+            }
+            .onAppear { load() }
+            .onChange(of: ziYuan) { _ in persist() }
+            .onChange(of: zhanliMax) { _ in persist() }
+        }
+    }
+
+    private func load() {
+        occupy = store.getBool(fid, "occupy", default: true)
+        noCd = store.getBool(fid, "no_cd")
+        draw = store.getBool(fid, "draw")
+        qyDh = store.getBool(fid, "qy_dh")
+        qyNh = store.getBool(fid, "qy_nh")
+        qyXz = store.getBool(fid, "qy_xz")
+        qyBh = store.getBool(fid, "qy_bh")
+        s2j = store.getBool(fid, "s2j")
+        s3j = store.getBool(fid, "s3j", default: true)
+        zbNot = store.getBool(fid, "zb_not")
+        tzNotify = store.getBool(fid, "tz_notify")
+        ziYuan = store.getString(fid, "zi_yuan", default: "200")
+        zhanliMax = store.getString(fid, "zhanli_max", default: "500")
+    }
+
+    private func persist() {
+        store.setBool(fid, "occupy", occupy)
+        store.setBool(fid, "no_cd", noCd)
+        store.setBool(fid, "draw", draw)
+        store.setBool(fid, "qy_dh", qyDh)
+        store.setBool(fid, "qy_nh", qyNh)
+        store.setBool(fid, "qy_xz", qyXz)
+        store.setBool(fid, "qy_bh", qyBh)
+        store.setBool(fid, "s2j", s2j)
+        store.setBool(fid, "s3j", s3j)
+        store.setBool(fid, "zb_not", zbNot)
+        store.setBool(fid, "tz_notify", tzNotify)
+        store.setString(fid, "zi_yuan", ziYuan)
+        store.setString(fid, "zhanli_max", zhanliMax)
+    }
+
+    private func refresh() {
+        Task {
+            let cookie = SessionStore.shared.cookieHeader
+            let (_, body) = await LedouCGI.getPetPk(cmd: "tbattle", cookie: cookie)
+            await MainActor.run {
+                tip = CombatLog.fromBody(body)
+                TaskLogStore.shared.append("问鼎", tip)
             }
         }
     }

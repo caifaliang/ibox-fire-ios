@@ -398,6 +398,128 @@ enum DailyListenActions {
         onLog(msg)
         return msg
     }
+
+    // MARK: - 问鼎监听
+
+    static func farmWenDingListen(
+        cookie: String,
+        onLog: @escaping (String) -> Void
+    ) async -> String {
+        let t = FeatureToggleStore.shared
+        let fid = "wending"
+        func b(_ key: String, _ def: Bool = false) -> Bool { t.getBool(fid, key, default: def) }
+
+        let wd = weekdayMon1()
+        let hour = hourGmt8()
+        let blocked = wd == 1 || (wd == 6 && hour >= 6)
+
+        if b("draw") {
+            let (_, d1) = await LedouCGI.getPetPk(
+                cmd: "tbattle", extra: ["op": "drawreward"], cookie: cookie
+            )
+            try? await Task.sleep(nanoseconds: gapNs)
+            onLog("奖励：\(CombatLog.fromBody(d1).ifBlank("drawreward"))")
+            let (_, d2) = await LedouCGI.getPetPk(
+                cmd: "tbattle", extra: ["op": "drawreleasereward"], cookie: cookie
+            )
+            try? await Task.sleep(nanoseconds: gapNs)
+            onLog("枯竭：\(CombatLog.fromBody(d2).ifBlank("drawreleasereward"))")
+        }
+        if !b("occupy", true) {
+            let tip = "未勾选自动占领"
+            onLog(tip)
+            return tip
+        }
+        if blocked {
+            let tip = "当前时段不做问鼎占领"
+            onLog(tip)
+            return tip
+        }
+
+        var regions: [Int] = []
+        if b("qy_dh") { regions.append(1) }
+        if b("qy_nh") { regions.append(2) }
+        if b("qy_xz") { regions.append(3) }
+        if b("qy_bh") { regions.append(4) }
+        if regions.isEmpty && b("region_auto", true) { regions = [1, 2, 3, 4] }
+        if regions.isEmpty { regions = [1] }
+
+        let s2 = b("s2j")
+        let s3 = b("s3j", true)
+        let minExp = Int(t.getString(fid, "zi_yuan", default: "200").trimmingCharacters(in: .whitespaces)) ?? 200
+        let maxZl = Int(t.getString(fid, "zhanli_max", default: "500").trimmingCharacters(in: .whitespaces)) ?? 500
+        let zbNot = b("zb_not")
+        var failSet = Set(
+            t.getString(fid, "zb_list")
+                .split(separator: ",")
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+                .filter { !$0.isEmpty }
+        )
+        let names = ["", "东海", "南荒", "西泽", "北寒"]
+
+        for region in regions {
+            let (_, page) = await LedouCGI.getPetPk(
+                cmd: "tbattle",
+                extra: ["op": "showregion", "region": "\(region)"],
+                cookie: cookie
+            )
+            try? await Task.sleep(nanoseconds: gapNs)
+            if page.contains("系统繁忙") { continue }
+            let left = CombatLog.jsonInt(page, "left_fight_times")
+            if b("no_cd"), let left, left <= 0 {
+                onLog("\(names[region])：无挑战次数")
+                continue
+            }
+            // self_territory 对象切片
+            if let m = page.range(of: #""self_territory"\s*:\s*(\{[^{}]*\})"#, options: .regularExpression) {
+                let chunk = String(page[m])
+                let selfId = (CombatLog.jsonField(chunk, "canoncial_id") ?? "")
+                    .ifBlank(CombatLog.jsonField(chunk, "id") ?? "")
+                if !selfId.isEmpty && selfId != "0" {
+                    onLog("\(names[region])：已有领地")
+                    continue
+                }
+            }
+            var arrays: [String] = []
+            if s2 { arrays += CombatLog.jsonChunks(page, "level_2_territories") }
+            if s3 { arrays += CombatLog.jsonChunks(page, "level_3_territories") }
+            if arrays.isEmpty {
+                arrays += CombatLog.jsonChunks(page, "level_3_territories")
+                arrays += CombatLog.jsonChunks(page, "level_2_territories")
+            }
+            for chunk in arrays {
+                let id = (CombatLog.jsonField(chunk, "canoncial_id") ?? "")
+                    .ifBlank(CombatLog.jsonField(chunk, "id") ?? "")
+                if id.isEmpty || id == "0" { continue }
+                if zbNot && failSet.contains(id) { continue }
+                let owner = CombatLog.jsonField(chunk, "owner_name") ?? ""
+                let faction = CombatLog.jsonField(chunk, "owner_faction_name") ?? ""
+                let combat = CombatLog.jsonInt(chunk, "owner_combat_points") ?? 999_999
+                let exploits = CombatLog.jsonInt(chunk, "exploits_left") ?? 0
+                let empty = (owner == "暂无" || owner.isEmpty) && (faction == "暂无" || faction.isEmpty)
+                if exploits < minExp { continue }
+                if !empty && combat > maxZl { continue }
+                onLog("\(names[region])占领 \(id) 战力\(combat) 资源\(exploits)")
+                let (_, occ) = await LedouCGI.getPetPk(
+                    cmd: "tbattle", extra: ["op": "occupy", "id": id], cookie: cookie
+                )
+                try? await Task.sleep(nanoseconds: gapNs)
+                let om = CombatLog.fromBody(occ).ifBlank("已请求")
+                onLog(om)
+                if om.contains("战败") || om.contains("失败") || (CombatLog.jsonInt(occ, "result") ?? 0) != 0 {
+                    failSet.insert(id)
+                    t.setString(fid, "zb_list", failSet.sorted().joined(separator: ","))
+                }
+                return om
+            }
+            if b("tz_notify") {
+                onLog("\(names[region])：未找到合适空地")
+            }
+        }
+        let tip = "问鼎本轮无目标"
+        onLog(tip)
+        return tip
+    }
 }
 
 private extension String {

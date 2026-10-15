@@ -63,7 +63,7 @@ enum FeatureCatalog {
         .init(id: "jiebiao", label: "劫镖", section: .background, iosWired: true),
         .init(id: "kuangdong", label: "矿洞", section: .background, iosWired: true),
         .init(id: "liangcao", label: "粮草", section: .background, pageTitle: "粮草掠夺", iosWired: true),
-        .init(id: "wending", label: "问鼎", section: .background),
+        .init(id: "wending", label: "问鼎", section: .background, iosWired: true),
         .init(id: "fuchou_wending", label: "复仇问鼎", section: .background, pageTitle: "问鼎复仇"),
         .init(id: "open_kd", label: "开启矿洞", section: .background, pageTitle: "开矿洞设置"),
         .init(id: "change_guard", label: "更换守护", section: .background, pageTitle: "换守护神设置"),
@@ -89,7 +89,7 @@ enum FeatureCatalog {
 
         // —— 设置相关 ——
         .init(id: "huoyue", label: "活跃代玩", section: .settings, pageTitle: "活跃代玩", iosWired: true),
-        .init(id: "daiwan", label: "代玩", section: .settings, pageTitle: "代玩设置(下滑更多)"),
+        .init(id: "daiwan", label: "代玩", section: .settings, pageTitle: "代玩设置(下滑更多)", iosWired: true),
         .init(id: "lingjiang", label: "领奖报名", section: .settings, pageTitle: "自动领奖报名设置(下滑更多)", iosWired: true),
         .init(id: "renwu", label: "任务", section: .settings, pageTitle: "任务设置(下滑更多)"),
         .init(id: "paomadeng", label: "跑马灯", section: .settings, pageTitle: "跑马灯设置"),

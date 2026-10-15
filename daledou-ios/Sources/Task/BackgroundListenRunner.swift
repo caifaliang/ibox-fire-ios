@@ -7,7 +7,7 @@ final class BackgroundListenRunner: ObservableObject {
 
     @Published private(set) var activeIds: Set<String> = []
     private var job: Task<Void, Never>?
-    private let listenIds = ["kuangdong", "jiebiao", "liangcao"]
+    private let listenIds = ["kuangdong", "jiebiao", "liangcao", "wending"]
 
     private init() {}
 
@@ -91,6 +91,8 @@ final class BackgroundListenRunner: ObservableObject {
             msg = await DailyListenActions.farmJieBiao(cookie: cookie, onLog: live)
         case "liangcao":
             msg = await DailyListenActions.farmLiangCao(cookie: cookie, onLog: live)
+        case "wending":
+            msg = await DailyListenActions.farmWenDingListen(cookie: cookie, onLog: live)
         default:
             return
         }
@@ -105,6 +107,7 @@ final class BackgroundListenRunner: ObservableObject {
         case "kuangdong": return "矿洞"
         case "jiebiao": return "劫镖"
         case "liangcao": return "粮草"
+        case "wending": return "问鼎"
         default: return id
         }
     }
