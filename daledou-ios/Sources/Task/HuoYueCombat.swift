@@ -6,8 +6,8 @@ enum HuoYueCombat {
     private static let maxHuaJuan = 20
     private static let maxHuanJing = 40
     private static let maxAbyss = 40
-    private static let gapNs: UInt64 = 80_000_000
-    private static let gapSkipNs: UInt64 = 20_000_000
+    static let gapNs: UInt64 = 80_000_000
+    static let gapSkipNs: UInt64 = 20_000_000
 
     private static let lilianDiyDefault = [
         20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2,

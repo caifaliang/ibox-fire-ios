@@ -127,37 +127,58 @@ final class HuoYueRunner: ObservableObject {
         await phaseCombat(cookie: cookie)
     }
 
-    /// 真源 HuoYueRunner.phaseDaiWanMatrix 中的战斗项（本切片：历练/画卷/幻境/深渊）。
+    /// 真源 HuoYueRunner.phaseDaiWanMatrix 战斗项。
     private func phaseCombat(cookie: String) async {
         func live(_ tag: String) -> (String) -> Void {
             { line in
                 Task { @MainActor in TaskLogStore.shared.append(tag, line) }
             }
         }
-        if on("cb_dw_ll") {
+        // 顺序对齐 APK matrix：12宫 → Boss → 幻境 → 历练 → 深渊 → 画卷 → 门派 → 反向历练 → 会武
+        if on("cb_dw_12") {
             if Task.isCancelled { return }
-            let msg = await HuoYueCombat.farmLilian(cookie: cookie, onLog: live("历练"))
-            log.append("历练", msg)
+            let msg = await HuoYueCombat.farmGong12(cookie: cookie, onLog: live("12宫"))
+            log.append("12宫", msg)
         }
-        if on("cb_dw_fxll") {
+        if on("cb_dw_boss") {
             if Task.isCancelled { return }
-            let msg = await HuoYueCombat.farmLilian(cookie: cookie, reverse: true, onLog: live("反向历练"))
-            log.append("反向历练", msg)
-        }
-        if on("cb_dw_hj") {
-            if Task.isCancelled { return }
-            let msg = await HuoYueCombat.farmHuaJuan(cookie: cookie, onLog: live("画卷"))
-            log.append("画卷", msg)
+            let msg = await HuoYueCombat.farmBoss(cookie: cookie, onLog: live("Boss"))
+            log.append("Boss", msg)
         }
         if on("cb_dw_hjpm") {
             if Task.isCancelled { return }
             let msg = await HuoYueCombat.farmHuanJing(cookie: cookie, onLog: live("幻境"))
             log.append("幻境", msg)
         }
+        if on("cb_dw_ll") {
+            if Task.isCancelled { return }
+            let msg = await HuoYueCombat.farmLilian(cookie: cookie, onLog: live("历练"))
+            log.append("历练", msg)
+        }
         if on("cb_gd_sy") {
             if Task.isCancelled { return }
             let msg = await HuoYueCombat.farmShenYuan(cookie: cookie, onLog: live("深渊"))
             log.append("深渊", msg)
+        }
+        if on("cb_dw_hj") {
+            if Task.isCancelled { return }
+            let msg = await HuoYueCombat.farmHuaJuan(cookie: cookie, onLog: live("画卷"))
+            log.append("画卷", msg)
+        }
+        if on("cb_dw_mp") {
+            if Task.isCancelled { return }
+            let msg = await HuoYueCombat.farmMenPai(cookie: cookie, onLog: live("门派"))
+            log.append("门派", msg)
+        }
+        if on("cb_dw_fxll") {
+            if Task.isCancelled { return }
+            let msg = await HuoYueCombat.farmLilian(cookie: cookie, reverse: true, onLog: live("反向历练"))
+            log.append("反向历练", msg)
+        }
+        if on("cb_dw_hw") {
+            if Task.isCancelled { return }
+            let msg = await HuoYueCombat.farmHuiWu(cookie: cookie, onLog: live("会武"))
+            log.append("会武", msg)
         }
     }
 

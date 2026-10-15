@@ -57,6 +57,25 @@ enum LedouCGI {
         }
     }
 
+    /// 解析页面 href（相对/绝对 phonepk|petpk），仅腾讯域。
+    static func getHref(_ href: String, cookie: String) async -> (Int, String) {
+        var s = href.trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "&amp;", with: "&")
+        if s.hasPrefix("//") { s = "https:" + s }
+        if !s.contains("://") {
+            if s.contains("petpk") || s.hasPrefix("cgi-bin/petpk") {
+                s = "https://fight.pet.qq.com/" + s.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+            } else if s.contains("?") {
+                s = phonepkBase + (s.contains("cmd=") ? "?" + s.split(separator: "?").last! : "?" + s)
+            } else {
+                s = phonepkBase + "?" + s
+            }
+        }
+        guard let url = URL(string: s) else { return (-1, "") }
+        let ref = (url.host ?? "").contains("pet") ? petpkBase : phonepkBase
+        return await get(url: url, cookie: cookie, referer: ref)
+    }
+
     static func shortBody(_ body: String, code: Int) -> String {
         if code == -2 { return "拒绝非腾讯域名" }
         if code < 0 { return "网络失败(\(code))" }
