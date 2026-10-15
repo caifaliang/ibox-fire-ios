@@ -155,10 +155,25 @@ final class HuoYueRunner: ObservableObject {
             let msg = await HuoYueCombat.farmBoss(cookie: cookie, onLog: live("Boss"))
             log.append("Boss", msg)
         }
+        if on("cb_dw_wd") {
+            if Task.isCancelled { return }
+            let msg = await HuoYueCombat.farmWenDing(cookie: cookie, onLog: live("问鼎"))
+            log.append("问鼎", msg)
+        }
+        if on("cb_dw_hslj") {
+            if Task.isCancelled { return }
+            let msg = await HuoYueCombat.farmHuaShan(cookie: cookie, onLog: live("华山"))
+            log.append("华山", msg)
+        }
         if on("cb_dw_df") {
             if Task.isCancelled { return }
             let msg = await HuoYueCombat.farmDianFeng(cookie: cookie, onLog: live("巅峰"))
             log.append("巅峰", msg)
+        }
+        if on("cb_gd_dst") {
+            if Task.isCancelled { return }
+            let msg = await HuoYueCombat.farmDouShenTa(cookie: cookie, onLog: live("斗神塔"))
+            log.append("斗神塔", msg)
         }
         if on("cb_dw_hjpm") {
             if Task.isCancelled { return }
