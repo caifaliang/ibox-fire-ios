@@ -6,36 +6,69 @@ struct RootView: View {
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
             VStack(spacing: 0) {
-                topBar
+                // 顶：工具条 + 状态条（对齐 APK embed 壳）
+                ShellToolStrip()
+                    .environmentObject(vm)
+                ShellStatusBar()
+                    .environmentObject(vm)
+                Rectangle()
+                    .fill(
+                        LinearGradient(
+                            colors: [DlColors.brand, DlColors.accentBlue, DlColors.brand],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .frame(height: 2)
+
                 if !vm.statusText.isEmpty {
                     oneKeyStatusBanner
                 }
-                // 对齐 APK :ruffle：开战时从树里拆掉游戏 WKWebView（不是 about:blank），
-                // 让 WebContent 进程真正退出，把 jetsam 预算让给 Ruffle。
-                if vm.suspendGameWebForReplay {
-                    ZStack {
-                        Color.black
-                        Text(vm.statusText.isEmpty ? "返回游戏中…" : vm.statusText)
-                            .font(.subheadline)
-                            .foregroundStyle(.white.opacity(0.85))
-                            .multilineTextAlignment(.center)
-                            .padding()
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else {
-                    GameWebView(vm: vm, clearEpoch: vm.clearWebEpoch)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
-            }
 
-            if vm.showViewFightFab {
+                // 中：首页 WebView 保活；其它 Tab 盖在上层
+                ZStack {
+                    gameArea
+                        .opacity(vm.shellTab == 0 ? 1 : 0)
+                        .allowsHitTesting(vm.shellTab == 0)
+                        .zIndex(vm.shellTab == 0 ? 1 : 0)
+
+                    if vm.shellTab != 0 {
+                        Group {
+                            switch vm.shellTab {
+                            case 1:
+                                ShellPlaceholderTab(
+                                    title: "日志",
+                                    subtitle: "挂机监听 · 定时脚本 · 代玩入口（待接）"
+                                )
+                            case 2:
+                                ShellPlaceholderTab(
+                                    title: "记录",
+                                    subtitle: "排行 / 战斗记录（待接）"
+                                )
+                            default:
+                                MineHubPlaceholder()
+                                    .environmentObject(vm)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(DlColors.canvas)
+                        .zIndex(2)
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                UnifiedBottomDock()
+                    .environmentObject(vm)
+            }
+            .background(DlColors.canvas)
+
+            if vm.showViewFightFab && vm.shellTab == 0 {
                 Button {
                     vm.openOfficialAnimation()
                 } label: {
                     HStack(spacing: 6) {
                         if vm.viewFightLoading {
-                            ProgressView()
-                                .tint(.white)
+                            ProgressView().tint(.white)
                         }
                         Text(vm.viewFightLoading ? "加载中" : "官方动画")
                             .font(.subheadline.weight(.semibold))
@@ -43,23 +76,20 @@ struct RootView: View {
                     .foregroundStyle(.white)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 12)
-                    .background(Color.blue.opacity(0.92))
+                    .background(DlColors.accentBlue.opacity(0.92))
                     .clipShape(Capsule())
                     .shadow(color: .black.opacity(0.25), radius: 6, y: 2)
                 }
                 .disabled(vm.viewFightLoading)
                 .padding(.trailing, 16)
-                .padding(.bottom, 28)
+                .padding(.bottom, 72)
                 .accessibilityLabel("官方动画")
             }
         }
         .onAppear { vm.bootstrap() }
-        .confirmationDialog("快捷菜单", isPresented: $vm.showMenu, titleVisibility: .visible) {
-            Button("一键登录") { vm.openOneKeyLogin() }
-            Button("扫码登录") { vm.openScanLogin() }
-            Button("刷新") { vm.reload() }
-            Button("退出登录", role: .destructive) { vm.logout() }
-            Button("取消", role: .cancel) {}
+        .sheet(isPresented: $vm.showShellMenu) {
+            ShellMenuSheet()
+                .environmentObject(vm)
         }
         .sheet(isPresented: $vm.showCookieSheet) {
             CookiePasteSheet()
@@ -72,32 +102,24 @@ struct RootView: View {
         }
     }
 
-    private var topBar: some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(vm.titleHint).font(.headline)
-                if vm.session.isLoggedIn {
-                    Text("QQ \(vm.qqLabel.isEmpty ? "…" : vm.qqLabel)")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
+    @ViewBuilder
+    private var gameArea: some View {
+        if vm.suspendGameWebForReplay {
+            ZStack {
+                Color.black
+                Text(vm.statusText.isEmpty ? "返回游戏中…" : vm.statusText)
+                    .font(.subheadline)
+                    .foregroundStyle(.white.opacity(0.85))
+                    .multilineTextAlignment(.center)
+                    .padding()
             }
-            Spacer()
-            Button {
-                vm.showMenu = true
-            } label: {
-                Image(systemName: "line.3.horizontal")
-                    .font(.title3)
-                    .padding(8)
-            }
-            .accessibilityLabel("快捷菜单")
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            GameWebView(vm: vm, clearEpoch: vm.clearWebEpoch)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(.ultraThinMaterial)
     }
 
-    /// 一键等待回壳用琥珀条；其它阶段保持轻提示
     private var oneKeyStatusBanner: some View {
         let kind = vm.oneKeyBannerKind
         let bg: Color = {
@@ -119,8 +141,7 @@ struct RootView: View {
         }()
         return HStack(alignment: .top, spacing: 8) {
             if kind == .progress {
-                ProgressView()
-                    .controlSize(.small)
+                ProgressView().controlSize(.small)
             } else if kind == .warn {
                 Image(systemName: "arrow.uturn.backward.circle.fill")
                     .foregroundStyle(fg)

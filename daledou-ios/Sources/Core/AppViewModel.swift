@@ -11,6 +11,31 @@ final class AppViewModel: ObservableObject {
     @Published var statusText = ""
     @Published var showMenu = false
     @Published var showCookieSheet = false
+    /// 根壳四席 Tab：0首页 1日志 2记录 3我的（对齐 AppRootScaffold）
+    @Published var shellTab = 0
+    @Published var showShellMenu = false
+    @Published var canGoBack = false
+    @Published var canGoForward = false
+    /// 后台开关 UI（Worker 未接，仅落盘）
+    @Published var backgroundEnabled: Bool = UserDefaults.standard.bool(forKey: "daledou.shell.bg_enabled") {
+        didSet { UserDefaults.standard.set(backgroundEnabled, forKey: "daledou.shell.bg_enabled") }
+    }
+    @Published var backgroundIntervalSec: Int = {
+        let v = UserDefaults.standard.integer(forKey: "daledou.shell.bg_interval")
+        return v > 0 ? v : 10
+    }()
+
+    var shellDisplayName: String {
+        if session.isLoggedIn {
+            let q = qqLabel.isEmpty ? session.qq : qqLabel
+            return q.isEmpty ? "已登陆" : "QQ \(q)"
+        }
+        return "未登陆"
+    }
+
+    var shellVipLabel: String {
+        session.isLoggedIn ? "会员状态：待接 APK" : ""
+    }
     @Published var cookieDraft = ""
     @Published var cookieError = ""
     @Published var pendingURL: URL?
@@ -574,6 +599,49 @@ final class AppViewModel: ObservableObject {
 
     func reload() {
         webReloadToken &+= 1
+    }
+
+    func updateShellNav(canBack: Bool, canForward: Bool) {
+        canGoBack = canBack
+        canGoForward = canForward
+    }
+
+    func shellGoBack() {
+        gameWebView?.goBack()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+            guard let self, let wv = self.gameWebView else { return }
+            self.updateShellNav(canBack: wv.canGoBack, canForward: wv.canGoForward)
+        }
+    }
+
+    func shellGoForward() {
+        gameWebView?.goForward()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+            guard let self, let wv = self.gameWebView else { return }
+            self.updateShellNav(canBack: wv.canGoBack, canForward: wv.canGoForward)
+        }
+    }
+
+    /// 顶栏打开链接：仅腾讯相关域
+    @discardableResult
+    func openShellURL(_ raw: String) -> Bool {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        var s = trimmed
+        if s.hasPrefix("//") { s = "https:" + s }
+        if !s.contains("://"), s.contains("cgi-bin") || s.hasPrefix("qpet") {
+            s = "https://dld.qzapp.z.qq.com/qpet/cgi-bin/phonepk?" + s
+                .replacingOccurrences(of: "^.*phonepk\\?", with: "", options: .regularExpression)
+        }
+        guard let url = URL(string: s), let host = url.host?.lowercased() else { return false }
+        let ok = host.hasSuffix(".qq.com") || host == "qq.com"
+            || host.hasSuffix(".tencent.com") || host == "tencent.com"
+        guard ok else { return false }
+        preferDesktopUA = false
+        shellTab = 0
+        pendingURL = url
+        statusText = "已打开 \(host)"
+        return true
     }
 
     /// Exp A：最近一次回壳是否来自 schemacallback（onOpenURL）

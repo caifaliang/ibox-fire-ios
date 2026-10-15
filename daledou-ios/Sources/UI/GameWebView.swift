@@ -262,7 +262,10 @@ struct GameWebView: UIViewRepresentable {
         }
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-            Task { @MainActor in vm.onNavigated(to: webView.url) }
+            Task { @MainActor in
+                vm.onNavigated(to: webView.url)
+                vm.updateShellNav(canBack: webView.canGoBack, canForward: webView.canGoForward)
+            }
             webView.evaluateJavaScript(stayJS, completionHandler: nil)
             scheduleCookieCapture(webView)
             if vm.loginMode == .oneKey {
