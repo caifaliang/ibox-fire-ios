@@ -91,6 +91,11 @@ final class AppViewModel: ObservableObject {
     private var lastViewFightUrl: String?
     private var resumeGameURL: URL?
 
+    /// 背包页悬浮钮（cmd=store/bag 或标题含「背包」）
+    @Published var showBeiBaoFab = false
+    private var pageTitleForFab = ""
+    private var beiBaoPresetKeyword = ""
+
     private var foregroundObserversInstalled = false
     /// RootView.onAppear 会在回前台时再触发；只允许真正冷启动跑一次
     private var didBootstrap = false
@@ -1059,6 +1064,20 @@ final class AppViewModel: ObservableObject {
         }
 
         updateViewFightFab(for: currentURLString)
+        updateBeiBaoFab(url: currentURLString, title: pageTitleForFab)
+    }
+
+    /// WebView 标题变化时刷新背包 FAB（URL 未变但标题含「背包」）。
+    func onPageTitleChanged(_ title: String) {
+        pageTitleForFab = title
+        updateBeiBaoFab(url: currentURLString, title: title)
+    }
+
+    func openBeiBaoFromFab() {
+        if !beiBaoPresetKeyword.isEmpty {
+            FeatureToggleStore.shared.setString("beibao", "keyword", beiBaoPresetKeyword)
+        }
+        showBeiBao = true
     }
 
     /// 从 WKWebView Cookie 补写 SessionStore（一键回壳后常见「进了游戏但未 isLoggedIn」）
@@ -1099,6 +1118,39 @@ final class AppViewModel: ObservableObject {
             // 离开战报页则隐藏（拼接页暂不做）
             showViewFightFab = false
         }
+    }
+
+    /// 真源：`GameShellScreen.isBeiBaoPageUrl` + 标题含「背包」。
+    private func updateBeiBaoFab(url: String, title: String) {
+        let onBag = Self.isBeiBaoPageUrl(url) || title.contains("背包")
+        showBeiBaoFab = onBag
+        if let preset = Self.beiBaoPresetKeyword(for: url) {
+            beiBaoPresetKeyword = preset
+        } else if !onBag {
+            beiBaoPresetKeyword = ""
+        }
+    }
+
+    static func isBeiBaoPageUrl(_ url: String?) -> Bool {
+        guard let url, !url.isEmpty else { return false }
+        let u = url.lowercased()
+        if u.hasPrefix("data:") || u == "about:blank" { return false }
+        return u.contains("cmd=store")
+            || u.contains("cmd=bag")
+            || (u.contains("cmd=view") && u.contains("kind=0") && u.contains("sub=2"))
+            || u.contains("%e8%83%8c%e5%8c%85")
+            || url.contains("背包")
+    }
+
+    /// 真源：`beiBaoPresetKeyword` — 部分玩法页预填检索关键字。
+    static func beiBaoPresetKeyword(for url: String?) -> String? {
+        guard let url, !url.isEmpty else { return nil }
+        if url.contains("cmd=immortals"), url.contains("op=viewupgradepage") { return "残片" }
+        if url.contains("cmd=doppelganger"),
+           url.contains("op=13") || url.contains("op=14") { return "元婴飞仙果" }
+        if url.contains("cmd=luandou"), url.contains("op=10") { return "斗灵石" }
+        if url.contains("cmd=ancient_gods"), url.contains("op=2") { return "上古神兽" }
+        return nil
     }
 
     /// 乐斗过程页 → 取 Act → 打开官方动画
@@ -1324,6 +1376,9 @@ final class AppViewModel: ObservableObject {
         cookieDraft = ""
         didEnterGameFromCapture = false
         showViewFightFab = false
+        showBeiBaoFab = false
+        beiBaoPresetKeyword = ""
+        pageTitleForFab = ""
         showReplay = false
         viewFightLoading = false
         lastViewFightUrl = nil

@@ -32,6 +32,9 @@ struct BeiBaoView: View {
                     Button("关闭") { dismiss() }
                 }
             }
+            .onAppear {
+                keyword = FeatureToggleStore.shared.getString("beibao", "keyword")
+            }
             .task { await reload() }
         }
     }

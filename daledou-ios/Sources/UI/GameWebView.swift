@@ -285,6 +285,7 @@ struct GameWebView: UIViewRepresentable {
             Task { @MainActor in
                 vm.pageLoading = false
                 vm.onNavigated(to: webView.url)
+                vm.onPageTitleChanged(webView.title ?? "")
                 vm.updateShellNav(canBack: webView.canGoBack, canForward: webView.canGoForward)
             }
             webView.evaluateJavaScript(stayJS, completionHandler: nil)

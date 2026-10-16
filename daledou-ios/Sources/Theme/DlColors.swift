@@ -21,4 +21,6 @@ enum DlColors {
     static let primary = brand
     static let secondary = accentBlue
     static let cinnabar = Color(red: 0xC4 / 255, green: 0x5C / 255, blue: 0x3E / 255)
+    /// 背包页悬浮钮（对齐 Android `FabBeiBao` 0xFFD4785C）
+    static let fabBeiBao = Color(red: 0xD4 / 255, green: 0x78 / 255, blue: 0x5C / 255)
 }

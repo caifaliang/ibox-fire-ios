@@ -52,6 +52,25 @@ struct RootView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .overlay(alignment: .topTrailing) {
+                    // 背包页悬浮钮 → 笔记式背包检索（对齐 APK DraggableBeiBaoFab / TopEnd）
+                    if vm.showBeiBaoFab && vm.shellTab == 0 && !vm.suspendGameWebForReplay {
+                        Button {
+                            vm.openBeiBaoFromFab()
+                        } label: {
+                            Text("背包查询")
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundStyle(.white)
+                                .frame(width: 76, height: 44)
+                                .background(DlColors.fabBeiBao)
+                                .clipShape(Capsule())
+                                .shadow(color: DlColors.fabBeiBao.opacity(0.35), radius: 6, y: 2)
+                        }
+                        .padding(.top, 12)
+                        .padding(.trailing, 12)
+                        .accessibilityLabel("背包查询")
+                    }
+                }
 
                 UnifiedBottomDock()
                     .environmentObject(vm)
