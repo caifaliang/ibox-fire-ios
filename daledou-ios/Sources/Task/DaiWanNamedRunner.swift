@@ -202,6 +202,11 @@ final class DaiWanNamedRunner: ObservableObject {
             return await MoreExtraActions.farmXinChunDuiLian(cookie: cookie, onLog: onLog)
         case "掌上道聚城", "道聚城":
             return await MoreExtraActions.farmDaoJuCheng(cookie: cookie, onLog: onLog)
+        case "一键自动换装", "换装":
+            return await MoreExtraActions.farmYiJianHuanZhuang(onLog: onLog)
+        case let name where name.hasPrefix("自动换装"):
+            let id = Int(name.filter(\.isNumber)) ?? 1
+            return await MoreExtraActions.applyOutfitPlan(planId: id, cookie: cookie, onLog: onLog)
         case "定时代玩":
             return await DiyUrlActions.run(featureId: "diy_auto_daiwan", cookie: cookie, onLog: onLog)
         case "定时任务", "自定义任务":

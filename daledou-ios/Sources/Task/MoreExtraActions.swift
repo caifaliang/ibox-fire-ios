@@ -1685,6 +1685,47 @@ enum MoreExtraActions {
         return await DaoJuActions.farm(onLog: onLog)
     }
 
+    // MARK: - 换装
+
+    /// 应用装扮方案 id（phonepk outfit op=1）。
+    static func applyOutfitPlan(
+        planId: Int,
+        cookie: String,
+        onLog: @escaping (String) -> Void
+    ) async -> String {
+        let id = max(1, min(5, planId))
+        onLog("应用装扮方案\(id)…")
+        let (_, body) = await LedouCGI.getPhonePk(
+            cmd: "outfit", extra: ["op": "1", "id": "\(id)"], cookie: cookie
+        )
+        try? await Task.sleep(nanoseconds: gapNs)
+        let msg = CombatLog.fromBody(body).ifBlankMe(LedouCGI.shortBody(body, code: 200))
+        onLog("装扮\(id):\(msg.ifBlankMe("已请求"))")
+        return "装扮\(id)"
+    }
+
+    /// 真源：`farmYiJianHuanZhuang` — 装扮槽 + 可选星盘（星盘镶嵌下一切片再加深）。
+    static func farmYiJianHuanZhuang(
+        onLog: @escaping (String) -> Void
+    ) async -> String {
+        let cookie = SessionStore.shared.cookieHeader
+        guard LoginURLs.hasGameSession(cookie) else {
+            onLog("请先登录")
+            return "未登录"
+        }
+        let t = FeatureToggleStore.shared
+        let plan = (1...5).first(where: { t.getBool("huoyue", "rb_yjhz_\($0)") }) ?? 1
+        onLog("一键自动换装 方案\(plan)")
+        var parts: [String] = []
+        parts.append(await applyOutfitPlan(planId: plan, cookie: cookie, onLog: onLog))
+        if t.getBool("huoyue", "cb_yjhz_xp") {
+            onLog("星盘换装：请先在活跃设置填写目标数；完整镶嵌循环下一切片接入")
+            parts.append("星盘待加深")
+        }
+        onLog("神将/佣兵/专精/头像等方案编辑器尚未接入，已跳过")
+        return parts.joined(separator: "；")
+    }
+
     private static func parseDuiLianOptions(_ body: String) -> [(String, String, String)] {
         var out: [(String, String, String)] = []
         let ns = body as NSString

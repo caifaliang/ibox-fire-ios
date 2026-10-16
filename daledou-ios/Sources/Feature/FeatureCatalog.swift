@@ -98,7 +98,7 @@ enum FeatureCatalog {
         .init(id: "more_settings", label: "更多", section: .settings, pageTitle: "更多设置(下滑更多)", iosWired: true),
 
         // —— 更多 ——
-        .init(id: "huanzhuang", label: "换装", section: .more),
+        .init(id: "huanzhuang", label: "换装", section: .more, pageTitle: "换装", iosWired: true),
         .init(id: "zidong_qianghua", label: "自动强化", section: .more),
         .init(id: "beibao", label: "背包查询", section: .more, iosWired: true),
         .init(id: "chaqu", label: "武林查区", section: .more, pageTitle: "查区", iosWired: true),
