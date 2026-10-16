@@ -15,6 +15,8 @@ struct ListenHostView: View {
         case "open_kd": OpenKdListenView(onClose: { dismiss() })
         case "change_guard": ChangeGuardListenView(onClose: { dismiss() })
         case "paiqian": PaiQianListenView(onClose: { dismiss() })
+        case "menpai_shouye", "hejiu", "xkx", "friend_mgmt":
+            SimpleListenView(featureId: featureId, onClose: { dismiss() })
         default:
             NavigationStack {
                 Text("未知监听：\(featureId)")
@@ -23,6 +25,56 @@ struct ListenHostView: View {
                             Button("关闭") { dismiss() }
                         }
                     }
+            }
+        }
+    }
+}
+
+/// 守夜 / 喝酒 / 侠客行 / 好友：先开监听跑 CGI，细项后续再补设置页。
+struct SimpleListenView: View {
+    let featureId: String
+    var onClose: () -> Void
+    @ObservedObject private var runner = BackgroundListenRunner.shared
+    private let store = FeatureToggleStore.shared
+
+    private var title: String {
+        switch featureId {
+        case "menpai_shouye": return "门派守夜"
+        case "hejiu": return "喝酒"
+        case "xkx": return "侠客行"
+        case "friend_mgmt": return "好友管理"
+        default: return featureId
+        }
+    }
+
+    private var listening: Bool { runner.isActive(featureId) || store.isEnabled(featureId) }
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 16) {
+                Text("点「开始监听」周期跑一轮；也可在悬浮窗点同名磁贴立即跑。")
+                    .font(.system(size: 13))
+                    .foregroundStyle(DlColors.inkMuted)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Button(listening ? "停止监听" : "开始监听") {
+                    if listening { runner.stop(featureId) } else { runner.start(featureId) }
+                }
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+                .background(listening ? Color.orange : DlColors.accentBlue)
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+                Spacer()
+            }
+            .padding(16)
+            .background(DlColors.canvas)
+            .navigationTitle(title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("关闭") { onClose() }
+                }
             }
         }
     }

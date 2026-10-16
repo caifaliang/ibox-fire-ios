@@ -119,6 +119,9 @@ struct RootView: View {
         .sheet(isPresented: $vm.showDaiWan) {
             DaiWanView()
         }
+        .sheet(isPresented: $vm.showMoreSettings) {
+            MoreSettingsView()
+        }
         .sheet(isPresented: $vm.showDaiWanRecord) {
             DaiWanRecordView()
                 .environmentObject(vm)

@@ -19,6 +19,7 @@ final class AppViewModel: ObservableObject {
     @Published var showHuoYue = false
     @Published var showLingJiang = false
     @Published var showDaiWan = false
+    @Published var showMoreSettings = false
     /// 悬浮钮「代玩-记录」
     @Published var showDaiWanRecord = false
     /// 后台监听页：kuangdong / jiebiao / liangcao / wending / fuchou_wending / open_kd
@@ -659,10 +660,13 @@ final class AppViewModel: ObservableObject {
             showLingJiang = true
         case "daiwan":
             showDaiWan = true
+        case "more_settings":
+            showMoreSettings = true
         case "daiwan_ui":
             showDaiWanRecord = true
         case "kuangdong", "jiebiao", "liangcao", "wending",
-             "fuchou_wending", "open_kd", "change_guard", "paiqian":
+             "fuchou_wending", "open_kd", "change_guard", "paiqian",
+             "menpai_shouye", "hejiu", "xkx", "friend_mgmt":
             listenFeatureId = id
             showListenFeature = true
         case "join_qq_group":
