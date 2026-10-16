@@ -118,6 +118,7 @@ final class AppViewModel: ObservableObject {
     private var lastSplicedUrl: String?
     private var spliceCacheHtml: String?
     private var spliceCacheFightId: String?
+    private var spliceKnightActRaw: String?
     private var preViewFightUrl: String?
     private var prevNavUrlForFight: String?
 
@@ -1285,11 +1286,13 @@ final class AppViewModel: ObservableObject {
             )
             let injectKnight = hideKnight || autoKnight
 
+            var knightAct = ""
             let knightHtml: String
             if injectKnight {
                 let fetched = await FightActFetcher.fetch(pageUrl: url, cookieHeader: cookie)
-                knightHtml = fetched.act.contains("&Player")
-                    ? KnightFightHtml.toHtml(fetched.act, resolveSkills: false)
+                knightAct = fetched.act
+                knightHtml = knightAct.contains("&Player")
+                    ? KnightFightHtml.toHtml(knightAct, resolveSkills: false)
                     : ""
             } else {
                 knightHtml = ""
@@ -1321,6 +1324,7 @@ final class AppViewModel: ObservableObject {
             lastSplicedUrl = spliceBase
             spliceCacheHtml = result.html
             spliceCacheFightId = fightId
+            spliceKnightActRaw = knightAct.contains("&Player") ? knightAct : nil
             loadSplicedHtml(result.html, historyUrl: spliceBase)
             showViewFightFab = true
             activeSpliceKey = nil
@@ -1329,10 +1333,48 @@ final class AppViewModel: ObservableObject {
                 statusText = result.pages > 1
                     ? "已拼接 \(result.pages) 页 + 侠士详情"
                     : "已注入侠士战斗详情"
+                // 后台解析技能中文名，对齐 Android QunXia resolveSkills=true（首屏已出，不挡交互）
+                if let act = spliceKnightActRaw, !act.isEmpty {
+                    scheduleKnightSkillResolve(
+                        gen: gen,
+                        fightId: fightId,
+                        spliceBase: spliceBase,
+                        act: act,
+                        cookie: cookie
+                    )
+                }
             } else {
                 statusText = result.pages > 1
                     ? "已拼接 \(result.pages) 页战斗过程"
                     : (result.pages == 1 ? "战斗过程已就绪" : "")
+            }
+        }
+    }
+
+    /// fd141：首屏 ID → 后台 phonepk view 换中文技能名，只替换摘要块。
+    private func scheduleKnightSkillResolve(
+        gen: Int,
+        fightId: String?,
+        spliceBase: String,
+        act: String,
+        cookie: String
+    ) {
+        Task { @MainActor in
+            let named = await KnightFightHtml.toHtmlAsync(
+                act, resolveSkills: true, cookie: cookie
+            )
+            guard gen == spliceGen,
+                  lastSplicedUrl == spliceBase,
+                  spliceCacheFightId == fightId,
+                  let old = spliceCacheHtml,
+                  let updated = ViewFightHtmlSplicer.replaceKnightSummary(in: old, with: named)
+            else { return }
+            spliceCacheHtml = updated
+            loadSplicedHtml(updated, historyUrl: spliceBase)
+            if statusText.contains("侠士") || statusText.contains("拼接") {
+                statusText = statusText.contains("页")
+                    ? statusText.replacingOccurrences(of: "侠士详情", with: "侠士详情(技能名)")
+                    : "已注入侠士战斗详情(技能名)"
             }
         }
     }
@@ -1707,6 +1749,7 @@ final class AppViewModel: ObservableObject {
         lastSplicedUrl = nil
         spliceCacheHtml = nil
         spliceCacheFightId = nil
+        spliceKnightActRaw = nil
         preViewFightUrl = nil
         clearWebEpoch &+= 1
         loadWaitingPage = true

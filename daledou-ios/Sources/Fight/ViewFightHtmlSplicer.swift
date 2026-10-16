@@ -430,6 +430,9 @@ enum ViewFightHtmlSplicer {
         return insert + merged
     }
 
+    private static let knightMarkStart = "<!--dld-knight-summary-->"
+    private static let knightMarkEnd = "<!--/dld-knight-summary-->"
+
     private static func prependKnightSummary(_ summary: String, _ body: String) -> String {
         let filtered = body
             .replacingOccurrences(of: #"<br\s*/?>"#, with: "\n", options: .regularExpression)
@@ -438,7 +441,24 @@ enum ViewFightHtmlSplicer {
             .joined(separator: "<br />")
         let clean = summary.trimmingCharacters(in: .whitespacesAndNewlines)
             .replacingOccurrences(of: #"(<br\s*/?>\s*)+$"#, with: "", options: .regularExpression)
-        return #"<div style="font-size:14px;line-height:1.35;">\#(clean)</div><br /><br />\#(filtered)"#
+        return knightMarkStart
+            + #"<div style="font-size:14px;line-height:1.35;">\#(clean)</div>"#
+            + knightMarkEnd
+            + "<br /><br />"
+            + filtered
+    }
+
+    /// 后台技能名解析完成后，只替换侠士摘要块，避免重拉多页。
+    static func replaceKnightSummary(in html: String, with summary: String) -> String? {
+        guard let s = html.range(of: knightMarkStart),
+              let e = html.range(of: knightMarkEnd)
+        else { return nil }
+        let clean = summary.trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: #"(<br\s*/?>\s*)+$"#, with: "", options: .regularExpression)
+        let block = knightMarkStart
+            + #"<div style="font-size:14px;line-height:1.35;">\#(clean)</div>"#
+            + knightMarkEnd
+        return html.replacingCharacters(in: s.lowerBound..<e.upperBound, with: block)
     }
 
     private static func stripThinKnightChrome(_ html: String) -> String {
