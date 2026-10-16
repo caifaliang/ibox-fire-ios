@@ -209,6 +209,8 @@ final class DaiWanNamedRunner: ObservableObject {
             return await MoreExtraActions.applyOutfitPlan(planId: id, cookie: cookie, onLog: onLog)
         case "一键星盘换装", "星盘换装":
             return await XingPanActions.farmXingPanHuanZhuang(cookie: cookie, onLog: onLog)
+        case "星盘升级":
+            return await XingPanActions.farmXingPan(cookie: cookie, onLog: onLog)
         case "自动强化", "神装强化":
             let t = FeatureToggleStore.shared
             let fid = QiangHuaActions.fid
