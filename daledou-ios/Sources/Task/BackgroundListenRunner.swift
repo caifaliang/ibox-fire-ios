@@ -12,6 +12,7 @@ final class BackgroundListenRunner: ObservableObject {
         "fuchou_wending", "open_kd", "change_guard", "paiqian",
         "menpai_shouye", "hejiu", "xkx", "friend_mgmt",
         "diy_auto_daiwan", "diy_task", "shuqian", "xianshi_qianggou", "doudou_mall", "bangpai_wakuang",
+        "bagua", "xydb",
     ]
 
     private init() {}
@@ -122,6 +123,10 @@ final class BackgroundListenRunner: ObservableObject {
             msg = await DouDouMallActions.farm(cookie: cookie, onLog: live)
         case "bangpai_wakuang":
             msg = await BangPaiWaKuangActions.farm(cookie: cookie, onLog: live)
+        case "bagua":
+            msg = await BaGuaActions.farm(cookie: cookie, onLog: live)
+        case "xydb":
+            msg = await XingYunDuoBaoActions.farm(cookie: cookie, onLog: live)
         default:
             return
         }
@@ -151,6 +156,8 @@ final class BackgroundListenRunner: ObservableObject {
         case "xianshi_qianggou": return "限时抢购"
         case "doudou_mall": return "斗豆商城"
         case "bangpai_wakuang": return "帮派挖矿"
+        case "bagua": return "八卦迷阵"
+        case "xydb": return "幸运夺宝"
         default: return id
         }
     }
