@@ -10,6 +10,7 @@ final class BackgroundListenRunner: ObservableObject {
     private let listenIds = [
         "kuangdong", "jiebiao", "liangcao", "wending",
         "fuchou_wending", "open_kd", "change_guard", "paiqian",
+        "menpai_shouye", "hejiu",
     ]
 
     private init() {}
@@ -104,6 +105,10 @@ final class BackgroundListenRunner: ObservableObject {
             msg = await DailyListenActions.farmChangeGuard(cookie: cookie, onLog: live)
         case "paiqian":
             msg = await DailyListenActions.farmPaiQian(cookie: cookie, onLog: live)
+        case "menpai_shouye":
+            msg = await DailyListenActions.farmMenPaiShouYe(cookie: cookie, onLog: live)
+        case "hejiu":
+            msg = await DailyListenActions.farmHeJiu(cookie: cookie, onLog: live)
         default:
             return
         }
@@ -123,6 +128,8 @@ final class BackgroundListenRunner: ObservableObject {
         case "open_kd": return "开矿洞"
         case "change_guard": return "换守护神"
         case "paiqian": return "任务派遣"
+        case "menpai_shouye": return "门派守夜"
+        case "hejiu": return "喝酒"
         default: return id
         }
     }

@@ -927,6 +927,181 @@ enum DailyListenActions {
         onLog(tip)
         return tip
     }
+
+    // MARK: - 门派守夜
+
+    static func farmMenPaiShouYe(
+        cookie: String,
+        onLog: @escaping (String) -> Void
+    ) async -> String {
+        let t = FeatureToggleStore.shared
+        let fid = "menpai_shouye"
+        func b(_ key: String, _ def: Bool = false) -> Bool { t.getBool(fid, key, default: def) }
+
+        if b("auto_signup") {
+            let (_, su) = await LedouCGI.getPetPk(
+                cmd: "secttournament", extra: ["op": "signup"], cookie: cookie
+            )
+            try? await Task.sleep(nanoseconds: gapNs)
+            onLog("报名：\(CombatLog.fromBody(su).ifBlank("已请求"))")
+            let (_, inv) = await LedouCGI.getPetPk(
+                cmd: "secttournament", extra: ["op": "invite"], cookie: cookie
+            )
+            try? await Task.sleep(nanoseconds: gapNs)
+            onLog("邀请：\(CombatLog.fromBody(inv).ifBlank("已请求"))")
+        }
+
+        if weekdayMon1() != 1 {
+            let tip = "非周一，跳过守夜挑战"
+            onLog(tip)
+            return tip
+        }
+
+        let hourNeed = Int(t.getString(fid, "hours", default: "0").trimmingCharacters(in: .whitespaces)) ?? 0
+        let minNeed = Int(t.getString(fid, "minute", default: "5").trimmingCharacters(in: .whitespaces)) ?? 5
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "Asia/Shanghai") ?? .current
+        let now = Date()
+        let nowM = (cal.component(.hour, from: now) * 60) + cal.component(.minute, from: now)
+        if nowM < hourNeed * 60 + minNeed {
+            let tip = "未到守夜时间 \(hourNeed):\(String(format: "%02d", minNeed))"
+            onLog(tip)
+            return tip
+        }
+        if !b("fight", true) {
+            let tip = "未勾选自动挑战"
+            onLog(tip)
+            return tip
+        }
+
+        let (_, rank) = await LedouCGI.getPetPk(
+            cmd: "secttournament", extra: ["op": "showcurrentseasonrank"], cookie: cookie
+        )
+        try? await Task.sleep(nanoseconds: gapNs)
+        let mingci = Int(t.getString(fid, "mingci", default: "50").trimmingCharacters(in: .whitespaces)) ?? 50
+        let isJf = b("is_jf")
+        let points = CombatLog.jsonInt(rank, "self_ranking_points")
+        let pos = CombatLog.jsonInt(rank, "self_group_rank_pos") ?? 0
+        let needFight = isJf ? ((points ?? 0) < mingci) : (pos == 0 || pos > mingci)
+        if !needFight {
+            let tip = "已达目标（分\(points.map(String.init) ?? "-") 名\(pos) / 阈值\(mingci)）"
+            onLog(tip)
+            return tip
+        }
+
+        let (_, fight) = await LedouCGI.getPhonePk(
+            cmd: "secttournament", extra: ["op": "fight"], cookie: cookie
+        )
+        try? await Task.sleep(nanoseconds: gapNs)
+        let fm = CombatLog.fromBody(fight).ifBlank("已挑战")
+        onLog(fm)
+        if fm.contains("门派战书不足") && b("hzs") {
+            let (_, ex) = await LedouCGI.getPhonePk(
+                cmd: "exchange",
+                extra: ["subtype": "2", "type": "1249", "times": "1", "costtype": "11"],
+                cookie: cookie
+            )
+            try? await Task.sleep(nanoseconds: gapNs)
+            onLog("换战书：\(CombatLog.fromBody(ex))")
+            let (_, again) = await LedouCGI.getPhonePk(
+                cmd: "secttournament", extra: ["op": "fight"], cookie: cookie
+            )
+            try? await Task.sleep(nanoseconds: gapNs)
+            let am = CombatLog.fromBody(again).ifBlank("再挑战")
+            onLog(am)
+            return am
+        }
+        return fm
+    }
+
+    // MARK: - 喝酒（一轮：对齐 HejiuWorker tick / 悬浮窗点一下）
+
+    static func farmHeJiu(
+        cookie: String,
+        onLog: @escaping (String) -> Void
+    ) async -> String {
+        let t = FeatureToggleStore.shared
+        let fid = "hejiu"
+        _ = await LedouCGI.getPhonePk(
+            cmd: "warriorinn", extra: ["op": "viewknights"], cookie: cookie
+        )
+        try? await Task.sleep(nanoseconds: gapNs)
+        let (_, poll) = await LedouCGI.getPhonePk(
+            cmd: "newAct", extra: ["subtype": "154"], cookie: cookie
+        )
+        try? await Task.sleep(nanoseconds: gapNs)
+        let body = poll
+        if body.contains("登陆校验") || body.contains("请先登录") {
+            let tip = "会话失效，已停喝酒"
+            t.setEnabled(fid, false)
+            onLog(tip)
+            return tip
+        }
+
+        var dataStr = t.getString(fid, "dataStr")
+        var dataTime = t.getString(fid, "dataTime")
+        var huang = t.getString(fid, "huangCount")
+        for raw in body.components(separatedBy: CharacterSet(charactersIn: "\n"))
+            .flatMap({ $0.components(separatedBy: "<br />") })
+            .flatMap({ $0.components(separatedBy: "<br/>") })
+            .flatMap({ $0.components(separatedBy: "<br>") })
+        {
+            let plain = raw.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
+            if plain.contains("下次刷新时间：") { dataTime = plain }
+            else if plain.contains("本次可能获得的奖励：") { dataStr = plain }
+            else if plain.contains("现有黄酒数量：") { huang = plain }
+        }
+        t.setString(fid, "dataStr", dataStr)
+        t.setString(fid, "dataTime", dataTime)
+        t.setString(fid, "huangCount", huang)
+        if body.contains("次数已满") || body.contains("已达上限") || body.contains("已喝满") {
+            t.setBool(fid, "isHeJiu_20_MAX", true)
+        }
+
+        let hour = hourGmt8()
+        let heman = t.getBool(fid, "isHeJiu_20")
+        var hemanMax = t.getBool(fid, "isHeJiu_20_MAX")
+        let otherStr = t.getString(fid, "otherStr").trimmingCharacters(in: .whitespacesAndNewlines)
+        var drinkMsg = "未献酒"
+
+        if heman && !hemanMax && hour == 5 {
+            let (_, drink) = await LedouCGI.getPhonePk(
+                cmd: "newAct", extra: ["subtype": "155"], cookie: cookie
+            )
+            try? await Task.sleep(nanoseconds: gapNs)
+            drinkMsg = "凌晨拉满:\(CombatLog.fromBody(drink).ifBlank(String(drink.prefix(50))))"
+        } else {
+            if hour >= 6 {
+                hemanMax = false
+                t.setBool(fid, "isHeJiu_20_MAX", false)
+            }
+            if !otherStr.isEmpty && !dataStr.isEmpty {
+                let tokens = otherStr
+                    .components(separatedBy: CharacterSet(charactersIn: "、,，"))
+                    .map { $0.trimmingCharacters(in: .whitespaces) }
+                    .filter { !$0.isEmpty }
+                if let hit = tokens.first(where: { dataStr.contains($0) }) {
+                    let (_, drink) = await LedouCGI.getPhonePk(
+                        cmd: "newAct", extra: ["subtype": "155"], cookie: cookie
+                    )
+                    try? await Task.sleep(nanoseconds: gapNs)
+                    drinkMsg = "命中[\(hit)]:\(CombatLog.fromBody(drink).ifBlank(String(drink.prefix(50))))"
+                } else {
+                    drinkMsg = "奖励未命中指令"
+                }
+            } else if otherStr.isEmpty {
+                // 悬浮窗一键：无指令时直接自己献酒一次
+                let (_, drink) = await LedouCGI.getPhonePk(
+                    cmd: "newAct", extra: ["subtype": "155"], cookie: cookie
+                )
+                try? await Task.sleep(nanoseconds: gapNs)
+                drinkMsg = "自己献酒:\(CombatLog.fromBody(drink).ifBlank(String(drink.prefix(50))))"
+            }
+        }
+        let tip = "奖励:\(String((dataStr.isEmpty ? body : dataStr).prefix(40))) | \(drinkMsg)"
+        onLog(tip)
+        return tip
+    }
 }
 
 private extension String {

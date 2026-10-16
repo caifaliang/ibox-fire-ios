@@ -671,7 +671,94 @@ enum MoreExtraActions {
         return "仙武\(fights)"
     }
 
+    // MARK: - 武器充能
+
+    private static let wuQiNameKeys: [(String, String)] = [
+        ("龙舌弓", "cb_wqcn_lsg"), ("轩辕剑", "cb_wqcn_xyj"), ("金箍棒", "cb_wqcn_jgb"),
+        ("玄铁磁石", "cb_wqcn_xtcs"), ("啤酒瓶", "cb_wqcn_pjp"), ("黑桃A", "cb_wqcn_hta"),
+        ("绣花针", "cb_wqcn_xhz"), ("圣诞棒棒糖", "cb_wqcn_sdbbt"), ("乐斗拳套", "cb_wqcn_ldqt"),
+        ("劳动节扫把", "cb_wqcn_ldjsb"), ("新春鞭炮", "cb_wqcn_xcbp"), ("冰镇西瓜", "cb_wqcn_bzxg"),
+    ]
+
+    static func farmWuQiChongNeng(cookie: String, onLog: @escaping (String) -> Void) async -> String {
+        let t = FeatureToggleStore.shared
+        var enabled = Set(wuQiNameKeys.filter { t.getBool("more_settings", $0.1) }.map(\.0))
+        // 悬浮窗一键：未勾选时尝试全部已知武器
+        if enabled.isEmpty {
+            enabled = Set(wuQiNameKeys.map(\.0))
+        }
+        onLog("武器充能开始（\(enabled.sorted().joined(separator: "、"))）")
+        var charged = 0
+        var loops = 0
+        while loops < 40 {
+            loops += 1
+            if Task.isCancelled { break }
+            let (_, list) = await LedouCGI.getPetPk(
+                cmd: "exchange", extra: ["subtype": "15"], cookie: cookie
+            )
+            try? await Task.sleep(nanoseconds: gapNs)
+            if list.contains("系统繁忙") {
+                try? await Task.sleep(nanoseconds: 200_000_000)
+                continue
+            }
+            let items = parseExchangeNameTypes(list)
+            var did = false
+            for (name, type) in items {
+                guard enabled.contains(where: { name.contains($0) || $0.contains(name) }) else { continue }
+                if list.contains("尚未充能完毕"),
+                   list.range(of: "\(name)[\\s\\S]{0,120}尚未充能完毕", options: .regularExpression) != nil
+                {
+                    continue
+                }
+                let esc = NSRegularExpression.escapedPattern(for: name)
+                if let block = firstMatch(list, "\\{[^{}]*\(esc)[^{}]*\\}"),
+                   block.contains("\"open\":\"0\"") || block.contains("\"open\":0")
+                {
+                    continue
+                }
+                let (_, r) = await LedouCGI.getPetPk(
+                    cmd: "exchange",
+                    extra: ["subtype": "2", "type": type, "times": "1"],
+                    cookie: cookie
+                )
+                charged += 1
+                did = true
+                try? await Task.sleep(nanoseconds: gapNs)
+                let msg = CombatLog.fromBody(r).ifBlankMe("充能\(name)")
+                onLog(msg)
+                if r.contains("系统繁忙") || msg.contains("恭喜您充能成功") || msg.contains("充能成功") {
+                    break
+                }
+            }
+            if !did { break }
+        }
+        onLog("武器充能结束")
+        return "武器充能\(charged)"
+    }
+
     // MARK: - helpers
+
+    private static func parseExchangeNameTypes(_ body: String) -> [(String, String)] {
+        var out: [(String, String)] = []
+        let ns = body as NSString
+        let re1 = try? NSRegularExpression(
+            pattern: #"\{[^{}]*"name"\s*:\s*"([^"]*)"[^{}]*"type"\s*:\s*"?([^",}\s]+)[^{}]*\}"#
+        )
+        re1?.enumerateMatches(in: body, range: NSRange(location: 0, length: ns.length)) { m, _, _ in
+            guard let m, m.numberOfRanges >= 3 else { return }
+            out.append((ns.substring(with: m.range(at: 1)), ns.substring(with: m.range(at: 2))))
+        }
+        if out.isEmpty {
+            let re2 = try? NSRegularExpression(
+                pattern: #"\{[^{}]*"type"\s*:\s*"?([^",}\s]+)[^{}]*"name"\s*:\s*"([^"]*)"[^{}]*\}"#
+            )
+            re2?.enumerateMatches(in: body, range: NSRange(location: 0, length: ns.length)) { m, _, _ in
+                guard let m, m.numberOfRanges >= 3 else { return }
+                out.append((ns.substring(with: m.range(at: 2)), ns.substring(with: m.range(at: 1))))
+            }
+        }
+        return out
+    }
 
     private static func firstStoreUseId(_ html: String) -> String? {
         let lines = html.components(separatedBy: CharacterSet(charactersIn: "\n"))
