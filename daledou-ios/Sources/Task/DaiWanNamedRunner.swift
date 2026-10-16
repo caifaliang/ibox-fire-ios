@@ -236,6 +236,8 @@ final class DaiWanNamedRunner: ObservableObject {
             return await DiyUrlActions.run(featureId: "diy_auto_daiwan", cookie: cookie, onLog: onLog)
         case "定时任务", "自定义任务":
             return await DiyUrlActions.run(featureId: "diy_task", cookie: cookie, onLog: onLog)
+        case "书签":
+            return await DiyUrlActions.run(featureId: "shuqian", cookie: cookie, onLog: onLog)
         case "批量斗友":
             return await PiLiangDouYouActions.farm(onLog: onLog)
         case "批量斗友-师徒", "师徒情拜":

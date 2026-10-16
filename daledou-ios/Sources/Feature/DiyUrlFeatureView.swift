@@ -14,7 +14,17 @@ struct DiyUrlFeatureView: View {
     private let store = FeatureToggleStore.shared
 
     private var title: String {
-        featureId == "diy_auto_daiwan" ? "定时自定义代玩" : "定时自定义任务"
+        switch featureId {
+        case "diy_auto_daiwan": return "定时自定义代玩"
+        case "shuqian": return "书签"
+        default: return "定时自定义任务"
+        }
+    }
+
+    private var hint: String {
+        featureId == "shuqian"
+            ? "粘贴腾讯 CGI 完整 URL；立即执行 / 后台轮询只请求首行（对齐 Android 书签）。"
+            : "每行一条腾讯 CGI 完整 URL（phonepk/petpk）。非腾讯域将被拦截。"
     }
 
     private var listening: Bool {
@@ -25,7 +35,7 @@ struct DiyUrlFeatureView: View {
         let _ = tick
         NavigationStack {
             VStack(alignment: .leading, spacing: 12) {
-                Text("每行一条腾讯 CGI 完整 URL（phonepk/petpk）。非腾讯域将被拦截。")
+                Text(hint)
                     .font(.system(size: 12))
                     .foregroundStyle(DlColors.inkMuted)
 

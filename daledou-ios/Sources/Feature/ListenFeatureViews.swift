@@ -17,7 +17,7 @@ struct ListenHostView: View {
         case "paiqian": PaiQianListenView(onClose: { dismiss() })
         case "menpai_shouye", "hejiu", "xkx", "friend_mgmt":
             SimpleListenView(featureId: featureId, onClose: { dismiss() })
-        case "diy_auto_daiwan", "diy_task":
+        case "diy_auto_daiwan", "diy_task", "shuqian":
             DiyUrlFeatureView(featureId: featureId, onClose: { dismiss() })
         default:
             NavigationStack {
