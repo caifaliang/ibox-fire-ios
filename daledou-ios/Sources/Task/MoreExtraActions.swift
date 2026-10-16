@@ -736,6 +736,227 @@ enum MoreExtraActions {
         return "武器充能\(charged)"
     }
 
+    // MARK: - 遗迹 / 龙吟 / 天地宝匣
+
+    static func farmYiJiZhengFa(cookie: String, onLog: @escaping (String) -> Void) async -> String {
+        let t = FeatureToggleStore.shared
+        var cave = t.getBool("more_settings", "cb_yjzf_1")
+        let caveAuto = t.getBool("more_settings", "cb_yjzf_auto")
+        var unionDaily = t.getBool("more_settings", "cb_yjzf_2")
+        let unionThu = t.getBool("more_settings", "cb_yjzf_3")
+        // 悬浮窗：未勾选时默认洞穴+每日联合
+        if !cave && !caveAuto && !unionDaily && !unionThu {
+            cave = true
+            unionDaily = true
+        }
+        onLog("遗迹征伐开始")
+        var steps = 0
+        if caveAuto || cave {
+            _ = await LedouCGI.getPetPk(cmd: "spacerelic", extra: ["op": "finishtime"], cookie: cookie)
+            try? await Task.sleep(nanoseconds: gapNs)
+            let layers = caveAuto ? Array((1...5).reversed()) : [5]
+            for id in layers {
+                if Task.isCancelled { break }
+                onLog("异兽洞穴第\(id)层")
+                _ = await LedouCGI.getPetPk(
+                    cmd: "spacerelic", extra: ["id": "\(id)", "op": "monster"], cookie: cookie
+                )
+                try? await Task.sleep(nanoseconds: gapNs)
+                let (_, sao) = await LedouCGI.getPetPk(
+                    cmd: "spacerelic", extra: ["id": "\(id)", "op": "saodang"], cookie: cookie
+                )
+                try? await Task.sleep(nanoseconds: gapNs)
+                let sm = CombatLog.fromBody(sao)
+                if !sm.isEmpty { onLog("扫荡:\(sm)") }
+                let (_, fight) = await LedouCGI.getPetPk(
+                    cmd: "spacerelic", extra: ["id": "\(id)", "op": "monsterfight"], cookie: cookie
+                )
+                try? await Task.sleep(nanoseconds: gapNs)
+                let fm = CombatLog.fromBody(fight)
+                if !fm.isEmpty { onLog("挑战:\(fm)") }
+                steps += 1
+                if sao.contains("不足") && fight.contains("不足") { break }
+            }
+        }
+        let dow = DailyListenActions.weekdayMon1()
+        let hour = DailyListenActions.hourGmt8()
+        let thuWindow = (dow == 4 && hour >= 6) || (dow == 5 && hour < 6)
+        if unionDaily || (unionThu && thuWindow) {
+            let tag = unionDaily ? "联合征伐-每日" : "联合征伐-周四"
+            onLog(tag)
+            _ = await LedouCGI.getPetPk(cmd: "spacerelic", extra: ["op": "showunion"], cookie: cookie)
+            try? await Task.sleep(nanoseconds: gapNs)
+            let (_, bf) = await LedouCGI.getPetPk(
+                cmd: "spacerelic", extra: ["op": "bossfight"], cookie: cookie
+            )
+            try? await Task.sleep(nanoseconds: gapNs)
+            onLog(CombatLog.fromBody(bf).ifBlankMe(tag))
+            steps += 1
+        }
+        onLog("遗迹征伐结束")
+        return "遗迹\(steps)"
+    }
+
+    static func farmLongYin(cookie: String, onLog: @escaping (String) -> Void) async -> String {
+        onLog("龙吟破阵开始（十连×10）")
+        var draws = 0
+        var tidy = false
+        var guard = 0
+        while draws < 10 && guard < 16 {
+            guard += 1
+            if Task.isCancelled { break }
+            let (_, r) = await LedouCGI.getPetPk(
+                cmd: "dragon", extra: ["times": "10", "op": "lottery"], cookie: cookie
+            )
+            try? await Task.sleep(nanoseconds: gapNs)
+            let msg = (CombatLog.jsonField(r, "msg") ?? "").ifBlankMe(CombatLog.fromBody(r))
+            let have = CombatLog.jsonField(r, "have") ?? ""
+            let result = CombatLog.jsonInt(r, "result")
+            onLog(have.isEmpty ? msg.ifBlankMe("十连") : "剩余龙玉\(have)，\(msg)")
+            if msg.contains("系统繁忙") || r.contains("系统繁忙") { continue }
+            if let result, result != 0 {
+                onLog("龙吟破阵结束")
+                return "龙吟十连\(draws)"
+            }
+            if msg.contains("龙玉不足") {
+                tidy = true
+                break
+            }
+            if msg.contains("不在活动") || msg.contains("等级不够") { break }
+            draws += 1
+            if draws >= 10 { tidy = true }
+        }
+        if tidy {
+            await tidyLongYin(cookie: cookie, onLog: onLog)
+        }
+        onLog("龙吟破阵结束")
+        return "龙吟十连\(draws)"
+    }
+
+    private static func tidyLongYin(cookie: String, onLog: @escaping (String) -> Void) async {
+        var op = "config"
+        var id = 0
+        var steps = 0
+        while steps < 40 {
+            steps += 1
+            if Task.isCancelled { break }
+            let (_, body) = await LedouCGI.getPetPk(
+                cmd: "dragon", extra: ["id": "\(id)", "op": op], cookie: cookie
+            )
+            try? await Task.sleep(nanoseconds: gapNs)
+            if body.contains("系统繁忙") {
+                try? await Task.sleep(nanoseconds: 200_000_000)
+                continue
+            }
+            let result = CombatLog.jsonInt(body, "result")
+            if let result, result != 0 {
+                onLog(CombatLog.fromBody(body).ifBlankMe("整理结束"))
+                break
+            }
+            let star = CombatLog.jsonInt(body, "star") ?? 0
+            let desc = CombatLog.jsonField(body, "desc") ?? ""
+            let have = CombatLog.jsonInt(body, "have") ?? 0
+            if star >= 5 && !desc.contains("(0)") {
+                let (_, resolve) = await LedouCGI.getPetPk(
+                    cmd: "dragon", extra: ["id": "\(id)", "op": "resolve"], cookie: cookie
+                )
+                try? await Task.sleep(nanoseconds: gapNs)
+                onLog("分解\(id)：\(CombatLog.fromBody(resolve).ifBlankMe("ok"))")
+                op = "config"
+                continue
+            }
+            if have > 0 {
+                let (_, up) = await LedouCGI.getPetPk(
+                    cmd: "dragon", extra: ["id": "\(id)", "op": "upstar"], cookie: cookie
+                )
+                try? await Task.sleep(nanoseconds: gapNs)
+                let um = CombatLog.fromBody(up)
+                if um.contains("不足") || um.contains("没有") {
+                    id += 1
+                    op = "config"
+                    continue
+                }
+                onLog("升星\(id)：\(um.ifBlankMe("ok"))")
+                op = "config"
+                continue
+            }
+            id += 1
+            if id > 30 { break }
+            op = "config"
+        }
+    }
+
+    static func farmTianDiBaoXia(cookie: String, onLog: @escaping (String) -> Void) async -> String {
+        onLog("天地宝匣开始")
+        var opened = 0
+        for _ in 0..<30 {
+            if Task.isCancelled { break }
+            let (_, view) = await LedouCGI.getPetPk(
+                cmd: "career", extra: ["op": "treasureview"], cookie: cookie
+            )
+            try? await Task.sleep(nanoseconds: gapNs)
+            if view.contains("系统繁忙") {
+                try? await Task.sleep(nanoseconds: gapNs)
+                continue
+            }
+            let result = CombatLog.jsonInt(view, "result")
+            let msg = CombatLog.jsonField(view, "msg") ?? ""
+            if let result, result != 0 {
+                onLog(msg.ifBlankMe("查询失败"))
+                return "天地宝匣失败"
+            }
+            let anima = CombatLog.jsonInt(view, "anima_num") ?? 0
+            let animaMax = CombatLog.jsonInt(view, "anima_max") ?? 0
+            if animaMax > 0 && anima >= animaMax {
+                let (_, claim) = await LedouCGI.getPetPk(
+                    cmd: "career", extra: ["op": "mclaim"], cookie: cookie
+                )
+                try? await Task.sleep(nanoseconds: gapNs)
+                onLog((CombatLog.jsonField(claim, "msg") ?? "")
+                    .ifBlankMe(CombatLog.fromBody(claim).ifBlankMe("领取灵气")))
+                continue
+            }
+            guard let box = firstBoxWithNum(view) else {
+                onLog("天地宝匣结束")
+                return "开匣\(opened)"
+            }
+            let count: Int = {
+                if box.1 >= 100 { return 100 }
+                if box.1 >= 10 { return 10 }
+                return 1
+            }()
+            let (_, open) = await LedouCGI.getPetPk(
+                cmd: "career",
+                extra: ["op": "boxopen", "count": "\(count)", "boxId": box.0],
+                cookie: cookie
+            )
+            opened += 1
+            try? await Task.sleep(nanoseconds: gapNs)
+            onLog((CombatLog.jsonField(open, "msg") ?? "").ifBlankMe("开匣\(box.0)×\(count)"))
+            if open.contains("不足") || open.contains("没有") { return "开匣\(opened)" }
+        }
+        onLog("天地宝匣结束")
+        return "开匣\(opened)"
+    }
+
+    private static func firstBoxWithNum(_ body: String) -> (String, Int)? {
+        let re = try? NSRegularExpression(
+            pattern: #""id"\s*:\s*"?(\d+)"?[^}]*"num"\s*:\s*"?(\d+)""#
+        )
+        let ns = body as NSString
+        var hit: (String, Int)?
+        re?.enumerateMatches(in: body, range: NSRange(location: 0, length: ns.length)) { m, _, stop in
+            guard let m, m.numberOfRanges >= 3 else { return }
+            let id = ns.substring(with: m.range(at: 1))
+            let num = Int(ns.substring(with: m.range(at: 2))) ?? 0
+            if num > 0 {
+                hit = (id, num)
+                stop.pointee = true
+            }
+        }
+        return hit
+    }
+
     // MARK: - helpers
 
     private static func parseExchangeNameTypes(_ body: String) -> [(String, String)] {

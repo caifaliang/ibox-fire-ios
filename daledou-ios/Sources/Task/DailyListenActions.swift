@@ -1102,6 +1102,169 @@ enum DailyListenActions {
         onLog(tip)
         return tip
     }
+
+    // MARK: - 侠客行
+
+    static func farmXkx(
+        cookie: String,
+        onLog: @escaping (String) -> Void
+    ) async -> String {
+        let t = FeatureToggleStore.shared
+        let fid = "xkx"
+        func b(_ key: String, _ def: Bool = false) -> Bool { t.getBool(fid, key, default: def) }
+        let yx1 = b("yx_1")
+        let yx2 = b("yx_2")
+        let refType: Int = {
+            if b("ref_pay") { return 3 }
+            if b("ref_free", true) { return 1 }
+            if b("ref_sign") { return 2 }
+            return 0
+        }()
+
+        let (_, page) = await LedouCGI.getPhonePk(
+            cmd: "knightisland", extra: ["op": "viewmissionindex"], cookie: cookie
+        )
+        try? await Task.sleep(nanoseconds: gapNs)
+        let missions = CombatLog.jsonChunks(page, "mission")
+            .ifEmpty(CombatLog.jsonChunks(page, "list"))
+        var did = 0
+        let posList: [(Int, String)] = {
+            if !missions.isEmpty {
+                return missions.enumerated().map { i, m in
+                    let pos = CombatLog.jsonInt(m, "pos") ?? (i + 1)
+                    return (pos, m)
+                }
+            }
+            return [(1, ""), (2, ""), (3, "")]
+        }()
+
+        for (pos, raw) in posList.prefix(3) {
+            if Task.isCancelled { break }
+            let chunk = raw.isEmpty ? page : raw
+            let status = CombatLog.jsonInt(chunk, "status")
+                ?? (chunk.contains("已完成") || chunk.contains("领取") ? 2
+                    : chunk.contains("进行") ? 1 : 0)
+            let reward: String = {
+                if let r = CombatLog.jsonField(chunk, "reward"), !r.isEmpty { return r }
+                if let range = chunk.range(of: #"奖励[^\n<]{0,40}"#, options: .regularExpression) {
+                    return String(chunk[range])
+                }
+                return ""
+            }()
+
+            switch status {
+            case 2:
+                if b("reward", true) {
+                    let (_, r) = await LedouCGI.getPhonePk(
+                        cmd: "knightisland",
+                        extra: ["pos": "\(pos)", "op": "getmissionreward"],
+                        cookie: cookie
+                    )
+                    try? await Task.sleep(nanoseconds: gapNs)
+                    onLog("P\(pos) 领奖：\(CombatLog.fromBody(r))")
+                    did += 1
+                }
+            case 0:
+                let prefer = (yx1 && reward.contains("太玄经")) || (yx2 && reward.contains("鉴宝真炎"))
+                let low = reward.contains("*1") || reward.contains("×1") || reward.contains("x1")
+                let shouldRefresh: Bool = {
+                    switch refType {
+                    case 1: return low && !prefer
+                    case 3: return !prefer
+                    default: return false
+                    }
+                }()
+                if shouldRefresh {
+                    let (_, rf) = await LedouCGI.getPhonePk(
+                        cmd: "knightisland",
+                        extra: ["pos": "\(pos)", "op": "refreshmission"],
+                        cookie: cookie
+                    )
+                    try? await Task.sleep(nanoseconds: gapNs)
+                    onLog("P\(pos) 刷新：\(CombatLog.fromBody(rf))")
+                    did += 1
+                    continue
+                }
+                if b("auto_assign", true) || refType == 2 {
+                    let (_, a) = await LedouCGI.getPhonePk(
+                        cmd: "knightisland",
+                        extra: ["pos": "\(pos)", "op": "autoassign"],
+                        cookie: cookie
+                    )
+                    try? await Task.sleep(nanoseconds: gapNs)
+                    onLog("P\(pos) 派遣：\(CombatLog.fromBody(a))")
+                    did += 1
+                }
+                if b("begin", true) {
+                    let (_, bg) = await LedouCGI.getPhonePk(
+                        cmd: "knightisland",
+                        extra: ["pos": "\(pos)", "op": "begin"],
+                        cookie: cookie
+                    )
+                    try? await Task.sleep(nanoseconds: gapNs)
+                    onLog("P\(pos) 开始：\(CombatLog.fromBody(bg))")
+                    did += 1
+                }
+            default:
+                onLog("P\(pos) 进行中")
+            }
+        }
+        let tip = "侠客行处理\(did)"
+        onLog(tip)
+        return tip
+    }
+
+    // MARK: - 好友管理（同意申请；加好友需查区名册，iOS 暂只同意）
+
+    static func farmFriendMgmt(
+        cookie: String,
+        onLog: @escaping (String) -> Void
+    ) async -> String {
+        let t = FeatureToggleStore.shared
+        let fid = "friend_mgmt"
+        func b(_ key: String, _ def: Bool = false) -> Bool { t.getBool(fid, key, default: def) }
+        var done = 0
+        if b("auto_accept", true) {
+            let (_, apply) = await LedouCGI.getPhonePk(
+                cmd: "friend_change", extra: ["op": "getapplylist"], cookie: cookie
+            )
+            try? await Task.sleep(nanoseconds: gapNs)
+            var uins: [String] = []
+            let re1 = try? NSRegularExpression(pattern: #"oppuin=(\d+)"#)
+            let ns = apply as NSString
+            re1?.enumerateMatches(in: apply, range: NSRange(location: 0, length: ns.length)) { m, _, _ in
+                guard let m, m.numberOfRanges >= 2 else { return }
+                let u = ns.substring(with: m.range(at: 1))
+                if !uins.contains(u) { uins.append(u) }
+            }
+            if uins.isEmpty {
+                let re2 = try? NSRegularExpression(pattern: #""uin"\s*:\s*"?(\d+)"#)
+                re2?.enumerateMatches(in: apply, range: NSRange(location: 0, length: ns.length)) { m, _, _ in
+                    guard let m, m.numberOfRanges >= 2 else { return }
+                    let u = ns.substring(with: m.range(at: 1))
+                    if !uins.contains(u) { uins.append(u) }
+                }
+            }
+            for uin in uins.prefix(10) {
+                let (_, r) = await LedouCGI.getPhonePk(
+                    cmd: "friend_change",
+                    extra: ["op": "accessfriend", "oppuin": uin],
+                    cookie: cookie
+                )
+                try? await Task.sleep(nanoseconds: gapNs)
+                onLog("同意\(uin)：\(CombatLog.fromBody(r))")
+                done += 1
+            }
+            if uins.isEmpty { onLog("无好友申请") }
+        }
+        if b("auto_add") {
+            onLog("自动加好友需查区名册，本轮跳过")
+        }
+        if b("auto_del") {
+            onLog("自动删除需在查区标记后使用，本轮跳过批量删（防误删）")
+        }
+        return "好友处理\(done)"
+    }
 }
 
 private extension String {

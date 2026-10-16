@@ -59,7 +59,7 @@ enum FeatureCatalog {
 
     static let items: [FeatureItem] = [
         // —— 后台 ——
-        .init(id: "hejiu", label: "喝酒", section: .background),
+        .init(id: "hejiu", label: "喝酒", section: .background, iosWired: true),
         .init(id: "jiebiao", label: "劫镖", section: .background, iosWired: true),
         .init(id: "kuangdong", label: "矿洞", section: .background, iosWired: true),
         .init(id: "liangcao", label: "粮草", section: .background, pageTitle: "粮草掠夺", iosWired: true),
@@ -68,9 +68,9 @@ enum FeatureCatalog {
         .init(id: "open_kd", label: "开启矿洞", section: .background, pageTitle: "开矿洞设置", iosWired: true),
         .init(id: "change_guard", label: "更换守护", section: .background, pageTitle: "换守护神设置", iosWired: true),
         .init(id: "paiqian", label: "任务派遣", section: .background, iosWired: true),
-        .init(id: "menpai_shouye", label: "门派守夜", section: .background),
-        .init(id: "friend_mgmt", label: "好友管理", section: .background),
-        .init(id: "xkx", label: "侠客行", section: .background),
+        .init(id: "menpai_shouye", label: "门派守夜", section: .background, iosWired: true),
+        .init(id: "friend_mgmt", label: "好友管理", section: .background, iosWired: true),
+        .init(id: "xkx", label: "侠客行", section: .background, iosWired: true),
         .init(
             id: "diy_auto_daiwan",
             label: "付费用户专属 【定时自定义代玩】",
