@@ -176,6 +176,10 @@ final class DaiWanNamedRunner: ObservableObject {
             return await MoreExtraActions.farmChangMeng(cookie: cookie, onLog: onLog)
         case "PC解锁", "修改PC锁", "重置PC锁", "设置PC锁密码":
             return await MoreExtraActions.pcSuo(action: name, cookie: cookie, onLog: onLog)
+        case "新春对联":
+            return await MoreExtraActions.farmXinChunDuiLian(cookie: cookie, onLog: onLog)
+        case "掌上道聚城", "道聚城":
+            return await MoreExtraActions.farmDaoJuCheng(cookie: cookie, onLog: onLog)
         case "门派守夜":
             return await DailyListenActions.farmMenPaiShouYe(cookie: cookie, onLog: onLog)
         case "喝酒":

@@ -1567,6 +1567,156 @@ enum MoreExtraActions {
         md5Hex(md5Hex(password) + cookieSalt(cookie))
     }
 
+    // MARK: - 新春对联 / 道聚城
+
+    static func farmXinChunDuiLian(cookie: String, onLog: @escaping (String) -> Void) async -> String {
+        let raw = FeatureToggleStore.shared.getString("more_settings", "ed_xcdl_answers")
+        let answers = raw
+            .split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        if answers.isEmpty {
+            onLog("请去更多设置填写春联答案（每行：题目关键字|答案文本）")
+            return "未设置答案"
+        }
+        onLog("新春对联开始（答案\(answers.count)条）")
+        var answered = 0
+        var rounds = 0
+        while rounds < 20 {
+            rounds += 1
+            if Task.isCancelled { break }
+            let (_, q) = await LedouCGI.getPetPk(
+                cmd: "newAct", extra: ["subtype": "137", "op": "1"], cookie: cookie
+            )
+            try? await Task.sleep(nanoseconds: gapNs)
+            let msg = CombatLog.fromBody(q)
+            if q.contains("系统繁忙") {
+                try? await Task.sleep(nanoseconds: 200_000_000)
+                continue
+            }
+            if msg.contains("今日答题数已满") || q.contains("今日答题数已满") {
+                onLog(msg.ifBlankMe("今日答题数已满"))
+                break
+            }
+            if q.contains("\"result\"")
+                && !q.contains("\"result\":0")
+                && !q.contains("\"result\":\"0\"")
+            {
+                if !msg.isEmpty { onLog(msg) }
+                break
+            }
+            let question = CombatLog.jsonField(q, "cur_question") ?? ""
+            let status = CombatLog.jsonInt(q, "cur_status") ?? 0
+            if status >= 3 || question.isEmpty {
+                if !msg.isEmpty { onLog(msg) }
+                break
+            }
+            let options = parseDuiLianOptions(q)
+            var index: String?
+            var pickedAns = ""
+            for line in answers {
+                let parts = line.split(separator: "|", maxSplits: 1)
+                    .map { $0.trimmingCharacters(in: .whitespaces) }
+                let key = parts.first ?? line
+                let want = parts.count > 1 ? parts[1] : line
+                if !line.contains(question) && !question.contains(key) { continue }
+                for (opt, ans, idx) in options {
+                    if line.contains(ans) || ans == want || opt == want || idx == want {
+                        index = idx
+                        pickedAns = "\(opt):\(ans)"
+                        break
+                    }
+                }
+                if index != nil { break }
+                for (opt, ans, idx) in options {
+                    if line.contains(question) && line.contains(ans) {
+                        index = idx
+                        pickedAns = "\(opt):\(ans)"
+                        break
+                    }
+                }
+                if index != nil { break }
+            }
+            guard let index else {
+                onLog("题目：\(question) ，答案不全，请去设置春联答案")
+                break
+            }
+            onLog("题目：\(question) ，答案：\(pickedAns)")
+            let (_, submit) = await LedouCGI.getPetPk(
+                cmd: "newAct",
+                extra: ["op": "3", "subtype": "137", "index": index],
+                cookie: cookie
+            )
+            try? await Task.sleep(nanoseconds: gapNs)
+            let smsg = CombatLog.fromBody(submit)
+            if !smsg.isEmpty { onLog(smsg) }
+            if submit.contains("系统繁忙") { continue }
+            if submit.contains("\"result\":0") || submit.contains("\"result\":\"0\"")
+                || smsg.contains("正确") || smsg.contains("成功") || smsg.isEmpty
+            {
+                answered += 1
+                let (_, next) = await LedouCGI.getPetPk(
+                    cmd: "newAct", extra: ["subtype": "137", "op": "2"], cookie: cookie
+                )
+                try? await Task.sleep(nanoseconds: gapNs)
+                let nmsg = CombatLog.fromBody(next)
+                if !nmsg.isEmpty { onLog(nmsg) }
+            } else {
+                break
+            }
+        }
+        for id in 1...3 {
+            let (_, claim) = await LedouCGI.getPetPk(
+                cmd: "newAct",
+                extra: ["op": "4", "subtype": "137", "id": "\(id)"],
+                cookie: cookie
+            )
+            try? await Task.sleep(nanoseconds: gapNs)
+            let cmsg = CombatLog.fromBody(claim)
+            if !cmsg.isEmpty { onLog(cmsg) }
+        }
+        onLog("新春对联结束")
+        return "新春对联答\(answered)"
+    }
+
+    /// 掌上道聚城依赖独立 Cookie，iOS 尚未接扫码会话。
+    static func farmDaoJuCheng(cookie: String, onLog: @escaping (String) -> Void) async -> String {
+        _ = cookie
+        let tip = "掌上道聚城需独立扫码登录（daoju.qq.com），iOS 尚未对接，已跳过"
+        onLog(tip)
+        return tip
+    }
+
+    private static func parseDuiLianOptions(_ body: String) -> [(String, String, String)] {
+        var out: [(String, String, String)] = []
+        let ns = body as NSString
+        let re1 = try? NSRegularExpression(
+            pattern: #"\{[^{}]*"option"\s*:\s*"([^"]*)"[^{}]*"answer"\s*:\s*"([^"]*)"[^{}]*"index"\s*:\s*"?(\d+)"?[^{}]*\}"#
+        )
+        re1?.enumerateMatches(in: body, range: NSRange(location: 0, length: ns.length)) { m, _, _ in
+            guard let m, m.numberOfRanges >= 4 else { return }
+            out.append((
+                ns.substring(with: m.range(at: 1)),
+                ns.substring(with: m.range(at: 2)),
+                ns.substring(with: m.range(at: 3))
+            ))
+        }
+        if out.isEmpty {
+            let re2 = try? NSRegularExpression(
+                pattern: #"\{[^{}]*"answer"\s*:\s*"([^"]*)"[^{}]*"option"\s*:\s*"([^"]*)"[^{}]*"index"\s*:\s*"?(\d+)"?[^{}]*\}"#
+            )
+            re2?.enumerateMatches(in: body, range: NSRange(location: 0, length: ns.length)) { m, _, _ in
+                guard let m, m.numberOfRanges >= 4 else { return }
+                out.append((
+                    ns.substring(with: m.range(at: 2)),
+                    ns.substring(with: m.range(at: 1)),
+                    ns.substring(with: m.range(at: 3))
+                ))
+            }
+        }
+        return out
+    }
+
     // MARK: - helpers
 
     private static func parseExchangeNameTypes(_ body: String) -> [(String, String)] {
