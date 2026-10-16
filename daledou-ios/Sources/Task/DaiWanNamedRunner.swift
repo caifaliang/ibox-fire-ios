@@ -148,6 +148,12 @@ final class DaiWanNamedRunner: ObservableObject {
             return await MoreExtraActions.farmTiGuan(cookie: cookie, onLog: onLog)
         case "祭坛":
             return await MoreExtraActions.farmJiTan(cookie: cookie, onLog: onLog)
+        case "开锦囊":
+            return await MoreExtraActions.farmKaiJinNang(cookie: cookie, onLog: onLog)
+        case "梦想之旅":
+            return await MoreExtraActions.farmMengXiangZhiLv(cookie: cookie, onLog: onLog)
+        case "仙武修真", "仙武":
+            return await MoreExtraActions.farmXianWu(cookie: cookie, onLog: onLog)
         case "微端经验礼包":
             return await MoreExtraActions.weiDuanJingYan(cookie: cookie, onLog: onLog)
         case "微端挂机":

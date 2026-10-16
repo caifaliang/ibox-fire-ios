@@ -362,7 +362,370 @@ enum MoreExtraActions {
         return last
     }
 
+    // MARK: - 开锦囊 / 梦想之旅 / 仙武
+
+    private static let jinNangKeyIds: [(String, String)] = [
+        ("cb_jn_znfd", "8599"), ("cb_jn_cyhb", "8603"), ("cb_jn_fyhb", "8602"),
+        ("cb_jn_jxmh", "8226"), ("cb_jn_zjrdsh", "8227"), ("cb_jn_zzjn", "8225"),
+        ("cb_jn_jqjn", "8218"), ("cb_jn_lslb", "5299"), ("cb_jn_jxjn", "6779"),
+        ("cb_jn_xjz", "5763"), ("cb_jn_jhw", "5162"), ("cb_jn_shih", "5160"),
+        ("cb_jn_xhz", "5158"), ("cb_jn_hdz", "5159"), ("cb_jn_hhf", "5161"),
+        ("cb_jn_hys", "3790"), ("cb_jn_sm", "3400"), ("cb_jn_hz_s", "3371"),
+        ("cb_jn_hz_1", "3047"), ("cb_jn_hz_2", "3048"), ("cb_jn_hz_3", "3049"),
+        ("cb_jn_hz_4", "3050"), ("cb_jn_xys", "3447"), ("cb_jn_yb_x", "5875"),
+        ("cb_jn_yb_z", "5876"), ("cb_jn_yb_d", "5877"), ("cb_jn_dj_x", "5710"),
+        ("cb_jn_dj_d", "5712"), ("cb_jn_sj", "5878"), ("cb_jn_zybj", "3671"),
+    ]
+
+    static func farmKaiJinNang(cookie: String, onLog: @escaping (String) -> Void) async -> String {
+        let t = FeatureToggleStore.shared
+        var scanPage = t.getBool("more_settings", "cb_jn_jn")
+        let picked = jinNangKeyIds.filter { t.getBool("more_settings", $0.0) }.map(\.1)
+        // 悬浮窗一键：未勾选时默认扫锦囊页
+        if !scanPage && picked.isEmpty {
+            scanPage = true
+        }
+        onLog("开锦囊开始")
+        var opened = 0
+        let selfuin = LoginURLs.extractQq(cookie) ?? ""
+        if selfuin.isEmpty {
+            onLog("未识别 selfuin，将优先走手机 use")
+        } else {
+            onLog("selfuin=\(selfuin)")
+        }
+
+        func useOne(_ id: String) async -> String {
+            var body = ""
+            var msg = ""
+            if !selfuin.isEmpty {
+                let (_, r) = await LedouCGI.getPetPk(
+                    cmd: "use", extra: ["selfuin": selfuin, "id": id], cookie: cookie
+                )
+                try? await Task.sleep(nanoseconds: gapNs)
+                body = r
+                msg = CombatLog.fromBody(r)
+                if msg.contains("号码不允许") || r.contains("号码不允许") {
+                    let (_, phoneBody) = await LedouCGI.getPhonePk(
+                        cmd: "use", extra: ["id": id, "store_type": "5"], cookie: cookie
+                    )
+                    try? await Task.sleep(nanoseconds: gapNs)
+                    body = phoneBody
+                    msg = CombatLog.fromBody(phoneBody)
+                }
+            } else {
+                let (_, r) = await LedouCGI.getPhonePk(
+                    cmd: "use", extra: ["id": id, "store_type": "5"], cookie: cookie
+                )
+                try? await Task.sleep(nanoseconds: gapNs)
+                body = r
+                msg = CombatLog.fromBody(r)
+            }
+            if msg.isEmpty { msg = "使用\(id)" }
+            onLog(msg)
+            if body.contains("系统繁忙") || msg.contains("系统繁忙") { return "busy" }
+            if msg.contains("号码不允许") || body.contains("号码不允许")
+                || msg.contains("重新登录") || msg.contains("重新登陆")
+            {
+                return "stop"
+            }
+            let result0 = body.contains("\"result\":0") || body.contains("\"result\": 0")
+                || (try? NSRegularExpression(pattern: #""result"\s*:\s*0"#))?
+                .firstMatch(in: body, range: NSRange(body.startIndex..., in: body)) != nil
+            let ok = msg.contains("成功")
+                || (!body.contains("\"result\":") && !msg.contains("不足") && !msg.contains("没有")
+                    && !msg.contains("无法") && !msg.contains("不存在") && !msg.contains("等级不够")
+                    && !body.contains("不足") && !body.contains("没有") && !body.contains("无法"))
+            if result0 || (ok && !msg.contains("等级不够")) {
+                opened += 1
+                return "ok"
+            }
+            if msg.contains("等级不够") || body.contains("等级不够") { return "level" }
+            return "skip"
+        }
+
+        func drainId(_ id: String, max: Int = 30) async -> Bool {
+            var n = 0
+            while n < max && opened < 80 {
+                n += 1
+                if Task.isCancelled { return false }
+                switch await useOne(id) {
+                case "ok": break
+                case "busy":
+                    try? await Task.sleep(nanoseconds: 200_000_000)
+                case "stop":
+                    onLog("使用被拒绝，已停止")
+                    return false
+                default:
+                    return true
+                }
+            }
+            return true
+        }
+
+        if scanPage {
+            var page = 1
+            var emptyStreak = 0
+            while page <= 10 && opened < 80 {
+                if Task.isCancelled { break }
+                let (_, html) = await LedouCGI.getPhonePk(
+                    cmd: "store", extra: ["store_type": "5", "page": "\(page)"], cookie: cookie
+                )
+                try? await Task.sleep(nanoseconds: gapNs)
+                if html.contains("系统繁忙") {
+                    try? await Task.sleep(nanoseconds: 200_000_000)
+                    continue
+                }
+                guard let id = firstStoreUseId(html) else {
+                    emptyStreak += 1
+                    let h = html.replacingOccurrences(of: "&amp;", with: "&")
+                    let hasNext = h.contains("下一页") || h.contains("page=\(page + 1)")
+                    if !hasNext || emptyStreak >= 2 { break }
+                    page += 1
+                    continue
+                }
+                emptyStreak = 0
+                if !(await drainId(id, max: 1)) { break }
+                page = 1
+            }
+        }
+
+        for id in picked {
+            if opened >= 80 { break }
+            if !(await drainId(id)) { break }
+        }
+
+        if opened == 0 {
+            onLog("勾选的锦囊背包里没有或已用完")
+        }
+        onLog("开锦囊结束")
+        return "开锦囊\(opened)"
+    }
+
+    static func farmMengXiangZhiLv(cookie: String, onLog: @escaping (String) -> Void) async -> String {
+        onLog("梦想之旅开始")
+        let t = FeatureToggleStore.shared
+        let minCount = Int(t.getString("more_settings", "ed_mxzl_min").trimmingCharacters(in: .whitespaces))
+            .flatMap { $0 > 0 ? $0 : nil } ?? 5
+        // lingjiang 勾选；悬浮窗默认全开
+        let doPutong = t.getBool("lingjiang", "cb_lvyou_putong", default: true)
+        let doQuyu = t.getBool("lingjiang", "cb_lvyou_quyu", default: true)
+        let doZong = t.getBool("lingjiang", "cb_lvyou_zong", default: true)
+
+        if doPutong {
+            let (_, ordinary) = await LedouCGI.getPetPk(
+                cmd: "dreamtrip", extra: ["smapid": "0", "sub": "1"], cookie: cookie
+            )
+            try? await Task.sleep(nanoseconds: gapNs)
+            let om = CombatLog.fromBody(ordinary)
+            if !om.isEmpty { onLog("普通旅行:\(om)") }
+        }
+
+        let dow = DailyListenActions.weekdayMon1()
+        if dow == 4 {
+            onLog("今日周四，开始补机票")
+            var loops = 0
+            while loops < 20 {
+                loops += 1
+                if Task.isCancelled { break }
+                let (_, page) = await LedouCGI.getPetPk(
+                    cmd: "dreamtrip", extra: ["bmapid": "0", "sub": "0"], cookie: cookie
+                )
+                try? await Task.sleep(nanoseconds: gapNs)
+                if page.contains("系统繁忙") {
+                    try? await Task.sleep(nanoseconds: 200_000_000)
+                    continue
+                }
+                let msg = CombatLog.fromBody(page)
+                if page.contains("\"result\"")
+                    && !page.contains("\"result\":0")
+                    && !page.contains("\"result\":\"0\"")
+                {
+                    if !msg.isEmpty { onLog(msg) }
+                    break
+                }
+                let tickets = CombatLog.jsonInt(page, "dreamticket") ?? 0
+                let maps = parseDreamMaps(page)
+                let done = maps.filter { $0.1 == 1 }.count
+                let todo = maps.filter { $0.1 == 0 }
+                if todo.isEmpty {
+                    onLog("小地图已全部完成")
+                    break
+                }
+                if done < minCount || tickets < todo.count {
+                    onLog("不满足补机票条件（完成\(done)/\(minCount)，机票\(tickets)，待打\(todo.count)）")
+                    break
+                }
+                let smap = todo[0].0
+                onLog("已完成\(done)，梦幻机票\(tickets)，旅行\(smap)")
+                let (_, travel) = await LedouCGI.getPetPk(
+                    cmd: "dreamtrip", extra: ["smapid": smap, "sub": "1"], cookie: cookie
+                )
+                try? await Task.sleep(nanoseconds: gapNs)
+                let tm = CombatLog.fromBody(travel)
+                if !tm.isEmpty { onLog("梦幻旅行:\(tm)") }
+                if travel.contains("不足") || travel.contains("没有") { break }
+            }
+        } else {
+            onLog("今日周\(dow)，不补机票")
+        }
+
+        if doQuyu {
+            for i in 1...4 {
+                let (_, r) = await LedouCGI.getPetPk(
+                    cmd: "dreamtrip", extra: ["sub": "2", "bmapid": "\(i)"], cookie: cookie
+                )
+                try? await Task.sleep(nanoseconds: gapNs)
+                let m = CombatLog.fromBody(r)
+                if !m.isEmpty { onLog("区域\(i):\(m)") }
+            }
+        }
+        if doZong {
+            let (_, total) = await LedouCGI.getPetPk(
+                cmd: "dreamtrip", extra: ["sub": "2", "bmapid": "0"], cookie: cookie
+            )
+            try? await Task.sleep(nanoseconds: gapNs)
+            onLog("总奖励：\(CombatLog.fromBody(total).ifBlankMe("已请求"))")
+        }
+        onLog("梦想之旅结束")
+        return "梦想之旅完成"
+    }
+
+    static func farmXianWu(cookie: String, onLog: @escaping (String) -> Void) async -> String {
+        let t = FeatureToggleStore.shared
+        var mountain = 0
+        if t.getBool("more_settings", "rg_xwxz_1") { mountain = 1 }
+        else if t.getBool("more_settings", "rg_xwxz_2") { mountain = 2 }
+        else if t.getBool("more_settings", "rg_xwxz_3") { mountain = 3 }
+        let autoRate = t.getBool("more_settings", "cb_xwxz_auto")
+        let autoRefresh = t.getBool("more_settings", "cb_xwxz_auto_shuaxin")
+        // 悬浮窗：未勾选时默认力量山
+        if mountain <= 0 && !autoRate { mountain = 1 }
+        onLog("仙武修真开始")
+        for taskid in 1...3 {
+            let (_, r) = await LedouCGI.getPetPk(
+                cmd: "immortals", extra: ["op": "getreward", "taskid": "\(taskid)"], cookie: cookie
+            )
+            try? await Task.sleep(nanoseconds: gapNs)
+            let m = CombatLog.fromBody(r)
+            if !m.isEmpty { onLog("任务\(taskid):\(m)") }
+        }
+        var mid = max(mountain, 1)
+        if autoRate {
+            let (_, cfg) = await LedouCGI.getPetPk(
+                cmd: "immortals", extra: ["op": "findimmortals"], cookie: cookie
+            )
+            try? await Task.sleep(nanoseconds: gapNs)
+            if let hit = firstMatchInt(cfg, #"爆率提升[\s\S]{0,80}?mountainId[=:](\d+)"#)
+                ?? firstMatchInt(cfg, #""index"\s*:\s*"?(\d+)[^}]*爆率"#)
+            {
+                mid = hit
+                onLog("按爆率自动选山\(mid)")
+            }
+        }
+        var fights = 0
+        while fights < 20 {
+            if Task.isCancelled { break }
+            let (_, find) = await LedouCGI.getPetPk(
+                cmd: "immortals", extra: ["op": "findimmortals"], cookie: cookie
+            )
+            try? await Task.sleep(nanoseconds: gapNs)
+            let left = CombatLog.jsonInt(find, "leftNum")
+                ?? CombatLog.jsonInt(find, "left_num")
+                ?? CombatLog.jsonInt(find, "leftTimes")
+            if let left, left <= 0 {
+                onLog("没次数了")
+                break
+            }
+            let (_, visit) = await LedouCGI.getPetPk(
+                cmd: "immortals",
+                extra: ["op": "visitimmortals", "mountainId": "\(mid)"],
+                cookie: cookie
+            )
+            try? await Task.sleep(nanoseconds: gapNs)
+            let vmsg = CombatLog.fromBody(visit)
+            if !vmsg.isEmpty { onLog(vmsg) }
+            let ifFree = CombatLog.jsonInt(visit, "ifFree") ?? 0
+            let ifUp = CombatLog.jsonInt(visit, "ifUp") ?? 0
+            if autoRefresh && ifFree > 0 && ifUp == 0 {
+                let (_, ref) = await LedouCGI.getPetPk(
+                    cmd: "immortals", extra: ["op": "refreshimmortals"], cookie: cookie
+                )
+                try? await Task.sleep(nanoseconds: gapNs)
+                onLog(CombatLog.fromBody(ref).ifBlankMe("免费刷新"))
+                continue
+            }
+            let (_, fight) = await LedouCGI.getPetPk(
+                cmd: "immortals", extra: ["op": "fightimmortals"], cookie: cookie
+            )
+            fights += 1
+            try? await Task.sleep(nanoseconds: gapNs)
+            let fmsg = CombatLog.fromBody(fight)
+            if !fmsg.isEmpty { onLog(fmsg) }
+            if fight.contains("不足") || fight.contains("没有") || fight.contains("上限")
+                || fight.contains("明天") || fmsg.contains("没次数")
+            {
+                break
+            }
+        }
+        onLog("仙武修真结束")
+        return "仙武\(fights)"
+    }
+
     // MARK: - helpers
+
+    private static func firstStoreUseId(_ html: String) -> String? {
+        let lines = html.components(separatedBy: CharacterSet(charactersIn: "\n"))
+            .flatMap { $0.components(separatedBy: "<br />") }
+            .flatMap { $0.components(separatedBy: "<br/>") }
+            .flatMap { $0.components(separatedBy: "<br>") }
+        for line in lines where line.contains("使用") {
+            if let id = firstMatch(line, #"cmd=use[^"'\s>]*[?&]id=(\d+)"#)
+                ?? firstMatch(line, #"[?&]id=(\d+)[^"'\s>]*cmd=use"#)
+            {
+                return id
+            }
+        }
+        return firstMatch(html, #"cmd=use[^"'>\s]*[?&]id=(\d+)"#)
+    }
+
+    private static func parseDreamMaps(_ body: String) -> [(String, Int)] {
+        var out: [(String, Int)] = []
+        let re1 = try? NSRegularExpression(
+            pattern: #"\{[^{}]*"id"\s*:\s*"?(\d+)[^{}]*"status"\s*:\s*"?(\d+)[^{}]*\}"#
+        )
+        let ns = body as NSString
+        re1?.enumerateMatches(in: body, range: NSRange(location: 0, length: ns.length)) { m, _, _ in
+            guard let m, m.numberOfRanges >= 3 else { return }
+            let id = ns.substring(with: m.range(at: 1))
+            let st = Int(ns.substring(with: m.range(at: 2))) ?? 0
+            out.append((id, st))
+        }
+        if out.isEmpty {
+            let re2 = try? NSRegularExpression(
+                pattern: #"\{[^{}]*"status"\s*:\s*"?(\d+)[^{}]*"id"\s*:\s*"?(\d+)[^{}]*\}"#
+            )
+            re2?.enumerateMatches(in: body, range: NSRange(location: 0, length: ns.length)) { m, _, _ in
+                guard let m, m.numberOfRanges >= 3 else { return }
+                let st = Int(ns.substring(with: m.range(at: 1))) ?? 0
+                let id = ns.substring(with: m.range(at: 2))
+                out.append((id, st))
+            }
+        }
+        return out
+    }
+
+    private static func firstMatch(_ text: String, _ pattern: String) -> String? {
+        guard let re = try? NSRegularExpression(pattern: pattern) else { return nil }
+        let ns = text as NSString
+        guard let m = re.firstMatch(in: text, range: NSRange(location: 0, length: ns.length)),
+              m.numberOfRanges >= 2
+        else { return nil }
+        return ns.substring(with: m.range(at: 1))
+    }
+
+    private static func firstMatchInt(_ text: String, _ pattern: String) -> Int? {
+        firstMatch(text, pattern).flatMap(Int.init)
+    }
 
     private static func saiquOf(_ id: String) -> String {
         id.count == 8 ? String(id.dropFirst(4).prefix(2)) : ""
