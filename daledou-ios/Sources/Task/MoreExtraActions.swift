@@ -137,7 +137,7 @@ enum MoreExtraActions {
         let t = FeatureToggleStore.shared
         var doTask = t.getBool("renwu", "cb_youji_1")
         var doAward = t.getBool("renwu", "cb_youji_2")
-        var doExchange = t.getBool("renwu", "cb_youji_3")
+        let doExchange = t.getBool("renwu", "cb_youji_3")
         // 悬浮窗一键：未勾选时默认做任务+领奖
         if !doTask && !doAward && !doExchange {
             doTask = true
@@ -319,7 +319,7 @@ enum MoreExtraActions {
 
     static func weiDuanStop(cookie: String, onLog: @escaping (String) -> Void) async -> String {
         onLog("【微端结束挂机】获取挂机数据中")
-        let qq = SessionStore.shared.qq
+        let qq = await MainActor.run { SessionStore.shared.qq }
         if !qq.isEmpty {
             _ = await LedouCGI.getPetPk(cmd: "visit", extra: ["puin": qq, "kind": "1"], cookie: cookie)
             try? await Task.sleep(nanoseconds: gapNs)
