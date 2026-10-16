@@ -1258,7 +1258,21 @@ enum DailyListenActions {
             if uins.isEmpty { onLog("无好友申请") }
         }
         if b("auto_add") {
-            onLog("自动加好友需查区名册，本轮跳过")
+            let roster = await MainActor.run { ChaQuStore.shared.all() }
+            if roster.isEmpty {
+                onLog("名册为空，请先武林查区更新")
+            } else {
+                for e in roster.prefix(15) {
+                    let (_, r) = await LedouCGI.getPhonePk(
+                        cmd: "friend_change",
+                        extra: ["op": "addfriend", "oppuin": e.uin],
+                        cookie: cookie
+                    )
+                    try? await Task.sleep(nanoseconds: 150_000_000)
+                    onLog("添加\(e.name.isEmpty ? e.uin : e.name)：\(CombatLog.fromBody(r))")
+                    done += 1
+                }
+            }
         }
         if b("auto_del") {
             onLog("自动删除需在查区标记后使用，本轮跳过批量删（防误删）")

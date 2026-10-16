@@ -39,6 +39,21 @@ final class ChaQuStore: ObservableObject {
         revision &+= 1
     }
 
+    func upsertMerge(uin: String, name: String? = nil, level: Int? = nil, value: Int? = nil) {
+        guard !uin.isEmpty else { return }
+        let old = loadMap()[uin]
+        upsertAll([
+            Entry(
+                uin: uin,
+                name: (name?.isEmpty == false ? name! : (old?.name ?? "")),
+                level: (level ?? 0) > 0 ? level! : (old?.level ?? 0),
+                value: value ?? old?.value ?? 0,
+                saiqu: old?.saiqu ?? 0,
+                lzn: old?.lzn ?? 0
+            ),
+        ])
+    }
+
     func clear() {
         defaults.removeObject(forKey: key)
         revision &+= 1
