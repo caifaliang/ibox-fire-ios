@@ -19,7 +19,7 @@ struct HuanZhuangView: View {
         let _ = tick
         NavigationStack {
             VStack(alignment: .leading, spacing: 14) {
-                Text("选择装扮方案后点应用。神将/佣兵/专精编辑器尚未接入。")
+                Text("选择装扮方案后点应用。勾选星盘时走拆卸→镶嵌（目标数在活跃设置「星盘换装」）。神将/佣兵/专精编辑器尚未接入。")
                     .font(.system(size: 12))
                     .foregroundStyle(DlColors.inkMuted)
 

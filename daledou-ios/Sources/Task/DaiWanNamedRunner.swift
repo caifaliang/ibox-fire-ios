@@ -207,6 +207,8 @@ final class DaiWanNamedRunner: ObservableObject {
         case let name where name.hasPrefix("自动换装"):
             let id = Int(name.filter(\.isNumber)) ?? 1
             return await MoreExtraActions.applyOutfitPlan(planId: id, cookie: cookie, onLog: onLog)
+        case "一键星盘换装", "星盘换装":
+            return await XingPanActions.farmXingPanHuanZhuang(cookie: cookie, onLog: onLog)
         case "自动强化", "神装强化":
             let t = FeatureToggleStore.shared
             let fid = QiangHuaActions.fid

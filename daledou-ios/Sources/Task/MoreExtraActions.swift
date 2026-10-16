@@ -1704,7 +1704,7 @@ enum MoreExtraActions {
         return "装扮\(id)"
     }
 
-    /// 真源：`farmYiJianHuanZhuang` — 装扮槽 + 可选星盘（星盘镶嵌下一切片再加深）。
+    /// 真源：`farmYiJianHuanZhuang` — 装扮槽 + 可选星盘换装。
     static func farmYiJianHuanZhuang(
         onLog: @escaping (String) -> Void
     ) async -> String {
@@ -1719,8 +1719,7 @@ enum MoreExtraActions {
         var parts: [String] = []
         parts.append(await applyOutfitPlan(planId: plan, cookie: cookie, onLog: onLog))
         if t.getBool("huoyue", "cb_yjhz_xp") {
-            onLog("星盘换装：请先在活跃设置填写目标数；完整镶嵌循环下一切片接入")
-            parts.append("星盘待加深")
+            parts.append(await XingPanActions.farmXingPanHuanZhuang(cookie: cookie, onLog: onLog))
         }
         onLog("神将/佣兵/专精/头像等方案编辑器尚未接入，已跳过")
         return parts.joined(separator: "；")
