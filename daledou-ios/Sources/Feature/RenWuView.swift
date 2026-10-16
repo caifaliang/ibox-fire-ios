@@ -32,7 +32,7 @@ struct RenWuView: View {
         let _ = tick
         NavigationStack {
             VStack(spacing: 0) {
-                Text("勾选后可后台轮询：日常一键 / 帮派入口 / 门派完成 / 游记 / 押镖。")
+                Text("勾选后可后台轮询：日常强化(兵法/神装/专精) + 一键完成 / 帮派 / 门派 / 游记 / 押镖。")
                     .font(.system(size: 12))
                     .foregroundStyle(DlColors.inkMuted)
                     .frame(maxWidth: .infinity, alignment: .leading)

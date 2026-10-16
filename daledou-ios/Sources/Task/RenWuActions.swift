@@ -66,11 +66,38 @@ enum RenWuActions {
 
     // MARK: - 日常
 
+    private struct DailyJsonTask {
+        let id: String
+        let title: String
+        let desc: String
+        let status: Int
+    }
+
     static func farmRiChang(
         cookie: String,
         onLog: @escaping (String) -> Void
     ) async -> String {
         onLog("日常任务开始")
+        let selfuin = LoginURLs.extractQq(cookie) ?? ""
+        onLog("selfuin=\(selfuin.isEmpty ? "空" : selfuin)")
+
+        let tasks = await loadDailyJson(cookie: cookie, selfuin: selfuin)
+        if tasks.isEmpty {
+            onLog("任务库为空（selfuin 或接口失败），直接一键完成")
+        } else {
+            for t in tasks {
+                let st: String
+                switch t.status {
+                case 2: st = "可做"
+                case 3: st = "可领"
+                case 4: st = "已完成"
+                default: st = "status=\(t.status)"
+                }
+                onLog("库[\(t.id)] \(st) \(t.title)：\(String(t.desc.prefix(24)))")
+            }
+            await applyNotesEnhance(cookie: cookie, tasks: tasks, onLog: onLog)
+        }
+
         var page = ""
         for _ in 0..<2 {
             let (_, b) = await LedouCGI.getPhonePk(
@@ -98,6 +125,252 @@ enum RenWuActions {
         let tip = CombatLog.fromBody(page).ifBlankMe("日常已请求一键完成")
         onLog(tip)
         return tip
+    }
+
+    /// 真源：`MoreExtraActions.loadDailyJson` — petpk task sub=1。
+    private static func loadDailyJson(
+        cookie: String,
+        selfuin: String
+    ) async -> [DailyJsonTask] {
+        var extra = ["sub": "1", "page": "0"]
+        if !selfuin.isEmpty { extra["selfuin"] = selfuin }
+        let (_, raw) = await LedouCGI.getPetPk(cmd: "task", extra: extra, cookie: cookie)
+        try? await Task.sleep(nanoseconds: gapNs)
+        guard let data = raw.data(using: .utf8),
+              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              (root["result"] as? Int) == 0 || (root["result"] as? String) == "0",
+              let arr = root["tasklist"] as? [[String: Any]]
+        else { return [] }
+        return arr.compactMap { o in
+            let id = "\(o["id"] ?? "")"
+            let title = "\(o["title"] ?? "")"
+            guard !title.isEmpty else { return nil }
+            let status: Int
+            if let i = o["status"] as? Int { status = i }
+            else if let s = o["status"] as? String, let i = Int(s) { status = i }
+            else { status = 0 }
+            return DailyJsonTask(
+                id: id,
+                title: title,
+                desc: "\(o["desc"] ?? "")",
+                status: status
+            )
+        }
+    }
+
+    /// 真源：`MoreExtraActions.applyNotesEnhance` — status==2 且勾选才做。
+    private static func applyNotesEnhance(
+        cookie: String,
+        tasks: [DailyJsonTask],
+        onLog: @escaping (String) -> Void
+    ) async {
+        let s = RenWuStore.shared
+        let bingfa = (1...4).map { "rg_renwu_bingfa_\($0)" }
+        let bingfaName = ["金兰之泽", "雷霆一击", "残暴攻势", "不屈意志"]
+        let slots = ["神兵", "神铠", "神羽", "神兽", "神饰", "神履"]
+        let sz = (1...6).map { "rg_renwu_shenzhuang_\($0)" }
+        let szSkill = (1...6).map { "rg_renwu_shenzhuang_ji_neng_\($0)" }
+        let szSx = (1...3).map { "rg_renwu_shenzhuang_ji_neng_sx_\($0)" }
+        let zj = (1...4).map { "rg_renwu_zhuanjing_\($0)" }
+        let zjName = ["投掷", "小型", "中型", "大型"]
+        let zjType = (1...4).map { "rg_renwu_zhuanjing_type_\($0)" }
+        let zjWuqi = (1...3).map { "rg_renwu_zhuanjing_wuqi_\($0)" }
+        let zjWuqiName = ["控制", "吸血", "凝神"]
+
+        for task in tasks {
+            if Task.isCancelled { break }
+            guard task.status == 2 else { continue }
+
+            if task.title == "兵法研习" {
+                guard s.on("cb_renwu_bingfa") else {
+                    onLog("兵法研习未勾选，跳过")
+                    continue
+                }
+                let idx = s.radioIndex(bingfa)
+                let (_, page) = await LedouCGI.getPetPk(
+                    cmd: "brofight", extra: ["subtype": "5"], cookie: cookie
+                )
+                try? await Task.sleep(nanoseconds: gapNs)
+                let ids = allGroups(#""base_id"\s*:\s*"?(\d+)""#, in: page)
+                let base = idx < ids.count ? ids[idx] : nil
+                if base == nil || base!.isEmpty {
+                    onLog("兵法研习 无 \(bingfaName[min(idx, bingfaName.count - 1)])")
+                } else {
+                    onLog("兵法研习：\(bingfaName[min(idx, bingfaName.count - 1)])")
+                    await enhanceOnce(
+                        cookie: cookie,
+                        cmd: "brofight",
+                        extra: ["subtype": "4", "skill_base_id": base!],
+                        title: task.title,
+                        onLog: onLog
+                    )
+                }
+                continue
+            }
+
+            if task.title == "强化神装", task.desc.contains("强化任意神装一次") {
+                guard s.on("cb_renwu_shenzhuang") else {
+                    onLog("神装强化未勾选，跳过")
+                    continue
+                }
+                let idx = s.radioIndex(sz)
+                onLog("神装强化：\(slots[min(idx, slots.count - 1)])")
+                await enhanceOnce(
+                    cookie: cookie,
+                    cmd: "outfit",
+                    extra: ["op": "1", "magic_outfit_id": "\(idx)"],
+                    title: task.title,
+                    onLog: onLog
+                )
+                continue
+            }
+
+            if task.title == "强化神装", task.desc.contains("消耗精华升级任意神装技能一次") {
+                guard s.on("cb_renwu_shenzhuang_ji_neng") else {
+                    onLog("神装技能未勾选，跳过")
+                    continue
+                }
+                let outfitIdx = s.radioIndex(szSkill)
+                let skillIdx = s.radioIndex(szSx)
+                let (_, page) = await LedouCGI.getPetPk(
+                    cmd: "outfit", extra: ["op": "0"], cookie: cookie
+                )
+                try? await Task.sleep(nanoseconds: gapNs)
+                let skill = parseOutfitSkillId(page, outfitIdx: outfitIdx, skillIdx: skillIdx)
+                if skill == nil || skill!.isEmpty {
+                    onLog("神装技能 无 \(slots[min(outfitIdx, slots.count - 1)]) 技能\(skillIdx + 1)")
+                } else {
+                    onLog("神装技能：\(slots[min(outfitIdx, slots.count - 1)]) 技能\(skillIdx + 1)")
+                    await enhanceOnce(
+                        cookie: cookie,
+                        cmd: "outfit",
+                        extra: ["op": "3", "magic_skill_id": skill!],
+                        title: task.title,
+                        onLog: onLog
+                    )
+                }
+                continue
+            }
+
+            if task.title == "武器专精", task.desc.contains("符文石强化") {
+                guard s.on("cb_renwu_zhuanjing") else {
+                    onLog("专精强化未勾选，跳过")
+                    continue
+                }
+                let idx = s.radioIndex(zj)
+                onLog("专精强化：\(zjName[min(idx, zjName.count - 1)])")
+                await enhanceOnce(
+                    cookie: cookie,
+                    cmd: "weapon_specialize",
+                    extra: ["op": "1", "type_id": "\(idx)"],
+                    title: task.title,
+                    onLog: onLog
+                )
+                continue
+            }
+
+            if task.title == "武器专精", task.desc.contains("千年寒铁") {
+                guard s.on("cb_renwu_zhuanjing_wuqi") else {
+                    onLog("专精武器栏未勾选，跳过")
+                    continue
+                }
+                let typeIdx = s.radioIndex(zjType)
+                let wuqiIdx = s.radioIndex(zjWuqi)
+                let storage = typeIdx * 3 + 1000 + wuqiIdx
+                onLog("专精武器栏：\(zjName[min(typeIdx, zjName.count - 1)]) \(zjWuqiName[min(wuqiIdx, zjWuqiName.count - 1)])")
+                await enhanceOnce(
+                    cookie: cookie,
+                    cmd: "weapon_specialize",
+                    extra: ["op": "4", "storage_id": "\(storage)"],
+                    title: task.title,
+                    onLog: onLog
+                )
+                continue
+            }
+
+            if task.title == "强化铭刻" {
+                guard s.on("cb_renwu_mingke") else {
+                    onLog("铭刻强化未勾选，跳过")
+                    continue
+                }
+                let url = s.text("ed_renwu_mk").trimmingCharacters(in: .whitespacesAndNewlines)
+                if url.isEmpty {
+                    onLog("铭刻已勾选，但未填强化URL，跳过")
+                    continue
+                }
+                onLog("铭刻强化")
+                let (_, r) = await LedouCGI.getHref(url, cookie: cookie)
+                try? await Task.sleep(nanoseconds: gapNs)
+                onLog(String(CombatLog.fromBody(r).ifBlankMe("已请求").prefix(60)))
+                continue
+            }
+
+            if task.title == "徽章进阶" {
+                guard s.on("cb_renwu_huizhang") else {
+                    onLog("徽章强化未勾选，跳过")
+                    continue
+                }
+                let id = s.text("ed_renwu_huizhang_id").trimmingCharacters(in: .whitespacesAndNewlines)
+                if id.isEmpty {
+                    onLog("徽章已勾选，但未填achievement_id，跳过")
+                    continue
+                }
+                await enhanceOnce(
+                    cookie: cookie,
+                    cmd: "achievement",
+                    extra: ["op": "upgradelevel", "times": "1", "achievement_id": id],
+                    title: task.title,
+                    onLog: onLog
+                )
+            }
+        }
+    }
+
+    private static func enhanceOnce(
+        cookie: String,
+        cmd: String,
+        extra: [String: String],
+        title: String,
+        onLog: @escaping (String) -> Void
+    ) async {
+        let (_, raw) = await LedouCGI.getPetPk(cmd: cmd, extra: extra, cookie: cookie)
+        try? await Task.sleep(nanoseconds: gapNs)
+        if raw.contains("auto_buy"), raw.contains("\"1\"") {
+            onLog("[日常强化]\(title) 会自动买材料，已停")
+            return
+        }
+        let msg = CombatLog.fromBody(raw).ifBlankMe("已请求")
+        onLog(String("[日常强化]\(title) \(msg)".prefix(80)))
+    }
+
+    /// 对齐 Android：`outfits[outfitIdx * 2].skills[skillIdx].skill_id`
+    private static func parseOutfitSkillId(
+        _ page: String,
+        outfitIdx: Int,
+        skillIdx: Int
+    ) -> String? {
+        guard let data = page.data(using: .utf8),
+              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let outfits = root["magic_outfits"] as? [[String: Any]]
+        else { return nil }
+        let oi = outfitIdx * 2
+        guard oi < outfits.count,
+              let skills = outfits[oi]["skills"] as? [[String: Any]],
+              skillIdx < skills.count
+        else { return nil }
+        let sid = skills[skillIdx]["skill_id"]
+        if let i = sid as? Int, i > 0 { return "\(i)" }
+        if let s = sid as? String, let i = Int(s), i > 0 { return s }
+        return nil
+    }
+
+    private static func allGroups(_ pattern: String, in text: String) -> [String] {
+        guard let re = try? NSRegularExpression(pattern: pattern) else { return [] }
+        let ns = text as NSString
+        return re.matches(in: text, range: NSRange(location: 0, length: ns.length)).compactMap { m in
+            guard m.numberOfRanges >= 2 else { return nil }
+            return ns.substring(with: m.range(at: 1))
+        }
     }
 
     // MARK: - 帮派
