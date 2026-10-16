@@ -94,7 +94,7 @@ PetFunFight.swf + Ruffle WASM（CDN 拉 action_gg/mm 等）
 
 - 群侠录像 FAB / `knightfight` 专用入口  
 - `RuffleWarmService` / 预下载动作包到 Documents  
-- `ViewFightHtmlSplicer` 多页文字拼接  
+- ~~`ViewFightHtmlSplicer` 多页文字拼接~~ → fd137 已接（侠士 Act 摘要注入仍后续）  
 - 可拖拽 FAB 位置持久化（固定右下角即可）
 
 ## 风险

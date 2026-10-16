@@ -101,6 +101,14 @@ final class AppViewModel: ObservableObject {
     @Published var suspendGameWebForReplay = false
     private var lastViewFightUrl: String?
     private var resumeGameURL: URL?
+    /// 真源：`GameShellScreen` viewfight 多页拼接缓存 / 代数
+    private var spliceGen = 0
+    private var activeSpliceKey: String?
+    private var lastSplicedUrl: String?
+    private var spliceCacheHtml: String?
+    private var spliceCacheFightId: String?
+    private var preViewFightUrl: String?
+    private var prevNavUrlForFight: String?
 
     /// 背包页悬浮钮（cmd=store/bag 或标题含「背包」）
     @Published var showBeiBaoFab = false
@@ -1045,8 +1053,25 @@ final class AppViewModel: ObservableObject {
     }
 
     func onNavigated(to url: URL?) {
+        let prev = currentURLString
         currentURLString = url?.absoluteString ?? ""
         noteOneKeyNavigation(to: url)
+
+        // 进 viewfight 前记住列表页，便于返回；并触发多页拼接
+        if LoginURLs.isViewFightUrl(currentURLString) {
+            if !LoginURLs.isViewFightUrl(prev),
+               prev.hasPrefix("http"),
+               let cmd = URLComponents(string: prev)?.queryItems?.first(where: { $0.name == "cmd" })?.value,
+               !cmd.isEmpty, cmd != "viewfight"
+            {
+                preViewFightUrl = prev
+            }
+            prevNavUrlForFight = prev
+            maybeBeginViewFightSplice(url: currentURLString)
+        } else if !currentURLString.isEmpty {
+            // 离开战报：清活跃拼接 key（缓存保留同场二次进入）
+            activeSpliceKey = nil
+        }
 
         if loginMode == .scan,
            let s = url?.absoluteString,
@@ -1152,13 +1177,109 @@ final class AppViewModel: ObservableObject {
     }
 
     private func updateViewFightFab(for urlString: String) {
-        if LoginURLs.isViewFightUrl(urlString) {
-            lastViewFightUrl = urlString
+        if LoginURLs.isViewFightUrl(urlString) || (lastSplicedUrl != nil && urlString == lastSplicedUrl) {
+            if LoginURLs.isViewFightUrl(urlString) {
+                lastViewFightUrl = ViewFightHtmlSplicer.multipageBase(urlString)
+            }
             showViewFightFab = true
+        } else if lastSplicedUrl != nil, urlString.contains("phonepk"), showViewFightFab {
+            // 拼接后 baseURL 可能仍是 phonepk viewfight
+            showViewFightFab = LoginURLs.isViewFightUrl(urlString) || urlString == lastSplicedUrl
         } else {
-            // 离开战报页则隐藏（拼接页暂不做）
             showViewFightFab = false
         }
+    }
+
+    /// 真源：`GameShellScreen` onUrlChanged → ViewFightHtmlSplicer.spliceSuspend
+    private func maybeBeginViewFightSplice(url: String) {
+        let hideKnight = ViewFightHtmlSplicer.hideKnightDetail(url)
+        let spliceBase = ViewFightHtmlSplicer.multipageBase(url)
+        let fightId = ViewFightHtmlSplicer.fightId(from: url)
+        lastViewFightUrl = spliceBase
+        showViewFightFab = true
+
+        let cacheHasKnight = spliceCacheFightId == fightId
+            && (spliceCacheHtml?.contains("阵容1侠士") == true)
+        if cacheHasKnight, !hideKnight, let cached = spliceCacheHtml {
+            loadSplicedHtml(cached, historyUrl: spliceBase)
+            lastSplicedUrl = spliceBase
+            viewFightLoading = false
+            return
+        }
+
+        // 同场已拼完且非「查看详情」：勿重拉
+        if !hideKnight, spliceBase == lastSplicedUrl, spliceCacheHtml != nil {
+            return
+        }
+
+        let spliceKey = "\(fightId ?? "")|\(hideKnight ? "h1" : "h0")"
+        if activeSpliceKey == spliceKey { return }
+        activeSpliceKey = spliceKey
+        spliceGen &+= 1
+        let gen = spliceGen
+        viewFightLoading = true
+        statusText = "正在拼接战斗过程…"
+
+        Task { @MainActor in
+            var cookie = session.cookieHeader
+            if let wv = gameWebView {
+                let web = await CookieBridge.readCookieHeader(from: wv)
+                cookie = Self.mergeCookieHeaders(cookie, web)
+            }
+            guard LoginURLs.hasGameSession(cookie) else {
+                if gen == spliceGen {
+                    viewFightLoading = false
+                    activeSpliceKey = nil
+                    statusText = "请先登录再看战报"
+                }
+                return
+            }
+
+            let result = await ViewFightHtmlSplicer.splice(
+                pageUrl: spliceBase,
+                cookie: cookie,
+                firstPageBody: nil
+            )
+            guard gen == spliceGen else { return }
+
+            let hasKnight = result.html.contains("阵容1侠士") || result.html.contains("克制")
+            if !hasKnight,
+               spliceCacheFightId == fightId,
+               spliceCacheHtml?.contains("阵容1侠士") == true,
+               let cached = spliceCacheHtml
+            {
+                loadSplicedHtml(cached, historyUrl: spliceBase)
+                showViewFightFab = true
+                activeSpliceKey = nil
+                viewFightLoading = false
+                statusText = ""
+                return
+            }
+
+            lastSplicedUrl = spliceBase
+            spliceCacheHtml = result.html
+            spliceCacheFightId = fightId
+            loadSplicedHtml(result.html, historyUrl: spliceBase)
+            showViewFightFab = true
+            activeSpliceKey = nil
+            viewFightLoading = false
+            statusText = result.pages > 1
+                ? "已拼接 \(result.pages) 页战斗过程"
+                : (result.pages == 1 ? "战斗过程已就绪" : "")
+        }
+    }
+
+    private func loadSplicedHtml(_ html: String, historyUrl: String) {
+        guard let wv = gameWebView,
+              let base = URL(string: historyUrl),
+              let data = html.data(using: .utf8)
+        else { return }
+        wv.load(
+            data,
+            mimeType: "text/html",
+            characterEncodingName: "UTF-8",
+            baseURL: base
+        )
     }
 
     /// 真源：`GameShellScreen.isBeiBaoPageUrl` + 标题含「背包」。
@@ -1512,6 +1633,12 @@ final class AppViewModel: ObservableObject {
         showReplay = false
         viewFightLoading = false
         lastViewFightUrl = nil
+        spliceGen &+= 1
+        activeSpliceKey = nil
+        lastSplicedUrl = nil
+        spliceCacheHtml = nil
+        spliceCacheFightId = nil
+        preViewFightUrl = nil
         clearWebEpoch &+= 1
         loadWaitingPage = true
         pendingURL = nil
