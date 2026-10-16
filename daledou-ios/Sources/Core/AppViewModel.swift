@@ -1235,10 +1235,43 @@ final class AppViewModel: ObservableObject {
                 return
             }
 
+            // 先拉首页，再并行：多页拼 + 侠士 Act 摘要（对齐 GameShellScreen）
+            let firstBody: String
+            if let u = URL(string: spliceBase) {
+                firstBody = await LedouCGI.get(url: u, cookie: cookie).1
+            } else {
+                firstBody = ""
+            }
+            guard gen == spliceGen else { return }
+
+            let prev = preViewFightUrl ?? prevNavUrlForFight ?? ""
+            let fromHuaShan = prev.lowercased().contains("knightarena")
+                || prev.contains("华山")
+            let fromKnight = prev.lowercased().contains("knightfight")
+            let autoKnight = KnightFightHtml.shouldAutoExpand(
+                url: url,
+                phoneHtml: firstBody,
+                fromHuaShan: fromHuaShan,
+                fromKnightFight: fromKnight
+            )
+            let injectKnight = hideKnight || autoKnight
+
+            let knightHtml: String
+            if injectKnight {
+                let fetched = await FightActFetcher.fetch(pageUrl: url, cookieHeader: cookie)
+                knightHtml = fetched.act.contains("&Player")
+                    ? KnightFightHtml.toHtml(fetched.act, resolveSkills: false)
+                    : ""
+            } else {
+                knightHtml = ""
+            }
+            guard gen == spliceGen else { return }
+
             let result = await ViewFightHtmlSplicer.splice(
                 pageUrl: spliceBase,
                 cookie: cookie,
-                firstPageBody: nil
+                knightSummaryHtml: knightHtml,
+                firstPageBody: firstBody
             )
             guard gen == spliceGen else { return }
 
@@ -1263,9 +1296,15 @@ final class AppViewModel: ObservableObject {
             showViewFightFab = true
             activeSpliceKey = nil
             viewFightLoading = false
-            statusText = result.pages > 1
-                ? "已拼接 \(result.pages) 页战斗过程"
-                : (result.pages == 1 ? "战斗过程已就绪" : "")
+            if hasKnight {
+                statusText = result.pages > 1
+                    ? "已拼接 \(result.pages) 页 + 侠士详情"
+                    : "已注入侠士战斗详情"
+            } else {
+                statusText = result.pages > 1
+                    ? "已拼接 \(result.pages) 页战斗过程"
+                    : (result.pages == 1 ? "战斗过程已就绪" : "")
+            }
         }
     }
 
