@@ -207,6 +207,29 @@ final class DaiWanNamedRunner: ObservableObject {
         case let name where name.hasPrefix("自动换装"):
             let id = Int(name.filter(\.isNumber)) ?? 1
             return await MoreExtraActions.applyOutfitPlan(planId: id, cookie: cookie, onLog: onLog)
+        case "自动强化", "神装强化":
+            let t = FeatureToggleStore.shared
+            let fid = QiangHuaActions.fid
+            let slot = min(5, max(0, t.getInt(fid, "sz_slot")))
+            let mode = min(1, max(0, t.getInt(fid, "sz_mode")))
+            let skill = min(2, max(0, t.getInt(fid, "sz_skill")))
+            return await QiangHuaActions.enhanceShenZhuang(
+                slot: slot, mode: mode, skillIdx: skill,
+                once: true,
+                autoBuy: t.getBool(fid, "auto_materials"),
+                cookie: cookie,
+                onLog: onLog
+            )
+        case "专精强化":
+            let t = FeatureToggleStore.shared
+            let typeId = min(3, max(0, t.getInt(QiangHuaActions.fid, "zj_type")))
+            return await QiangHuaActions.enhanceZhuanJing(
+                typeId: typeId,
+                times: 1,
+                autoBuy: t.getBool(QiangHuaActions.fid, "auto_materials"),
+                cookie: cookie,
+                onLog: onLog
+            )
         case "定时代玩":
             return await DiyUrlActions.run(featureId: "diy_auto_daiwan", cookie: cookie, onLog: onLog)
         case "定时任务", "自定义任务":
