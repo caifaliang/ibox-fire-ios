@@ -70,7 +70,19 @@ final class JiLuRankStore: ObservableObject {
 
     func saveLiShiDay(year: Int, month: Int, day: LiShiDay) {
         var map = loadLiShiMonth(year: year, month: month)
-        map[day.day] = day
+        let prev = map[day.day]
+        let baseline: String = {
+            if !day.dayExp.isEmpty { return day.dayExp }
+            if let p = prev, !p.dayExp.isEmpty { return p.dayExp }
+            let earlier = map.values
+                .filter { $0.day < day.day && JiLuExp.parse($0.exp) != nil }
+                .max(by: { $0.day < $1.day })
+            if let e = earlier, !e.exp.isEmpty { return e.exp }
+            return day.exp
+        }()
+        var merged = day
+        merged.dayExp = baseline
+        map[day.day] = merged
         if let data = try? JSONEncoder().encode(map) {
             defaults.set(data, forKey: liShiKey(year: year, month: month))
         }
@@ -79,6 +91,28 @@ final class JiLuRankStore: ObservableObject {
             defaults.set(day.name, forKey: prefix + "user")
         }
         bump()
+    }
+
+    /// 年历史：每月取首尾有记录的快照，合成「当月经验」。
+    func loadYearSummary(year: Int) -> [LiShiDay] {
+        var out: [LiShiDay] = []
+        for m in 1...12 {
+            let days = loadLiShiMonth(year: year, month: m).values.sorted { $0.day < $1.day }
+            guard !days.isEmpty else { continue }
+            let first = days.first(where: { !$0.dayExp.isEmpty }) ?? days[0]
+            let last = days.last(where: { !$0.dayExp.isEmpty }) ?? days[days.count - 1]
+            let monthExp: String = {
+                if let a = JiLuExp.parse(first.exp), let b = JiLuExp.parse(last.exp), b >= a {
+                    return "\(b - a)"
+                }
+                return "—"
+            }()
+            var row = last
+            row.day = m
+            row.dayExp = monthExp
+            out.append(row)
+        }
+        return out
     }
 
     func loadLiShiMonth(year: Int, month: Int) -> [Int: LiShiDay] {

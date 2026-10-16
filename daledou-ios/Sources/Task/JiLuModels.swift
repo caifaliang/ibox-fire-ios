@@ -32,6 +32,22 @@ struct LiShiDay: Codable, Hashable {
     var dengJi: String
     var zhanLi: String
     var exp: String
+    /// 当日经验基线（用于算增益）；年视图里复用为「当月经验」展示
+    var dayExp: String = ""
+}
+
+enum JiLuExp {
+    static func parse(_ raw: String) -> Int64? {
+        let digits = raw.filter { $0.isNumber || $0 == "-" }
+        guard !digits.isEmpty, let v = Int64(digits) else { return nil }
+        return v
+    }
+
+    static func dailyGainText(_ row: LiShiDay) -> String {
+        guard let cur = parse(row.exp), let base = parse(row.dayExp) else { return "—" }
+        let d = cur - base
+        return d >= 0 ? "\(d)" : "—"
+    }
 }
 
 struct ShangHuiDay: Codable, Hashable {

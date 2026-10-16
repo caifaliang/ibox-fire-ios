@@ -35,4 +35,14 @@ final class FeatureToggleStore {
     func setString(_ featureId: String, _ option: String, _ value: String) {
         defaults.set(value, forKey: prefix + featureId + "." + option)
     }
+
+    func getInt(_ featureId: String, _ option: String, default def: Int = 0) -> Int {
+        let key = prefix + featureId + "." + option
+        if defaults.object(forKey: key) == nil { return def }
+        return defaults.integer(forKey: key)
+    }
+
+    func setInt(_ featureId: String, _ option: String, _ value: Int) {
+        defaults.set(value, forKey: prefix + featureId + "." + option)
+    }
 }

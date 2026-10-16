@@ -12,6 +12,7 @@ struct JiLuTabView: View {
     @State private var tip = ""
     @State private var syncing = false
     @State private var pickDay: JiLuDay?
+    @State private var historyYearMode = false
 
     private var cookie: String { SessionStore.shared.cookieHeader }
     private var qq: String {
@@ -59,17 +60,28 @@ struct JiLuTabView: View {
     }
 
     private var header: some View {
-        HStack {
+        HStack(spacing: 8) {
             Text(store.userName.isEmpty ? "记录" : store.userName)
                 .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(DlColors.ink)
-            Spacer()
+                .lineLimit(1)
+            Spacer(minLength: 4)
             if !tip.isEmpty {
                 Text(tip)
                     .font(.system(size: 11))
                     .foregroundStyle(DlColors.inkMuted)
                     .lineLimit(1)
             }
+            Button("查区") {
+                vm.showChaQu = true
+            }
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(DlColors.accentBlue)
+            .clipShape(Capsule())
+            .buttonStyle(.plain)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
@@ -237,38 +249,105 @@ struct JiLuTabView: View {
     }
 
     private var historyPane: some View {
-        let map = store.loadLiShiMonth(year: year, month: month)
-        let rows = map.values.sorted { $0.day > $1.day }
-        return ScrollView {
+        ScrollView {
             VStack(alignment: .leading, spacing: 12) {
-                monthNav
-                syncRow
-                if rows.isEmpty {
-                    Text("暂无历史快照，点「同步今日」拉取 visit/viewattr")
-                        .font(.system(size: 13))
-                        .foregroundStyle(DlColors.inkMuted)
-                        .padding(.top, 20)
+                HStack(spacing: 8) {
+                    modeChip("按月", selected: !historyYearMode) { historyYearMode = false }
+                    modeChip("年历史", selected: historyYearMode) { historyYearMode = true }
+                }
+                if historyYearMode {
+                    yearHistoryBlock
                 } else {
-                    ForEach(rows, id: \.day) { row in
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("\(month)月\(row.day)日 · \(row.name)")
-                                .font(.system(size: 13, weight: .semibold))
-                            Text("帮派 \(row.bangPai.ifBlank("—")) · 等级 \(row.dengJi.ifBlank("—")) · 战力 \(row.zhanLi.ifBlank("—"))")
-                                .font(.system(size: 12))
-                                .foregroundStyle(DlColors.inkSecondary)
-                            Text("经验 \(row.exp.ifBlank("—"))")
-                                .font(.system(size: 12))
-                                .foregroundStyle(DlColors.inkMuted)
-                        }
-                        .padding(10)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(DlColors.surface)
-                        .clipShape(RoundedRectangle(cornerRadius: 10))
-                    }
+                    monthHistoryBlock
                 }
             }
             .padding(12)
         }
+    }
+
+    private var monthHistoryBlock: some View {
+        let map = store.loadLiShiMonth(year: year, month: month)
+        let rows = map.values.sorted { $0.day > $1.day }
+        return VStack(alignment: .leading, spacing: 12) {
+            monthNav
+            syncRow
+            if rows.isEmpty {
+                Text("暂无历史快照，点「同步今日」拉取 visit/viewattr")
+                    .font(.system(size: 13))
+                    .foregroundStyle(DlColors.inkMuted)
+                    .padding(.top, 20)
+            } else {
+                ForEach(rows, id: \.day) { row in
+                    historyCard(
+                        title: "\(month)月\(row.day)日 · \(row.name)",
+                        row: row,
+                        expLabel: "当天经验 \(JiLuExp.dailyGainText(row))"
+                    )
+                }
+            }
+        }
+    }
+
+    private var yearHistoryBlock: some View {
+        let rows = store.loadYearSummary(year: year)
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Button("上一年") { year -= 1 }
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(DlColors.accentBlue)
+                Spacer()
+                Text("\(year)年")
+                    .font(.system(size: 14, weight: .semibold))
+                Spacer()
+                Button("下一年") { year += 1 }
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(DlColors.accentBlue)
+            }
+            if rows.isEmpty {
+                Text("本年暂无历史。请先在「按月」里同步若干天。")
+                    .font(.system(size: 13))
+                    .foregroundStyle(DlColors.inkMuted)
+                    .padding(.top, 20)
+            } else {
+                ForEach(rows, id: \.day) { row in
+                    historyCard(
+                        title: "\(row.day)月 · \(row.name)",
+                        row: row,
+                        expLabel: "当月经验 \(row.dayExp.ifBlank("—"))"
+                    )
+                }
+            }
+        }
+    }
+
+    private func modeChip(_ label: String, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(label)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(selected ? Color.white : DlColors.ink)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(selected ? DlColors.accentBlue : DlColors.surface)
+                .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func historyCard(title: String, row: LiShiDay, expLabel: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.system(size: 13, weight: .semibold))
+            Text("帮派 \(row.bangPai.ifBlank("—")) · 等级 \(row.dengJi.ifBlank("—")) · 战力 \(row.zhanLi.ifBlank("—"))")
+                .font(.system(size: 12))
+                .foregroundStyle(DlColors.inkSecondary)
+            Text("经验 \(row.exp.ifBlank("—")) · \(expLabel)")
+                .font(.system(size: 12))
+                .foregroundStyle(DlColors.inkMuted)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(DlColors.surface)
+        .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 
     private var shangHuiPane: some View {

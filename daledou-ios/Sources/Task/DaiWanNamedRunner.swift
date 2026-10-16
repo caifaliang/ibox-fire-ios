@@ -128,6 +128,28 @@ final class DaiWanNamedRunner: ObservableObject {
             return await DailyListenActions.farmOpenKd(cookie: cookie, onLog: onLog)
         case "换守护", "更换守护":
             return await DailyListenActions.farmChangeGuard(cookie: cookie, onLog: onLog)
+        case "矿洞排行":
+            return await bangPaiPeek(cmd: "factionmine", pet: true, cookie: cookie, onLog: onLog, title: "矿洞排行")
+        case "问鼎帮资", "帮战设置":
+            return await bangPaiPeek(
+                cmd: "factionhr", extra: ["subtype": "14"], pet: false,
+                cookie: cookie, onLog: onLog, title: name
+            )
+        case "祭坛排行":
+            return await bangPaiPeek(
+                cmd: "factionop", extra: ["subtype": "8", "pageno": "1", "type": "2"], pet: false,
+                cookie: cookie, onLog: onLog, title: "祭坛排行"
+            )
+        case "踢馆排行":
+            return await bangPaiPeek(
+                cmd: "fac_challenge", extra: ["subtype": "10"], pet: true,
+                cookie: cookie, onLog: onLog, title: "踢馆排行"
+            )
+        case "问鼎出战":
+            return await bangPaiPeek(
+                cmd: "factionempire", extra: ["op": "0"], pet: true,
+                cookie: cookie, onLog: onLog, title: "问鼎出战"
+            )
         case "任务派遣":
             return await DailyListenActions.farmPaiQian(cookie: cookie, onLog: onLog)
         case "群侠":
@@ -199,6 +221,25 @@ final class DaiWanNamedRunner: ObservableObject {
             onLog(tip)
             return tip
         }
+    }
+
+    /// 帮派轨：打开对应排行/设置页并摘日志（笔记侧多为查看页，非长循环）。
+    private func bangPaiPeek(
+        cmd: String,
+        extra: [String: String] = [:],
+        pet: Bool,
+        cookie: String,
+        onLog: @escaping (String) -> Void,
+        title: String
+    ) async -> String {
+        onLog("\(title)拉取中…")
+        let (_, body) = pet
+            ? await LedouCGI.getPetPk(cmd: cmd, extra: extra, cookie: cookie)
+            : await LedouCGI.getPhonePk(cmd: cmd, extra: extra, cookie: cookie)
+        let msg = CombatLog.fromBody(body)
+        let tip = msg.isEmpty ? LedouCGI.shortBody(body, code: 200) : msg
+        onLog(tip)
+        return tip
     }
 }
 

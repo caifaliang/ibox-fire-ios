@@ -22,6 +22,7 @@ final class AppViewModel: ObservableObject {
     @Published var showLingJiang = false
     @Published var showDaiWan = false
     @Published var showMoreSettings = false
+    @Published var showChaQu = false
     /// 悬浮钮「代玩-记录」
     @Published var showDaiWanRecord = false
     /// 后台监听页：kuangdong / jiebiao / liangcao / wending / fuchou_wending / open_kd
@@ -696,6 +697,8 @@ final class AppViewModel: ObservableObject {
             showDaiWan = true
         case "more_settings":
             showMoreSettings = true
+        case "chaqu":
+            showChaQu = true
         case "daiwan_ui":
             showDaiWanRecord = true
         case "kuangdong", "jiebiao", "liangcao", "wending",
