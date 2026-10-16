@@ -71,6 +71,25 @@ struct RootView: View {
                         .accessibilityLabel("背包查询")
                     }
                 }
+                .overlay(alignment: .bottomTrailing) {
+                    // 群侠 8强页悬浮钮（对齐 APK DraggableQunXiaFab）
+                    if vm.showQunXiaFab && vm.shellTab == 0 && !vm.suspendGameWebForReplay {
+                        Button {
+                            vm.openQunXiaLuXiangFromFab()
+                        } label: {
+                            Text("群侠录像")
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundStyle(.white)
+                                .frame(width: 76, height: 44)
+                                .background(DlColors.accentBlue)
+                                .clipShape(Capsule())
+                                .shadow(color: DlColors.accentBlue.opacity(0.35), radius: 6, y: 2)
+                        }
+                        .padding(.trailing, 12)
+                        .padding(.bottom, vm.showViewFightFab ? 140 : 72)
+                        .accessibilityLabel("群侠录像")
+                    }
+                }
 
                 UnifiedBottomDock()
                     .environmentObject(vm)
@@ -91,7 +110,11 @@ struct RootView: View {
                         .shadow(color: .black.opacity(0.28), radius: 6, y: 2)
                 }
                 .padding(.trailing, 16)
-                .padding(.bottom, vm.showViewFightFab ? 140 : 72)
+                .padding(.bottom, {
+                    if vm.showViewFightFab && vm.showQunXiaFab { return 208 }
+                    if vm.showViewFightFab || vm.showQunXiaFab { return 140 }
+                    return 72
+                }())
                 .accessibilityLabel("代玩记录")
             }
 
@@ -153,6 +176,10 @@ struct RootView: View {
         }
         .sheet(isPresented: $vm.showZiDongQiangHua) {
             ZiDongQiangHuaView()
+        }
+        .sheet(isPresented: $vm.showQunXiaLuXiang) {
+            QunXiaLuXiangView()
+                .environmentObject(vm)
         }
         .sheet(isPresented: $vm.showDaiWanRecord) {
             DaiWanRecordView()

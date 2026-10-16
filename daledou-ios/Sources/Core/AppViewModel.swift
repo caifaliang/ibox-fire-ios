@@ -96,6 +96,12 @@ final class AppViewModel: ObservableObject {
     private var pageTitleForFab = ""
     private var beiBaoPresetKeyword = ""
 
+    /// 群侠 8强页悬浮钮 → 群侠录像
+    @Published var showQunXiaFab = false
+    @Published var showQunXiaLuXiang = false
+    /// 从游戏页带入的 view_top URL（含届/赛区/武器 id）
+    var qunXiaSeedUrl: String = ""
+
     private var foregroundObserversInstalled = false
     /// RootView.onAppear 会在回前台时再触发；只允许真正冷启动跑一次
     private var didBootstrap = false
@@ -695,7 +701,8 @@ final class AppViewModel: ObservableObject {
             statusText = "请用系统手势划掉 App（iOS 无强制退出）"
         case "qunxia_luxiang":
             shellTab = 0
-            openOfficialAnimation()
+            qunXiaSeedUrl = currentURLString
+            showQunXiaLuXiang = true
         case "about":
             showAbout = true
         case "huoyue":
@@ -1065,6 +1072,7 @@ final class AppViewModel: ObservableObject {
 
         updateViewFightFab(for: currentURLString)
         updateBeiBaoFab(url: currentURLString, title: pageTitleForFab)
+        updateQunXiaFab(for: currentURLString)
     }
 
     /// WebView 标题变化时刷新背包 FAB（URL 未变但标题含「背包」）。
@@ -1153,11 +1161,31 @@ final class AppViewModel: ObservableObject {
         return nil
     }
 
-    /// 乐斗过程页 → 取 Act → 打开官方动画
-    func openOfficialAnimation() {
-        let page = lastViewFightUrl ?? currentURLString
-        guard LoginURLs.isViewFightUrl(page) else {
-            statusText = "请先打开「查看乐斗过程」"
+    private func updateQunXiaFab(for urlString: String) {
+        if QunXiaActions.isTop8Url(urlString) {
+            showQunXiaFab = true
+            qunXiaSeedUrl = urlString
+        } else {
+            showQunXiaFab = false
+        }
+    }
+
+    func openQunXiaLuXiangFromFab() {
+        if qunXiaSeedUrl.isEmpty {
+            qunXiaSeedUrl = currentURLString
+        }
+        showQunXiaLuXiang = true
+    }
+
+    /// 乐斗过程页 / 群侠 view_replay → 取 Act → 打开官方动画
+    func openOfficialAnimation(from pageUrl: String? = nil) {
+        let page = pageUrl
+            ?? lastViewFightUrl
+            ?? currentURLString
+        let isKnightReplay = page.lowercased().contains("knightfight")
+            && (page.contains("view_replay") || page.contains("view_my_replay"))
+        guard LoginURLs.isViewFightUrl(page) || isKnightReplay else {
+            statusText = "请先打开「查看乐斗过程」或群侠录像"
             return
         }
         guard !viewFightLoading else { return }
@@ -1377,8 +1405,11 @@ final class AppViewModel: ObservableObject {
         didEnterGameFromCapture = false
         showViewFightFab = false
         showBeiBaoFab = false
+        showQunXiaFab = false
+        showQunXiaLuXiang = false
         beiBaoPresetKeyword = ""
         pageTitleForFab = ""
+        qunXiaSeedUrl = ""
         showReplay = false
         viewFightLoading = false
         lastViewFightUrl = nil
