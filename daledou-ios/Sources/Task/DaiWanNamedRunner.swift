@@ -106,14 +106,15 @@ final class DaiWanNamedRunner: ObservableObject {
         case "抢地盘":
             return await HuoYueCombat.farmQiangDiPan(cookie: cookie, onLog: onLog)
         case "日常任务":
-            let (_, b) = await LedouCGI.getPhonePk(cmd: "task", extra: ["sub": "7"], cookie: cookie)
-            return LedouCGI.shortBody(b, code: 200)
+            return await RenWuActions.farmRiChang(cookie: cookie, onLog: onLog)
         case "帮派任务":
-            let (_, b) = await LedouCGI.getPhonePk(cmd: "factiontask", extra: ["sub": "1"], cookie: cookie)
-            return LedouCGI.shortBody(b, code: 200)
+            return await RenWuActions.farmBangPaiTask(cookie: cookie, onLog: onLog)
         case "门派任务":
-            let (_, b) = await LedouCGI.getPhonePk(cmd: "sect_task", cookie: cookie)
-            return LedouCGI.shortBody(b, code: 200)
+            return await RenWuActions.farmMenPaiTask(cookie: cookie, onLog: onLog)
+        case "护送押镖", "押镖":
+            return await RenWuActions.farmCargo(cookie: cookie, onLog: onLog)
+        case "任务", "任务轮询":
+            return await RenWuActions.farm(cookie: cookie, onLog: onLog)
         case "矿洞":
             return await DailyListenActions.farmKuangDong(cookie: cookie, onLog: onLog)
         case "劫镖":
