@@ -29,7 +29,8 @@ enum BeiBaoCatalog {
 
     static func load(cookie: String, onLog: @escaping (String) -> Void) async -> [Item] {
         let t0 = Date()
-        var uin = LoginURLs.extractQq(cookie) ?? SessionStore.shared.qq.filter(\.isNumber)
+        let fallbackQq = await MainActor.run { SessionStore.shared.qq.filter(\.isNumber) }
+        let uin = LoginURLs.extractQq(cookie) ?? fallbackQq
         var out: [Item] = []
 
         func upsert(_ item: Item) {
@@ -102,7 +103,8 @@ enum BeiBaoCatalog {
             onLog("该道具不支持使用")
             return ("该道具不支持使用", nil)
         }
-        let uin = LoginURLs.extractQq(cookie) ?? SessionStore.shared.qq.filter(\.isNumber)
+        let fallbackQq = await MainActor.run { SessionStore.shared.qq.filter(\.isNumber) }
+        let uin = LoginURLs.extractQq(cookie) ?? fallbackQq
         if uin.isEmpty { return ("无QQ", nil) }
         let (_, body) = await LedouCGI.getPetPk(
             cmd: "use", extra: ["selfuin": uin, "id": item.id], cookie: cookie

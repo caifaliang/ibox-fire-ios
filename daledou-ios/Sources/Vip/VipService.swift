@@ -35,6 +35,7 @@ struct VipRedeemResult {
 }
 
 enum VipService {
+    @MainActor
     static func localStatus() -> VipStatus {
         let s = VipStore.shared
         return VipStatus(

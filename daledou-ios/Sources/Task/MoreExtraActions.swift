@@ -806,9 +806,9 @@ enum MoreExtraActions {
         onLog("龙吟破阵开始（十连×10）")
         var draws = 0
         var tidy = false
-        var guard = 0
-        while draws < 10 && guard < 16 {
-            guard += 1
+        var loops = 0
+        while draws < 10 && loops < 16 {
+            loops += 1
             if Task.isCancelled { break }
             let (_, r) = await LedouCGI.getPetPk(
                 cmd: "dragon", extra: ["times": "10", "op": "lottery"], cookie: cookie
@@ -1708,7 +1708,7 @@ enum MoreExtraActions {
     static func farmYiJianHuanZhuang(
         onLog: @escaping (String) -> Void
     ) async -> String {
-        let cookie = SessionStore.shared.cookieHeader
+        let cookie = await MainActor.run { SessionStore.shared.cookieHeader }
         guard LoginURLs.hasGameSession(cookie) else {
             onLog("请先登录")
             return "未登录"

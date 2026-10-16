@@ -22,7 +22,7 @@ enum PldyRoster {
     }
 
     static func fetch(mode: String, cookie: String, onLog: @escaping (String) -> Void) async -> [Row] {
-        let selfUin = SessionStore.shared.qq.filter(\.isNumber)
+        let selfUin = await MainActor.run { SessionStore.shared.qq.filter(\.isNumber) }
         switch mode {
         case "by":
             return await fetchBangYou(cookie: cookie, onLog: onLog)
