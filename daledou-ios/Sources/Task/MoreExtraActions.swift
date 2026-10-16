@@ -1679,12 +1679,10 @@ enum MoreExtraActions {
         return "新春对联答\(answered)"
     }
 
-    /// 掌上道聚城依赖独立 Cookie，iOS 尚未接扫码会话。
+    /// 掌上道聚城：独立 Cookie（扫码道聚城），不使用大乐斗 cookie。
     static func farmDaoJuCheng(cookie: String, onLog: @escaping (String) -> Void) async -> String {
         _ = cookie
-        let tip = "掌上道聚城需独立扫码登录（daoju.qq.com），iOS 尚未对接，已跳过"
-        onLog(tip)
-        return tip
+        return await DaoJuActions.farm(onLog: onLog)
     }
 
     private static func parseDuiLianOptions(_ body: String) -> [(String, String, String)] {

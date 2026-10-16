@@ -137,6 +137,9 @@ struct GameWebView: UIViewRepresentable {
         }
 
         if let u = vm.pendingURL {
+            if vm.loginMode == .scanDaoju {
+                context.coordinator.daojuLoginClicked = false
+            }
             context.coordinator.applyUA(webView, desktop: vm.preferDesktopUA)
             let dest = u
             vm.pendingURL = nil
@@ -158,6 +161,7 @@ struct GameWebView: UIViewRepresentable {
         var defaultUA: String?
         private var captureTask: Task<Void, Never>?
         private var lastContinueURL = ""
+        var daojuLoginClicked = false
         private var lastHandledCode = ""
         private var lastStuckRecoverAt: TimeInterval = 0
 
@@ -416,6 +420,16 @@ struct GameWebView: UIViewRepresentable {
                         }
                     }
                 }
+                if vm.loginMode == .scanDaoju {
+                    let host = (url.host ?? "").lowercased()
+                    if host.contains("daoju.qq.com") || host.contains("ptlogin2.qq.com")
+                        || host.contains("graph.qq.com")
+                    {
+                        Task { @MainActor in
+                            vm.statusText = "道聚城授权中…"
+                        }
+                    }
+                }
                 if navigationAction.navigationType == .linkActivated {
                     webView.load(URLRequest(url: url))
                     decisionHandler(.cancel)
@@ -470,6 +484,16 @@ struct GameWebView: UIViewRepresentable {
                 if vm.session.isLoggedIn, vm.loginMode == .idle {
                     return
                 }
+                // 道聚城扫码：只落 daojuCookie，绝不走大乐斗 onCookiesCaptured
+                if vm.loginMode == .scanDaoju {
+                    let header = await CookieBridge.waitForDaojuOAuth(from: webView)
+                    if DjcAuth.parseOAuth(header) != nil {
+                        vm.onDaojuCookiesCaptured(header)
+                    } else if !daojuLoginClicked {
+                        daojuLoginClicked = await Self.tryClickDaojuLogin(webView)
+                    }
+                    return
+                }
                 // 扫码确认后的 continue；一键走 qrcode 回壳，不在此拼 jump
                 if vm.loginMode == .scan,
                    let s = webView.url?.absoluteString,
@@ -499,6 +523,27 @@ struct GameWebView: UIViewRepresentable {
                     if !vm.session.isLoggedIn, vm.loginMode == .idle || vm.loginMode == .oneKey {
                         vm.statusText = "已进游戏页，但未读到会话 Cookie。可试 Cookie"
                     }
+                }
+            }
+        }
+
+        /// 道聚城商场页点一次「登录」，避免反复刷新二维码。
+        private static func tryClickDaojuLogin(_ webView: WKWebView) async -> Bool {
+            let js = """
+            (function(){
+              var nodes = Array.from(document.querySelectorAll('a,button,span,div'));
+              for (var i=0;i<nodes.length;i++){
+                var t=(nodes[i].innerText||nodes[i].textContent||'').trim();
+                if(t==='登录'||t==='登陆'||t.indexOf('QQ登录')>=0||t.indexOf('立即登录')>=0){
+                  nodes[i].click(); return true;
+                }
+              }
+              return false;
+            })();
+            """
+            return await withCheckedContinuation { cont in
+                webView.evaluateJavaScript(js) { result, _ in
+                    cont.resume(returning: (result as? Bool) == true)
                 }
             }
         }

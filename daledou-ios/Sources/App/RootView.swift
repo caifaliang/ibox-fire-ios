@@ -131,6 +131,15 @@ struct RootView: View {
             CookiePasteSheet()
                 .environmentObject(vm)
         }
+        .confirmationDialog(
+            "请选择登录的网址",
+            isPresented: $vm.showScanTargetPicker,
+            titleVisibility: .visible
+        ) {
+            Button("大乐斗") { vm.openScanLedouLogin() }
+            Button("道聚城") { vm.openScanDaojuLogin() }
+            Button("取消", role: .cancel) {}
+        }
         .fullScreenCover(isPresented: $vm.showReplay, onDismiss: {
             vm.onReplayDismissed()
         }) {

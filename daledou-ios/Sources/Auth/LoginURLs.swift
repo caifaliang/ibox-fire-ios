@@ -186,6 +186,9 @@ enum LoginURLs {
             + "&redirect_uri=https%3A%2F%2Fdld.qzapp.z.qq.com%2Findex.php"
             + "&scope=all"
 
+    /// 扫码（道聚城）· 真源 `LoginHelper.SCAN_DAOJU`，独立 Cookie 不覆盖大乐斗会话
+    static let scanDaoju = "https://daoju.qq.com/mall/judou.shtml?sBizCode=fight"
+
     /// 饭点二进制字面量（勿加减字段）
     static let desktopUA =
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120 Safari/537.36"
@@ -383,6 +386,8 @@ enum LoginURLs {
 enum LoginMode: String {
     case idle
     case scan
+    /// 道聚城扫码（只写 daojuCookie，不清大乐斗会话）
+    case scanDaoju
     /// QQ App 一键（饭点：phonepk → wtlogin p= → https 回跳）
     case oneKey
 }

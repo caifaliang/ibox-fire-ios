@@ -97,6 +97,25 @@ enum CookieBridge {
         return await readCookieHeader(from: webView)
     }
 
+    /// 道聚城：轮询直到 Cookie 含 access_token + openid
+    static func waitForDaojuOAuth(
+        from webView: WKWebView, attempts: Int = 6, gapMs: UInt64 = 800
+    ) async -> String {
+        for i in 0..<attempts {
+            let header = await readCookieHeader(from: webView)
+            if DjcAuth.parseOAuth(header) != nil { return header }
+            // URL 查询串偶发带 token
+            let pageUrl: String? = await MainActor.run { webView.url?.absoluteString }
+            if let s = pageUrl, DjcAuth.parseOAuth(s) != nil {
+                return s + "; " + header
+            }
+            if i + 1 < attempts {
+                try? await Task.sleep(nanoseconds: gapMs * 1_000_000)
+            }
+        }
+        return await readCookieHeader(from: webView)
+    }
+
     static func inject(cookieHeader: String, into webView: WKWebView) async {
         guard !cookieHeader.isEmpty else { return }
         let store = webView.configuration.websiteDataStore.httpCookieStore

@@ -12,6 +12,8 @@ final class AppViewModel: ObservableObject {
     @Published var statusText = ""
     @Published var showMenu = false
     @Published var showCookieSheet = false
+    /// 扫码目标：大乐斗 / 道聚城
+    @Published var showScanTargetPicker = false
     /// 根壳四席 Tab：0首页 1日志 2记录 3我的（对齐 AppRootScaffold）
     @Published var shellTab = 0
     @Published var showShellMenu = false
@@ -569,8 +571,14 @@ final class AppViewModel: ObservableObject {
         Self.logOneKey("nav", Self.sanitizeURLLog(url))
     }
 
-    /// 扫码登陆（壳内展示二维码，与一键分流）
+    /// 扫码登陆：先选大乐斗 / 道聚城（对齐 Android AlertDialog）
     func openScanLogin() {
+        showScanTargetPicker = true
+    }
+
+    /// 扫码大乐斗（壳内展示二维码，与一键分流）
+    func openScanLedouLogin() {
+        showScanTargetPicker = false
         loginMode = .scan
         preferDesktopUA = true
         stopNativeOneKey()
@@ -580,6 +588,31 @@ final class AppViewModel: ObservableObject {
         clearWebEpoch &+= 1
         statusText = "扫码登陆中…用手机 QQ 扫页面二维码"
         pendingURL = URL(string: LoginURLs.scanLedou)
+    }
+
+    /// 扫码道聚城：只写 daojuCookie，不清大乐斗会话
+    func openScanDaojuLogin() {
+        showScanTargetPicker = false
+        loginMode = .scanDaoju
+        preferDesktopUA = false
+        stopNativeOneKey()
+        oneKeyPhase = .idle
+        QqOneKeyLogin.clearPending()
+        statusText = "道聚城扫码中…点页面登录后用手机 QQ 扫码"
+        pendingURL = URL(string: LoginURLs.scanDaoju)
+    }
+
+    /// 道聚城 OAuth 落盘（不覆盖大乐斗 Cookie）
+    func onDaojuCookiesCaptured(_ header: String) {
+        guard let oauth = DjcAuth.parseOAuth(header) else { return }
+        let compact = DjcAuth.compactCookie(from: oauth)
+        session.saveDaoju(compact)
+        loginMode = .idle
+        preferDesktopUA = false
+        statusText = "道聚城登录已保存，可返回游戏"
+        if session.isLoggedIn {
+            pendingURL = URL(string: LoginURLs.ledouEntry)
+        }
     }
 
     func openCookieLoginSheet() {
@@ -644,6 +677,7 @@ final class AppViewModel: ObservableObject {
             openOneKeyLogin()
         case "scan_login":
             shellTab = 0
+            showShellMenu = false
             openScanLogin()
         case "logout":
             logout()
