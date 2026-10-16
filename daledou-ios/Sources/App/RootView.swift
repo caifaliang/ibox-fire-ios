@@ -39,10 +39,8 @@ struct RootView: View {
                                 LogTabView()
                                     .environmentObject(vm)
                             case 2:
-                                ShellPlaceholderTab(
-                                    title: "记录",
-                                    subtitle: "排行 / 战斗记录（待接 APK JiLu）"
-                                )
+                                JiLuTabView()
+                                    .environmentObject(vm)
                             default:
                                 MineHubView()
                                     .environmentObject(vm)
