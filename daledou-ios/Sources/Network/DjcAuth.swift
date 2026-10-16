@@ -112,6 +112,7 @@ enum DjcAuth {
         let block = kCCBlockSizeAES128
         var outLength = 0
         var out = Data(count: data.count + block)
+        let outCap = out.count
         let status = out.withUnsafeMutableBytes { outBuf in
             data.withUnsafeBytes { inBuf in
                 keyData.withUnsafeBytes { keyBuf in
@@ -122,7 +123,7 @@ enum DjcAuth {
                         keyBuf.baseAddress, keyData.count,
                         nil,
                         inBuf.baseAddress, data.count,
-                        outBuf.baseAddress, out.count,
+                        outBuf.baseAddress, outCap,
                         &outLength
                     )
                 }
