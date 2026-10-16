@@ -11,6 +11,7 @@ final class BackgroundListenRunner: ObservableObject {
         "kuangdong", "jiebiao", "liangcao", "wending",
         "fuchou_wending", "open_kd", "change_guard", "paiqian",
         "menpai_shouye", "hejiu", "xkx", "friend_mgmt",
+        "diy_auto_daiwan", "diy_task",
     ]
 
     private init() {}
@@ -113,6 +114,8 @@ final class BackgroundListenRunner: ObservableObject {
             msg = await DailyListenActions.farmXkx(cookie: cookie, onLog: live)
         case "friend_mgmt":
             msg = await DailyListenActions.farmFriendMgmt(cookie: cookie, onLog: live)
+        case "diy_auto_daiwan", "diy_task":
+            msg = await DiyUrlActions.run(featureId: featureId, cookie: cookie, onLog: live)
         default:
             return
         }
@@ -136,6 +139,8 @@ final class BackgroundListenRunner: ObservableObject {
         case "hejiu": return "喝酒"
         case "xkx": return "侠客行"
         case "friend_mgmt": return "好友管理"
+        case "diy_auto_daiwan": return "定时代玩"
+        case "diy_task": return "定时任务"
         default: return id
         }
     }

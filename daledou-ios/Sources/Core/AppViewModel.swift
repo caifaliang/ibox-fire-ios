@@ -709,7 +709,8 @@ final class AppViewModel: ObservableObject {
             showDaiWanRecord = true
         case "kuangdong", "jiebiao", "liangcao", "wending",
              "fuchou_wending", "open_kd", "change_guard", "paiqian",
-             "menpai_shouye", "hejiu", "xkx", "friend_mgmt":
+             "menpai_shouye", "hejiu", "xkx", "friend_mgmt",
+             "diy_auto_daiwan", "diy_task":
             listenFeatureId = id
             showListenFeature = true
         case "join_qq_group":

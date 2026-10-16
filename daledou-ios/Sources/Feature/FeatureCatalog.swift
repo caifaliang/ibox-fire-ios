@@ -77,14 +77,16 @@ enum FeatureCatalog {
             section: .background,
             pageTitle: "定时自定义代玩",
             emphasize: true,
-            wide: true
+            wide: true,
+            iosWired: true
         ),
         .init(
             id: "diy_task",
             label: "免费高阶玩法 【定时自定义任务】",
             section: .background,
             pageTitle: "定时自定义任务",
-            wide: true
+            wide: true,
+            iosWired: true
         ),
 
         // —— 设置相关 ——
