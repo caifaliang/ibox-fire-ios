@@ -38,6 +38,7 @@ final class AppViewModel: ObservableObject {
     @Published var showAccountSwitch = false
     @Published var showPaoMaDeng = false
     @Published var showRenWu = false
+    @Published var showVip = false
     /// 悬浮钮「代玩-记录」
     @Published var showDaiWanRecord = false
     /// 后台监听页：kuangdong / jiebiao / liangcao / wending / fuchou_wending / open_kd
@@ -65,7 +66,17 @@ final class AppViewModel: ObservableObject {
     }
 
     var shellVipLabel: String {
-        session.isLoggedIn ? "会员状态：待接 APK" : ""
+        guard session.isLoggedIn else { return "" }
+        let s = VipService.localStatus()
+        if s.active, let ms = s.expireAtMs, ms > 0 {
+            let d = Date(timeIntervalSince1970: TimeInterval(ms) / 1000)
+            let f = DateFormatter()
+            f.locale = Locale(identifier: "zh_CN")
+            f.dateFormat = "yyyy-MM-dd"
+            let day = f.string(from: d)
+            return s.trial ? "免费体验至 \(day)" : "VIP 至 \(day)"
+        }
+        return "会员未开通"
     }
     @Published var cookieDraft = ""
     @Published var cookieError = ""
@@ -185,10 +196,20 @@ final class AppViewModel: ObservableObject {
                 loadWaitingPage = true
                 statusText = "上次为 OpenID 会话，请再点「一键登录」"
             }
+            refreshVipStatus()
         } else {
             loadWaitingPage = true
         }
         refreshStatus()
+    }
+
+    /// 同步会员状态（试用/到期），刷新顶栏文案。
+    func refreshVipStatus() {
+        let uin = session.qq
+        Task { @MainActor in
+            _ = await VipService.queryStatus(uin: uin)
+            objectWillChange.send()
+        }
     }
 
     /// UIKit 前台通知：比 scenePhase 更稳（QQ 回壳常漏 scene onChange）
@@ -706,6 +727,12 @@ final class AppViewModel: ObservableObject {
 
     /// 功能中心 / 我的：已接直接跑；未接只提示（不开空壳页）
     func openFeature(id: String) {
+        // 真源：VipAccess.requireOrToast — 免费入口白名单外需有效会员
+        if !VipAccess.requireOrToast(id) {
+            statusText = VipAccess.expiredMsg
+            showVip = true
+            return
+        }
         switch id {
         case "one_login":
             shellTab = 0
@@ -722,6 +749,8 @@ final class AppViewModel: ObservableObject {
             shellTab = 0
             qunXiaSeedUrl = currentURLString
             showQunXiaLuXiang = true
+        case "note_settings":
+            showVip = true
         case "about":
             showAbout = true
         case "huoyue":
@@ -1502,6 +1531,7 @@ final class AppViewModel: ObservableObject {
         loginMode = .idle
         oneKeyPhase = .succeeded
         preferDesktopUA = false
+        refreshVipStatus()
         if let extracted = LoginURLs.extractQq(header), !extracted.isEmpty {
             qqLabel = extracted
         }

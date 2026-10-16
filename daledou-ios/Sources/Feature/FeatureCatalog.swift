@@ -122,7 +122,7 @@ enum FeatureCatalog {
         .init(id: "one_login", label: "一键登陆", section: .more, emphasize: true, iosWired: true),
         .init(id: "logout", label: "退出登陆", section: .more, emphasize: true, iosWired: true),
         .init(id: "exit_app", label: "退出大乐斗", section: .more, emphasize: true, iosWired: true),
-        .init(id: "note_settings", label: "大乐斗会员", section: .more, pageTitle: "大乐斗会员", emphasize: true),
+        .init(id: "note_settings", label: "大乐斗会员", section: .more, pageTitle: "大乐斗会员", emphasize: true, iosWired: true),
     ]
 
     static func items(in section: MenuSection) -> [FeatureItem] {
