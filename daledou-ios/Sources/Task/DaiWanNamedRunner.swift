@@ -248,6 +248,8 @@ final class DaiWanNamedRunner: ObservableObject {
             return await XianShiQiangGouActions.farm(cookie: cookie, onLog: onLog)
         case "斗豆商城", "斗豆红包商城":
             return await DouDouMallActions.farm(cookie: cookie, onLog: onLog)
+        case "帮派挖矿":
+            return await BangPaiWaKuangActions.farm(cookie: cookie, onLog: onLog)
         case "批量斗友":
             return await PiLiangDouYouActions.farm(onLog: onLog)
         case "批量斗友-师徒", "师徒情拜":

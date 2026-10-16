@@ -113,7 +113,7 @@ enum FeatureCatalog {
         .init(id: "qiangdipan", label: "抢地盘", section: .more),
         .init(id: "qunxia_luxiang", label: "群侠录像", section: .more, iosWired: true),
         .init(id: "pc_game", label: "PC端", section: .more),
-        .init(id: "bangpai_wakuang", label: "帮派挖矿", section: .more, emphasize: true),
+        .init(id: "bangpai_wakuang", label: "帮派挖矿", section: .more, emphasize: true, iosWired: true),
         .init(id: "shuqian", label: "书签", section: .more, pageTitle: "书签", iosWired: true),
         .init(id: "account_switch", label: "账号切换", section: .more),
         .init(id: "about", label: "关于大乐斗", section: .more, emphasize: true, iosWired: true),
