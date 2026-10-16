@@ -209,6 +209,9 @@ struct RootView: View {
             AccountSwitchView()
                 .environmentObject(vm)
         }
+        .sheet(isPresented: $vm.showPaoMaDeng) {
+            PaoMaDengView()
+        }
         .sheet(isPresented: $vm.showDaiWanRecord) {
             DaiWanRecordView()
                 .environmentObject(vm)

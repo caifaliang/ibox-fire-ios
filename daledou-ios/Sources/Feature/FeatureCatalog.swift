@@ -94,7 +94,7 @@ enum FeatureCatalog {
         .init(id: "daiwan", label: "代玩", section: .settings, pageTitle: "代玩设置(下滑更多)", iosWired: true),
         .init(id: "lingjiang", label: "领奖报名", section: .settings, pageTitle: "自动领奖报名设置(下滑更多)", iosWired: true),
         .init(id: "renwu", label: "任务", section: .settings, pageTitle: "任务设置(下滑更多)"),
-        .init(id: "paomadeng", label: "跑马灯", section: .settings, pageTitle: "跑马灯设置"),
+        .init(id: "paomadeng", label: "跑马灯", section: .settings, pageTitle: "跑马灯设置", iosWired: true),
         .init(id: "more_settings", label: "更多", section: .settings, pageTitle: "更多设置(下滑更多)", iosWired: true),
 
         // —— 更多 ——
