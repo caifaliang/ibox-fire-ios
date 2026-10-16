@@ -184,6 +184,9 @@ struct RootView: View {
         .sheet(isPresented: $vm.showXianShiQiangGou) {
             XianShiQiangGouView()
         }
+        .sheet(isPresented: $vm.showDouDouMall) {
+            DouDouMallView()
+        }
         .sheet(isPresented: $vm.showDaiWanRecord) {
             DaiWanRecordView()
                 .environmentObject(vm)
