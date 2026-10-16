@@ -218,6 +218,9 @@ struct RootView: View {
         .sheet(isPresented: $vm.showVip) {
             VipRedeemView()
         }
+        .sheet(isPresented: $vm.showQuery) {
+            QueryView(initialUin: vm.queryPrefill, autoQuery: vm.queryAuto)
+        }
         .sheet(isPresented: $vm.showDaiWanRecord) {
             DaiWanRecordView()
                 .environmentObject(vm)

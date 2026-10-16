@@ -39,6 +39,10 @@ final class AppViewModel: ObservableObject {
     @Published var showPaoMaDeng = false
     @Published var showRenWu = false
     @Published var showVip = false
+    /// 顶栏「查询」信息页
+    @Published var showQuery = false
+    @Published var queryPrefill = ""
+    @Published var queryAuto = false
     /// 悬浮钮「代玩-记录」
     @Published var showDaiWanRecord = false
     /// 后台监听页：kuangdong / jiebiao / liangcao / wending / fuchou_wending / open_kd
@@ -699,6 +703,19 @@ final class AppViewModel: ObservableObject {
 
     func openGameHome() {
         forceEnterGame()
+    }
+
+    /// 真源：顶栏 Search → `查询` / `查询|$uin` → QueryScreen
+    func openQueryFromShell() {
+        if !VipAccess.requireOrToast(nil) {
+            statusText = VipAccess.expiredMsg
+            showVip = true
+            return
+        }
+        let uin = QueryPageUin.fromUrl(currentURLString) ?? ""
+        queryPrefill = uin
+        queryAuto = !uin.isEmpty
+        showQuery = true
     }
 
     func reload() {

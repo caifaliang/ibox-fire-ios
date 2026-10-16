@@ -52,7 +52,7 @@ struct ShellToolStrip: View {
             .buttonStyle(.plain)
             .disabled(vm.pageLoading)
             toolIcon(system: "magnifyingglass", tint: DlColors.accentBlue) {
-                vm.statusText = "查询：下一刀按 APK 接入"
+                vm.openQueryFromShell()
             }
         }
         .padding(.horizontal, 10)
