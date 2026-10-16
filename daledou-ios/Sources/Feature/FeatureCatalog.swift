@@ -115,7 +115,7 @@ enum FeatureCatalog {
         .init(id: "pc_game", label: "PC端", section: .more),
         .init(id: "bangpai_wakuang", label: "帮派挖矿", section: .more, emphasize: true, iosWired: true),
         .init(id: "shuqian", label: "书签", section: .more, pageTitle: "书签", iosWired: true),
-        .init(id: "account_switch", label: "账号切换", section: .more),
+        .init(id: "account_switch", label: "账号切换", section: .more, iosWired: true),
         .init(id: "about", label: "关于大乐斗", section: .more, emphasize: true, iosWired: true),
         .init(id: "join_qq_group", label: "加入群聊", section: .more, emphasize: true, iosWired: true),
         .init(id: "scan_login", label: "扫码登陆", section: .more, emphasize: true, iosWired: true),

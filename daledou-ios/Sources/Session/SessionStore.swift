@@ -43,6 +43,13 @@ final class SessionStore: ObservableObject {
         persistFile(trimmed)
     }
 
+    /// 手动覆盖 QQ（道聚城兑换等）；不改 Cookie。
+    func setQq(_ value: String) {
+        let q = value.filter(\.isNumber)
+        guard !q.isEmpty else { return }
+        qq = q
+    }
+
     func saveDaoju(_ cookie: String) {
         let trimmed = cookie.trimmingCharacters(in: .whitespacesAndNewlines)
         daojuCookie = trimmed

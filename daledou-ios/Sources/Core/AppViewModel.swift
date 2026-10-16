@@ -35,6 +35,7 @@ final class AppViewModel: ObservableObject {
     @Published var showWuLinChiYao = false
     @Published var showQiangDiPan = false
     @Published var showLongHuang = false
+    @Published var showAccountSwitch = false
     /// 悬浮钮「代玩-记录」
     @Published var showDaiWanRecord = false
     /// 后台监听页：kuangdong / jiebiao / liangcao / wending / fuchou_wending / open_kd
@@ -747,6 +748,8 @@ final class AppViewModel: ObservableObject {
             showQiangDiPan = true
         case "longhuang":
             showLongHuang = true
+        case "account_switch":
+            showAccountSwitch = true
         case "daiwan_ui":
             showDaiWanRecord = true
         case "kuangdong", "jiebiao", "liangcao", "wending",
@@ -1415,6 +1418,72 @@ final class AppViewModel: ObservableObject {
         pendingURL = URL(string: LoginURLs.ledouEntry)
         refreshStatus()
         statusText = status
+    }
+
+    /// 账号切换：清旧 Cookie → 注入新令牌 → 进游戏。
+    @discardableResult
+    func switchToSavedAccount(_ account: SavedAccount) -> String {
+        stopAllOneKey()
+        oneKeyPhase = .idle
+        loginMode = .idle
+        preferDesktopUA = false
+        AccountStore.shared.apply(account)
+        let msg = "已切换到 \(account.name)"
+        reinjectSessionAndEnter(status: msg)
+        showAccountSwitch = false
+        return msg
+    }
+
+    /// 粘贴令牌登录（须含 skey），并写入账号列表。
+    @discardableResult
+    func loginWithPastedToken(_ raw: String, name: String?) -> String {
+        let cookie = Self.normalizeCookieHeader(raw)
+        guard LoginURLs.hasRealSkey(cookie) else {
+            return "令牌无效（缺 skey）"
+        }
+        stopAllOneKey()
+        oneKeyPhase = .idle
+        loginMode = .idle
+        preferDesktopUA = false
+        session.save(cookieHeader: cookie)
+        let qq = LoginURLs.extractQq(cookie)
+        let label: String = {
+            let n = name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return n.isEmpty ? "QQ\(qq ?? "?")" : n
+        }()
+        AccountStore.shared.save(
+            SavedAccount(
+                id: UUID().uuidString,
+                name: label,
+                qq: qq,
+                cookie: cookie,
+                daojuCookie: session.daojuCookie.isEmpty ? nil : session.daojuCookie
+            )
+        )
+        reinjectSessionAndEnter(status: "令牌已登录")
+        showAccountSwitch = false
+        return "令牌已登录"
+    }
+
+    private func reinjectSessionAndEnter(status: String) {
+        let header = session.cookieHeader
+        Task { @MainActor in
+            if let wv = gameWebView {
+                await CookieBridge.clearAll(from: wv)
+                if !header.isEmpty {
+                    await CookieBridge.inject(cookieHeader: header, into: wv)
+                }
+                try? await Task.sleep(nanoseconds: 150_000_000)
+                if let u = URL(string: LoginURLs.ledouEntry) {
+                    wv.load(URLRequest(url: u))
+                }
+            } else {
+                cookieInjectToken &+= 1
+                pendingURL = URL(string: LoginURLs.ledouEntry)
+            }
+            refreshStatus()
+            statusText = status
+        }
     }
 
     func logout() {

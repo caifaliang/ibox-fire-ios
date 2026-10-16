@@ -205,6 +205,10 @@ struct RootView: View {
         .sheet(isPresented: $vm.showLongHuang) {
             LongHuangView()
         }
+        .sheet(isPresented: $vm.showAccountSwitch) {
+            AccountSwitchView()
+                .environmentObject(vm)
+        }
         .sheet(isPresented: $vm.showDaiWanRecord) {
             DaiWanRecordView()
                 .environmentObject(vm)
