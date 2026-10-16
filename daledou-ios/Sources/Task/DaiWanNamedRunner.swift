@@ -130,6 +130,30 @@ final class DaiWanNamedRunner: ObservableObject {
             return await DailyListenActions.farmChangeGuard(cookie: cookie, onLog: onLog)
         case "任务派遣":
             return await DailyListenActions.farmPaiQian(cookie: cookie, onLog: onLog)
+        case "群侠":
+            return await MoreExtraActions.signupQunXia(cookie: cookie, onLog: onLog)
+        case "手机武林":
+            return await MoreExtraActions.signupWuLinPhone(cookie: cookie, onLog: onLog)
+        case "电脑武林":
+            return await MoreExtraActions.signupWuLinPc(cookie: cookie, onLog: onLog)
+        case "随机飞升":
+            return await MoreExtraActions.signupFeiSheng(cookie: cookie, onLog: onLog)
+        case "手机侠侣":
+            return await MoreExtraActions.signupXiaLvPhone(cookie: cookie, onLog: onLog)
+        case "电脑侠侣":
+            return await MoreExtraActions.signupXiaLvPc(cookie: cookie, onLog: onLog)
+        case "游记任务":
+            return await MoreExtraActions.farmYouJi(cookie: cookie, onLog: onLog)
+        case "踢馆":
+            return await MoreExtraActions.farmTiGuan(cookie: cookie, onLog: onLog)
+        case "祭坛":
+            return await MoreExtraActions.farmJiTan(cookie: cookie, onLog: onLog)
+        case "微端经验礼包":
+            return await MoreExtraActions.weiDuanJingYan(cookie: cookie, onLog: onLog)
+        case "微端挂机":
+            return await MoreExtraActions.weiDuanGuaJi(cookie: cookie, onLog: onLog)
+        case "结束挂机":
+            return await MoreExtraActions.weiDuanStop(cookie: cookie, onLog: onLog)
         default:
             let tip = "「\(name)」尚未对接协议，已跳过"
             onLog(tip)
