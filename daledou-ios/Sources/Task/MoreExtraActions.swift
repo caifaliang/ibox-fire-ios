@@ -957,6 +957,206 @@ enum MoreExtraActions {
         return hit
     }
 
+    // MARK: - 五行 / 符石 / 遗迹商店
+
+    static func farmWuXing(cookie: String, onLog: @escaping (String) -> Void) async -> String {
+        let t = FeatureToggleStore.shared
+        var gameType = -1
+        if t.getBool("more_settings", "rb_wx_db_1") { gameType = 0 }
+        else if t.getBool("more_settings", "rb_wx_db_2") { gameType = 1 }
+        else if t.getBool("more_settings", "rb_wx_db_3") { gameType = 2 }
+        else if t.getBool("more_settings", "rb_wx_db_4") { gameType = 3 }
+        // 悬浮窗：未勾选默认沙漠
+        if gameType < 0 { gameType = 0 }
+        let names = ["沙漠", "海底", "密林", "太空"]
+        onLog("五行夺宝开始（\(names[gameType])）")
+        var rounds = 0
+        while rounds < 30 {
+            rounds += 1
+            if Task.isCancelled { break }
+            let (_, status) = await LedouCGI.getPetPk(
+                cmd: "element", extra: ["subtype": "5"], cookie: cookie
+            )
+            try? await Task.sleep(nanoseconds: gapNs)
+            let msg = CombatLog.fromBody(status)
+            if !msg.isEmpty { onLog(msg) }
+            if status.contains("系统繁忙") {
+                try? await Task.sleep(nanoseconds: 200_000_000)
+                continue
+            }
+            let inGame = status.contains("\"gameIngFlag\":1")
+                || status.contains("\"gameIngFlag\":\"1\"")
+                || status.contains("要走完") || status.contains("进行中")
+            let next: String
+            if inGame {
+                next = await LedouCGI.getPetPk(cmd: "element", extra: ["subtype": "6"], cookie: cookie).1
+            } else {
+                next = await LedouCGI.getPetPk(
+                    cmd: "element",
+                    extra: ["gameType": "\(gameType)", "subtype": "9"],
+                    cookie: cookie
+                ).1
+            }
+            try? await Task.sleep(nanoseconds: gapNs)
+            let nmsg = CombatLog.fromBody(next)
+            if !nmsg.isEmpty { onLog(nmsg) }
+            if next.contains("不足") || next.contains("用完") || next.contains("上限")
+                || next.contains("没有") || next.contains("结束") || next.contains("已达")
+            {
+                break
+            }
+            if msg.contains("不足") || msg.contains("用完") || msg.contains("上限") { break }
+        }
+        onLog("五行夺宝结束")
+        return "五行夺宝\(rounds)"
+    }
+
+    static func farmDaZaoFuShi(cookie: String, onLog: @escaping (String) -> Void) async -> String {
+        let t = FeatureToggleStore.shared
+        var do1 = t.getBool("more_settings", "cb_fs_1")
+        var do2 = t.getBool("more_settings", "cb_fs_2")
+        // 悬浮窗：未勾选时只打造不分解
+        if !do1 && !do2 {
+            do1 = false
+            do2 = false
+        }
+        onLog("打造符石开始")
+        var loops = 0
+        while loops < 12 {
+            loops += 1
+            if Task.isCancelled { break }
+            let (_, craft) = await LedouCGI.getPetPk(
+                cmd: "weapongod",
+                extra: ["sub": "7", "times": "1", "produce_type": "1"],
+                cookie: cookie
+            )
+            try? await Task.sleep(nanoseconds: gapNs)
+            let cmsg = CombatLog.fromBody(craft)
+            if !cmsg.isEmpty { onLog(cmsg) }
+            if craft.contains("系统繁忙") {
+                try? await Task.sleep(nanoseconds: 200_000_000)
+                continue
+            }
+            if craft.contains("不足") || craft.contains("没有") || craft.contains("无法") { break }
+            var qualities: [Int] = []
+            if do1 { qualities.append(1) }
+            if do2 { qualities.append(2) }
+            if qualities.isEmpty { break }
+            var did = false
+            for q in qualities {
+                for page in 1...3 {
+                    let (_, list) = await LedouCGI.getPetPk(
+                        cmd: "weapongod",
+                        extra: ["quality": "\(q)", "sub": "10", "type": "0", "page": "\(page)"],
+                        cookie: cookie
+                    )
+                    try? await Task.sleep(nanoseconds: gapNs)
+                    let stoneIds = collectStoneIds(list)
+                    for sid in stoneIds.prefix(5) {
+                        let (_, d) = await LedouCGI.getPetPk(
+                            cmd: "weapongod",
+                            extra: ["sub": "9", "decom_array": sid],
+                            cookie: cookie
+                        )
+                        try? await Task.sleep(nanoseconds: gapNs)
+                        let dm = CombatLog.fromBody(d)
+                        if !dm.isEmpty { onLog("分解\(q):\(dm)") }
+                        did = true
+                    }
+                    for sid in stoneIds.prefix(5) {
+                        let (_, c) = await LedouCGI.getPetPk(
+                            cmd: "weapongod",
+                            extra: ["opt": "0", "sub": "11", "stone_id": sid],
+                            cookie: cookie
+                        )
+                        try? await Task.sleep(nanoseconds: gapNs)
+                        let cm = CombatLog.fromBody(c)
+                        if !cm.isEmpty { onLog("合成\(q):\(cm)") }
+                        did = true
+                    }
+                    if list.contains("不足") || !list.contains("stone") { break }
+                }
+            }
+            if !did { break }
+        }
+        onLog("打造符石结束")
+        return "打造符石\(loops)"
+    }
+
+    private static let yjsdDefaultIds = ["4", "1", "2", "3", "8", "5", "6", "7"]
+
+    static func farmYiJiShangDian(cookie: String, onLog: @escaping (String) -> Void) async -> String {
+        onLog("遗迹商店兑换开始")
+        let t = FeatureToggleStore.shared
+        let picked = yjsdDefaultIds.filter { t.getBool("more_settings", "cb_yjsd_\($0)") }
+        let want = picked.isEmpty ? yjsdDefaultIds : picked
+        var buys = 0
+        for _ in 0..<40 {
+            if Task.isCancelled { break }
+            let (_, shop) = await LedouCGI.getPetPk(
+                cmd: "spacerelic", extra: ["op": "shop"], cookie: cookie
+            )
+            try? await Task.sleep(nanoseconds: gapNs)
+            if shop.contains("系统繁忙") {
+                try? await Task.sleep(nanoseconds: gapNs)
+                continue
+            }
+            if let result = CombatLog.jsonInt(shop, "result"), result != 0 {
+                onLog((CombatLog.jsonField(shop, "msg") ?? "").ifBlankMe("商店查询失败"))
+                return "兑换失败"
+            }
+            let score = CombatLog.jsonInt(shop, "score")
+                ?? firstMatchInt(shop, #""score"\s*:\s*"?(\d+)""#)
+                ?? 0
+            guard let hit = want.compactMap({ shopOffer(shop, id: $0) }).first else {
+                onLog("遗迹商店兑换结束")
+                return "兑换\(buys)"
+            }
+            let (id, remain, price) = hit
+            let num: Int
+            if remain >= 10 && score >= price * 10 {
+                num = 10
+            } else if remain >= 1 && score >= price {
+                num = 1
+            } else {
+                onLog("积分不足")
+                return "兑换\(buys)"
+            }
+            let (_, buy) = await LedouCGI.getPetPk(
+                cmd: "spacerelic",
+                extra: ["id": id, "num": "\(num)", "op": "buy"],
+                cookie: cookie
+            )
+            buys += 1
+            try? await Task.sleep(nanoseconds: gapNs)
+            onLog((CombatLog.jsonField(buy, "msg") ?? "").ifBlankMe("兑换\(id)×\(num)"))
+            if buy.contains("积分不足") || buy.contains("不足") { return "兑换\(buys)" }
+        }
+        onLog("遗迹商店兑换结束")
+        return "兑换\(buys)"
+    }
+
+    private static func shopOffer(_ shop: String, id: String) -> (String, Int, Int)? {
+        let esc = NSRegularExpression.escapedPattern(for: id)
+        guard let block = firstMatch(shop, "\"id\"\\s*:\\s*\"\(esc)\"\\s*,[^}]*") else { return nil }
+        let remain = firstMatchInt(block, #""remain"\s*:\s*"?(\d+)""#) ?? 0
+        if remain <= 0 { return nil }
+        let price = firstMatchInt(block, #""score"\s*:\s*"?(\d+)""#) ?? 0
+        return (id, remain, price)
+    }
+
+    private static func collectStoneIds(_ body: String) -> [String] {
+        var out: [String] = []
+        let re = try? NSRegularExpression(pattern: #""stone_id"\s*:\s*"?(\d+)""#)
+        let ns = body as NSString
+        re?.enumerateMatches(in: body, range: NSRange(location: 0, length: ns.length)) { m, _, _ in
+            guard let m, m.numberOfRanges >= 2 else { return }
+            let id = ns.substring(with: m.range(at: 1))
+            if !out.contains(id) { out.append(id) }
+        }
+        return out
+    }
+
     // MARK: - helpers
 
     private static func parseExchangeNameTypes(_ body: String) -> [(String, String)] {

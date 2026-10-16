@@ -162,6 +162,12 @@ final class DaiWanNamedRunner: ObservableObject {
             return await MoreExtraActions.farmLongYin(cookie: cookie, onLog: onLog)
         case "天地宝匣":
             return await MoreExtraActions.farmTianDiBaoXia(cookie: cookie, onLog: onLog)
+        case "五行夺宝":
+            return await MoreExtraActions.farmWuXing(cookie: cookie, onLog: onLog)
+        case "打造符石":
+            return await MoreExtraActions.farmDaZaoFuShi(cookie: cookie, onLog: onLog)
+        case "遗迹商店兑换":
+            return await MoreExtraActions.farmYiJiShangDian(cookie: cookie, onLog: onLog)
         case "门派守夜":
             return await DailyListenActions.farmMenPaiShouYe(cookie: cookie, onLog: onLog)
         case "喝酒":
