@@ -110,7 +110,7 @@ enum FeatureCatalog {
         .init(id: "bagua", label: "八卦迷阵", section: .more, iosWired: true),
         .init(id: "xydb", label: "幸运夺宝", section: .more, iosWired: true),
         .init(id: "wulin_chiyao", label: "武林吃药", section: .more, iosWired: true),
-        .init(id: "qiangdipan", label: "抢地盘", section: .more),
+        .init(id: "qiangdipan", label: "抢地盘", section: .more, iosWired: true),
         .init(id: "qunxia_luxiang", label: "群侠录像", section: .more, iosWired: true),
         .init(id: "pc_game", label: "PC端", section: .more),
         .init(id: "bangpai_wakuang", label: "帮派挖矿", section: .more, emphasize: true, iosWired: true),
