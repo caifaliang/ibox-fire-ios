@@ -106,7 +106,7 @@ enum FeatureCatalog {
         .init(id: "piliang_douyou", label: "批量斗友", section: .more, iosWired: true),
         .init(id: "doudou_mall", label: "斗豆商城", section: .more, pageTitle: "斗豆红包商城", iosWired: true),
         .init(id: "xianshi_qianggou", label: "限时抢购", section: .more, pageTitle: "限时抢购", iosWired: true),
-        .init(id: "longhuang", label: "龙凰论武", section: .more),
+        .init(id: "longhuang", label: "龙凰论武", section: .more, iosWired: true),
         .init(id: "bagua", label: "八卦迷阵", section: .more, iosWired: true),
         .init(id: "xydb", label: "幸运夺宝", section: .more, iosWired: true),
         .init(id: "wulin_chiyao", label: "武林吃药", section: .more, iosWired: true),
