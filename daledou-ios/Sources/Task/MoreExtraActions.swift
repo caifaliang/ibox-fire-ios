@@ -1,9 +1,14 @@
 import Foundation
+import CryptoKit
 
 /// 真源：`MoreExtraActions.kt` — 悬浮窗「报名 / 更多 / 电脑」简易项。
 enum MoreExtraActions {
     private static let gapNs: UInt64 = 80_000_000
     private static let pcSaiqu: Set<String> = ["01", "02", "03", "04", "05"]
+
+    /// UI 写入后由 `pcSuo` 消费。
+    static var pendingPcPassword: String?
+    static var pendingPcFlag: String?
 
     // MARK: - 报名
 
@@ -1155,6 +1160,411 @@ enum MoreExtraActions {
             if !out.contains(id) { out.append(id) }
         }
         return out
+    }
+
+    // MARK: - 帮派远征 / 黄金联赛 / 长梦 / PC 锁
+
+    static func farmBangPaiYuanZheng(cookie: String, onLog: @escaping (String) -> Void) async -> String {
+        let t = FeatureToggleStore.shared
+        var minP = Int(t.getString("more_settings", "ed_bpyz_zl_min").trimmingCharacters(in: .whitespaces)) ?? 0
+        var maxP = Int(t.getString("more_settings", "ed_bpyz_zl_max").trimmingCharacters(in: .whitespaces)) ?? 0
+        // 悬浮窗：未填战力时放宽区间
+        if minP == 0 && maxP == 0 {
+            minP = 0
+            maxP = 9_999_999
+            onLog("未填战力，默认 0–9999999")
+        }
+        onLog("帮派远征开始（战力\(minP)–\(maxP)）")
+        for i in 0..<15 {
+            let (_, r) = await LedouCGI.getPetPk(
+                cmd: "factionarmy", extra: ["op": "getPointAward", "point_id": "\(i)"], cookie: cookie
+            )
+            try? await Task.sleep(nanoseconds: gapNs)
+            let msg = (CombatLog.jsonField(r, "msg") ?? "").ifBlankMe(CombatLog.fromBody(r))
+            if !msg.isEmpty && !msg.contains("没有") && !msg.contains("已领") {
+                onLog("节点\(i):\(msg)")
+            }
+        }
+        for i in 0..<5 {
+            let (_, r) = await LedouCGI.getPetPk(
+                cmd: "factionarmy", extra: ["op": "getIslandAward", "island_id": "\(i)"], cookie: cookie
+            )
+            try? await Task.sleep(nanoseconds: gapNs)
+            let msg = (CombatLog.jsonField(r, "msg") ?? "").ifBlankMe(CombatLog.fromBody(r))
+            if !msg.isEmpty && !msg.contains("没有") && !msg.contains("已领") {
+                onLog("岛屿\(i):\(msg)")
+            }
+        }
+        var fights = 0
+        let (_, index) = await LedouCGI.getPetPk(
+            cmd: "factionarmy", extra: ["island_id": "-1", "op": "viewIndex"], cookie: cookie
+        )
+        try? await Task.sleep(nanoseconds: gapNs)
+        let idxMsg = CombatLog.jsonField(index, "msg") ?? ""
+        if !idxMsg.isEmpty { onLog(idxMsg) }
+        if index.contains("revive"),
+           (try? NSRegularExpression(pattern: #""revive"\s*:\s*"?([1-9]\d*)""#))?
+            .firstMatch(in: index, range: NSRange(index.startIndex..., in: index)) != nil
+        {
+            onLog("当前状态不能挑战")
+            return "不能挑战"
+        }
+        guard let pointId = firstMatch(index, #""pointStatus"\s*:\s*"?1"?[^}]*"pointId"\s*:\s*"?(\d+)""#)
+            ?? firstMatch(index, #""pointId"\s*:\s*"?(\d+)"?[^}]*"pointStatus"\s*:\s*"?1""#)
+        else {
+            onLog("没有找到需要挑战的帮派")
+            return "无可挑战点"
+        }
+        onLog("挑战点\(pointId)")
+        var page = 1
+        let hi = max(maxP, minP)
+        while fights < 8 && page <= 6 {
+            if Task.isCancelled { break }
+            let (_, view) = await LedouCGI.getPetPk(
+                cmd: "factionarmy",
+                extra: ["point_id": pointId, "op": "viewpoint", "page": "\(page)"],
+                cookie: cookie
+            )
+            try? await Task.sleep(nanoseconds: gapNs)
+            if let opp = firstOppInPower(view, minP: minP, maxP: hi) {
+                let (_, f) = await LedouCGI.getPetPk(
+                    cmd: "factionarmy",
+                    extra: ["point_id": pointId, "opp_uin": opp, "op": "fightWithUsr"],
+                    cookie: cookie
+                )
+                fights += 1
+                try? await Task.sleep(nanoseconds: gapNs)
+                onLog("[\(opp)]\((CombatLog.jsonField(f, "msg") ?? "").ifBlankMe(CombatLog.fromBody(f).ifBlankMe("挑战")))")
+                if f.contains("体力") || (f.contains("次数") && f.contains("不足")) { break }
+                continue
+            }
+            let pages = CombatLog.jsonInt(view, "totalPages") ?? page
+            if page >= pages {
+                onLog("没有找到需要挑战的人员")
+                break
+            }
+            page += 1
+        }
+        return "远征战斗\(fights)"
+    }
+
+    static func farmHuangJinLianSai(cookie: String, onLog: @escaping (String) -> Void) async -> String {
+        let t = FeatureToggleStore.shared
+        var minP = Int(t.getString("more_settings", "ed_hjls_zl_min").trimmingCharacters(in: .whitespaces)) ?? 0
+        var maxP = Int(t.getString("more_settings", "ed_hjls_zl_max").trimmingCharacters(in: .whitespaces)) ?? 0
+        if minP == 0 && maxP == 0 {
+            minP = 0
+            maxP = 9_999_999
+            onLog("未填战力，默认 0–9999999")
+        }
+        onLog("黄金联赛开始（战力\(minP)–\(maxP)）")
+        var fights = 0
+        let hi = max(maxP, minP)
+        for _ in 0..<8 {
+            if Task.isCancelled { break }
+            let (_, page) = await LedouCGI.getPetPk(
+                cmd: "factionleague", extra: ["op": "2"], cookie: cookie
+            )
+            try? await Task.sleep(nanoseconds: gapNs)
+            if let result = CombatLog.jsonInt(page, "result"), result != 0 {
+                onLog((CombatLog.jsonField(page, "msg") ?? "").ifBlankMe("联赛查询失败"))
+                return "查询失败"
+            }
+            guard let uin = firstLeagueOpp(page, minP: minP, maxP: hi) else {
+                onLog("没有符合条件的对手")
+                return "黄金联赛战斗\(fights)"
+            }
+            let (_, f) = await LedouCGI.getPetPk(
+                cmd: "factionleague", extra: ["op": "4", "opp_uin": uin], cookie: cookie
+            )
+            fights += 1
+            try? await Task.sleep(nanoseconds: gapNs)
+            onLog("[\(uin)]\((CombatLog.jsonField(f, "msg") ?? "").ifBlankMe(CombatLog.fromBody(f).ifBlankMe("挑战")))")
+        }
+        return "黄金联赛战斗\(fights)"
+    }
+
+    static func farmChangMeng(cookie: String, onLog: @escaping (String) -> Void) async -> String {
+        let t = FeatureToggleStore.shared
+        var allMax = t.getBool("more_settings", "cb_fb_max_all")
+        var one = t.getBool("more_settings", "cb_fb_count_1")
+        var max = t.getBool("more_settings", "cb_fb_count_max")
+        if !allMax && !one && !max {
+            one = true
+            onLog("未勾选次数，默认只刷一次")
+        }
+        let preferFight = !t.getBool("more_settings", "rb_fb_type_2")
+        let stopOnLose = !t.getBool("more_settings", "rb_fb_zhan_bai_2")
+        let mode: String = {
+            if allMax { return "刷完所有副本" }
+            if one { return "只刷一次" }
+            return "刷完单副本"
+        }()
+        onLog("长梦副本开始（\(mode)，\(preferFight ? "优先战斗" : "优先奇遇")）")
+        let (_, list) = await LedouCGI.getPetPk(
+            cmd: "jianghudream", extra: ["op": "showCopyInfo"], cookie: cookie
+        )
+        try? await Task.sleep(nanoseconds: gapNs)
+        let copies = parseDreamCopies(list)
+        let running = copies.filter { $0.2 == 2 }
+        let ready = copies.filter { $0.2 == 1 }
+        let targets: [(String, String, Int)] = {
+            if !running.isEmpty { return Array(running.prefix(1)) }
+            if allMax { return ready }
+            return Array(ready.prefix(1))
+        }()
+        if targets.isEmpty {
+            let msg = (CombatLog.jsonField(list, "msg") ?? "").ifBlankMe(CombatLog.fromBody(list))
+            onLog(msg.ifBlankMe("没有可打副本"))
+            return "无副本"
+        }
+        var steps = 0
+        for (id, name, _) in targets {
+            onLog("开启副本 \(name)")
+            var begun = await LedouCGI.getPetPk(
+                cmd: "jianghudream",
+                extra: ["op": "beginInstance", "copyid": id],
+                cookie: cookie
+            ).1
+            try? await Task.sleep(nanoseconds: gapNs)
+            onLog((CombatLog.jsonField(begun, "msg") ?? "").ifBlankMe("已请求开本"))
+            let cap = (one && !allMax && !max) ? 1 : 24
+            var inner = 0
+            while inner < cap && steps < 40 {
+                inner += 1
+                steps += 1
+                if Task.isCancelled { break }
+                let day = CombatLog.jsonInt(begun, "curDays")
+                let maxDay = CombatLog.jsonInt(begun, "maxDays")
+                let line = (CombatLog.jsonField(begun, "msg") ?? "").ifBlankMe(CombatLog.fromBody(begun))
+                if !line.isEmpty && inner > 1 {
+                    onLog("第\(day.map(String.init) ?? "?")天 \(line)")
+                }
+                if begun.contains("香炉") && begun.contains("不足") {
+                    onLog("香炉数量不足")
+                    return "长梦\(steps)"
+                }
+                if line.contains("战败") || begun.contains("\"win\":0") || begun.contains("\"win\":\"0\"") {
+                    if stopOnLose {
+                        let (_, end) = await LedouCGI.getPetPk(
+                            cmd: "jianghudream", extra: ["op": "endInstance"], cookie: cookie
+                        )
+                        try? await Task.sleep(nanoseconds: gapNs)
+                        onLog(CombatLog.fromBody(end).ifBlankMe("战败后停止"))
+                        return "长梦\(steps)"
+                    }
+                    _ = await LedouCGI.getPetPk(
+                        cmd: "jianghudream", extra: ["op": "endInstance"], cookie: cookie
+                    )
+                    try? await Task.sleep(nanoseconds: gapNs)
+                    onLog("战败后重开")
+                    begun = await LedouCGI.getPetPk(
+                        cmd: "jianghudream",
+                        extra: ["op": "beginInstance", "copyid": id],
+                        cookie: cookie
+                    ).1
+                    try? await Task.sleep(nanoseconds: gapNs)
+                    continue
+                }
+                if !preferFight && begun.contains("eventChoose") {
+                    let adv = firstMatch(begun, #""id"\s*:\s*"?(\d+)""#) ?? "0"
+                    begun = await LedouCGI.getPetPk(
+                        cmd: "jianghudream",
+                        extra: ["op": "chooseAdventure", "adventure_id": adv],
+                        cookie: cookie
+                    ).1
+                    try? await Task.sleep(nanoseconds: gapNs)
+                    continue
+                }
+                if let day, let maxDay, day >= maxDay {
+                    let (_, reward) = await LedouCGI.getPetPk(
+                        cmd: "jianghudream",
+                        extra: ["op": "getFirstReward", "copyid": id],
+                        cookie: cookie
+                    )
+                    try? await Task.sleep(nanoseconds: gapNs)
+                    onLog(CombatLog.fromBody(reward).ifBlankMe("领首通"))
+                    let (_, end) = await LedouCGI.getPetPk(
+                        cmd: "jianghudream", extra: ["op": "endInstance"], cookie: cookie
+                    )
+                    try? await Task.sleep(nanoseconds: gapNs)
+                    onLog(CombatLog.fromBody(end).ifBlankMe("副本结束"))
+                    break
+                }
+                begun = await LedouCGI.getPetPk(
+                    cmd: "jianghudream", extra: ["op": "goNextDay"], cookie: cookie
+                ).1
+                try? await Task.sleep(nanoseconds: gapNs)
+                if begun.contains("进入下一天异常") {
+                    onLog("请手动结束该副本后再试")
+                    return "长梦\(steps)"
+                }
+            }
+            if one && !max && !allMax { break }
+        }
+        onLog("长梦副本结束")
+        return "长梦\(steps)"
+    }
+
+    static func pcSuo(action: String, cookie: String, onLog: @escaping (String) -> Void) async -> String {
+        let pwd = (pendingPcPassword ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let flagTrim = pendingPcFlag?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let flagOverride: String? = {
+            guard flagTrim.count == 11, flagTrim.allSatisfy({ $0 == "0" || $0 == "1" }) else { return nil }
+            return flagTrim
+        }()
+        pendingPcPassword = nil
+        pendingPcFlag = nil
+
+        switch action {
+        case "重置PC锁":
+            onLog("申请强制解除 PC 锁（约 7 天）…")
+            let (_, r) = await LedouCGI.getPetPk(
+                cmd: "safelock", extra: ["type": "2"], cookie: cookie
+            )
+            try? await Task.sleep(nanoseconds: gapNs)
+            let msg = CombatLog.fromBody(r)
+                .ifBlankMe((CombatLog.jsonField(r, "msg") ?? "").ifBlankMe("已请求 type=2"))
+            onLog(msg)
+            return msg
+        case "PC解锁":
+            if pwd.isEmpty {
+                onLog("未输入密码")
+                return "未输入密码"
+            }
+            let md5 = safelockMd5(pwd, cookie: cookie)
+            onLog("PC解锁…")
+            let (_, r) = await LedouCGI.getPetPk(
+                cmd: "safelock", extra: ["type": "6", "md5": md5], cookie: cookie
+            )
+            try? await Task.sleep(nanoseconds: gapNs)
+            let msg = CombatLog.fromBody(r).ifBlankMe("已请求 type=6")
+            onLog(msg)
+            return msg
+        case "修改PC锁", "设置PC锁密码":
+            if pwd.isEmpty {
+                onLog("未输入密码")
+                return "未输入密码"
+            }
+            onLog("\(action)：查询当前锁定项…")
+            let (_, q) = await LedouCGI.getPetPk(
+                cmd: "safelock", extra: ["type": "1"], cookie: cookie
+            )
+            try? await Task.sleep(nanoseconds: gapNs)
+            let flag = flagOverride ?? parseProtectedFlag(q) ?? "11111111111"
+            let md5 = safelockMd5(pwd, cookie: cookie)
+            if action == "设置PC锁密码" {
+                onLog("设置密码 type=4…")
+                let (_, set) = await LedouCGI.getPetPk(
+                    cmd: "safelock",
+                    extra: ["pwd": pwd, "md5": md5, "type": "4"],
+                    cookie: cookie
+                )
+                try? await Task.sleep(nanoseconds: gapNs)
+                onLog(CombatLog.fromBody(set).ifBlankMe("type=4 已请求"))
+            }
+            onLog("应用锁定项 type=7 flag=\(flag)…")
+            let (_, apply) = await LedouCGI.getPetPk(
+                cmd: "safelock",
+                extra: ["type": "7", "protectedflag": flag, "md5": md5],
+                cookie: cookie
+            )
+            try? await Task.sleep(nanoseconds: gapNs)
+            let msg = CombatLog.fromBody(apply).ifBlankMe("已请求 type=7")
+            onLog(msg)
+            return msg
+        default:
+            let tip = "未知 PC 锁操作：\(action)"
+            onLog(tip)
+            return tip
+        }
+    }
+
+    private static func firstOppInPower(_ body: String, minP: Int, maxP: Int) -> String? {
+        let re = try? NSRegularExpression(
+            pattern: #""isDead"\s*:\s*"?0"?[^}]*"fightCapacity"\s*:\s*"?(\d+)"?[^}]*"oppUin"\s*:\s*"?(\d+)""#
+        )
+        let ns = body as NSString
+        var hit: String?
+        re?.enumerateMatches(in: body, range: NSRange(location: 0, length: ns.length)) { m, _, stop in
+            guard let m, m.numberOfRanges >= 3 else { return }
+            let p = Int(ns.substring(with: m.range(at: 1))) ?? 0
+            if p >= minP && p <= maxP {
+                hit = ns.substring(with: m.range(at: 2))
+                stop.pointee = true
+            }
+        }
+        return hit
+    }
+
+    private static func firstLeagueOpp(_ body: String, minP: Int, maxP: Int) -> String? {
+        let re = try? NSRegularExpression(
+            pattern: #""uin"\s*:\s*"?(\d+)"?[^}]*"cur_hp"\s*:\s*"?(\d+)"?[^}]*"atk_power"\s*:\s*"?(\d+)""#
+        )
+        let ns = body as NSString
+        var hit: String?
+        re?.enumerateMatches(in: body, range: NSRange(location: 0, length: ns.length)) { m, _, stop in
+            guard let m, m.numberOfRanges >= 4 else { return }
+            let hp = Int(ns.substring(with: m.range(at: 2))) ?? 0
+            let atk = Int(ns.substring(with: m.range(at: 3))) ?? 0
+            if hp != 0 && atk >= minP && atk <= maxP {
+                hit = ns.substring(with: m.range(at: 1))
+                stop.pointee = true
+            }
+        }
+        return hit
+    }
+
+    private static func parseDreamCopies(_ body: String) -> [(String, String, Int)] {
+        var out: [(String, String, Int)] = []
+        let ns = body as NSString
+        let re1 = try? NSRegularExpression(
+            pattern: #""id"\s*:\s*"?(\d+)"?[^}]*"name"\s*:\s*"([^"]*)"[^}]*"status"\s*:\s*"?(\d+)""#
+        )
+        re1?.enumerateMatches(in: body, range: NSRange(location: 0, length: ns.length)) { m, _, _ in
+            guard let m, m.numberOfRanges >= 4 else { return }
+            out.append((
+                ns.substring(with: m.range(at: 1)),
+                ns.substring(with: m.range(at: 2)),
+                Int(ns.substring(with: m.range(at: 3))) ?? 0
+            ))
+        }
+        if out.isEmpty {
+            let re2 = try? NSRegularExpression(
+                pattern: #""name"\s*:\s*"([^"]*)"[^}]*"status"\s*:\s*"?(\d+)"?[^}]*"id"\s*:\s*"?(\d+)""#
+            )
+            re2?.enumerateMatches(in: body, range: NSRange(location: 0, length: ns.length)) { m, _, _ in
+                guard let m, m.numberOfRanges >= 4 else { return }
+                out.append((
+                    ns.substring(with: m.range(at: 3)),
+                    ns.substring(with: m.range(at: 1)),
+                    Int(ns.substring(with: m.range(at: 2))) ?? 0
+                ))
+            }
+        }
+        return out
+    }
+
+    private static func parseProtectedFlag(_ body: String) -> String? {
+        if let f = firstMatch(body, #""protectedflag"\s*:\s*"([01]{11})""#) { return f }
+        if let raw = firstMatch(body, #""protectedflag"\s*:\s*"([^"]+)""#) {
+            let filtered = raw.filter { $0 == "0" || $0 == "1" }
+            if filtered.count == 11 { return filtered }
+        }
+        return nil
+    }
+
+    private static func cookieSalt(_ cookie: String) -> String {
+        LoginURLs.cookieValue(cookie, names: ["accessToken", "access_token", "openkey"]) ?? ""
+    }
+
+    private static func md5Hex(_ raw: String) -> String {
+        let digest = Insecure.MD5.hash(data: Data(raw.utf8))
+        return digest.map { String(format: "%02x", $0) }.joined()
+    }
+
+    private static func safelockMd5(_ password: String, cookie: String) -> String {
+        md5Hex(md5Hex(password) + cookieSalt(cookie))
     }
 
     // MARK: - helpers

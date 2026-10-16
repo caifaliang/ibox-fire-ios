@@ -14,6 +14,9 @@ struct DaiWanRecordView: View {
     @State private var query = ""
     @State private var filterBusy = true
     @State private var toast = ""
+    @State private var pcDialogAction: String?
+    @State private var pcPassword = ""
+    @State private var pcFlags = Array(repeating: true, count: 11)
 
     private var heroBusy: Bool {
         named.running || huoyue.running || lingjiang.running || log.running
@@ -80,6 +83,27 @@ struct DaiWanRecordView: View {
                         .clipShape(Capsule())
                         .padding(.bottom, 24)
                         .transition(.opacity)
+                }
+            }
+            .alert(
+                pcDialogAction ?? "PC锁",
+                isPresented: Binding(
+                    get: { pcDialogAction != nil },
+                    set: { if !$0 { pcDialogAction = nil } }
+                )
+            ) {
+                if pcDialogAction != "重置PC锁" {
+                    SecureField("PC 锁密码", text: $pcPassword)
+                }
+                Button("确定") { confirmPcDialog() }
+                Button("取消", role: .cancel) { pcDialogAction = nil }
+            } message: {
+                if pcDialogAction == "重置PC锁" {
+                    Text("忘记密码可申请强制解除，约 7 天后可重设。确定申请？")
+                } else if pcDialogAction == "修改PC锁" || pcDialogAction == "设置PC锁密码" {
+                    Text("将按默认全开锁定项提交（可后续在更多设置细化）")
+                } else {
+                    Text("输入 PC 锁密码后解锁")
                 }
             }
         }
@@ -274,8 +298,32 @@ struct DaiWanRecordView: View {
             }
             return
         }
+        switch tile.action {
+        case "PC解锁", "修改PC锁", "重置PC锁", "设置PC锁密码":
+            pcPassword = ""
+            pcFlags = Array(repeating: true, count: 11)
+            pcDialogAction = tile.action
+            return
+        default:
+            break
+        }
         named.run(tile.action)
         flash("已开始：\(tile.title)")
+    }
+
+    private func confirmPcDialog() {
+        guard let action = pcDialogAction else { return }
+        if action != "重置PC锁", pcPassword.trimmingCharacters(in: .whitespaces).isEmpty {
+            flash("请输入密码")
+            return
+        }
+        MoreExtraActions.pendingPcPassword = pcPassword
+        if action == "修改PC锁" || action == "设置PC锁密码" {
+            MoreExtraActions.pendingPcFlag = pcFlags.map { $0 ? "1" : "0" }.joined()
+        }
+        pcDialogAction = nil
+        named.run(action)
+        flash("已开始：\(action)")
     }
 
     private func onWorkbench(_ action: String) {
