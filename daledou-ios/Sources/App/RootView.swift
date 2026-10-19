@@ -54,7 +54,7 @@ struct RootView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .overlay(alignment: .topTrailing) {
                     // 背包页悬浮钮 → 笔记式背包检索（对齐 APK DraggableBeiBaoFab / TopEnd）
-                    if vm.showBeiBaoFab && vm.shellTab == 0 && !vm.suspendGameWebForReplay {
+                    if vm.showBeiBaoFab && vm.shellTab == 0 && !vm.suspendGameWebForReplay && !vm.capturingLongShot {
                         Button {
                             vm.openBeiBaoFromFab()
                         } label: {
@@ -73,7 +73,7 @@ struct RootView: View {
                 }
                 .overlay(alignment: .bottomTrailing) {
                     // 群侠 8强页悬浮钮（对齐 APK DraggableQunXiaFab）
-                    if vm.showQunXiaFab && vm.shellTab == 0 && !vm.suspendGameWebForReplay {
+                    if vm.showQunXiaFab && vm.shellTab == 0 && !vm.suspendGameWebForReplay && !vm.capturingLongShot {
                         Button {
                             vm.openQunXiaLuXiangFromFab()
                         } label: {
@@ -97,7 +97,7 @@ struct RootView: View {
             .background(DlColors.canvas)
 
             // 首页悬浮钮 → 代玩-记录（对齐 APK DraggableNoteFab）
-            if vm.shellTab == 0 && !vm.suspendGameWebForReplay {
+            if vm.shellTab == 0 && !vm.suspendGameWebForReplay && !vm.capturingLongShot {
                 Button {
                     vm.showDaiWanRecord = true
                 } label: {
@@ -118,7 +118,7 @@ struct RootView: View {
                 .accessibilityLabel("代玩记录")
             }
 
-            if vm.showViewFightFab && vm.shellTab == 0 {
+            if vm.showViewFightFab && vm.shellTab == 0 && !vm.capturingLongShot {
                 Button {
                     vm.openOfficialAnimation()
                 } label: {

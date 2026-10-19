@@ -30,8 +30,9 @@ struct ShellToolStrip: View {
             .buttonStyle(.plain)
 
             toolIcon(system: "camera.viewfinder", tint: DlColors.inkSecondary) {
-                vm.statusText = "截长图：下一刀按 APK 接入"
+                vm.captureLongShotFromShell()
             }
+            .disabled(vm.capturingLongShot || vm.pageLoading)
             // APK：加载中用刷新位转圈替换图标，无全屏/顶栏进度条
             Button {
                 vm.reload()

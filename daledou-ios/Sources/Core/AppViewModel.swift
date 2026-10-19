@@ -43,6 +43,8 @@ final class AppViewModel: ObservableObject {
     @Published var showQuery = false
     @Published var queryPrefill = ""
     @Published var queryAuto = false
+    /// 截长图中：隐藏悬浮钮，避免拍进画面（对齐 GameShellScreen.capturingLongShot）
+    @Published var capturingLongShot = false
     /// 悬浮钮「代玩-记录」
     @Published var showDaiWanRecord = false
     /// 后台监听页：kuangdong / jiebiao / liangcao / wending / fuchou_wending / open_kd
@@ -716,6 +718,45 @@ final class AppViewModel: ObservableObject {
         queryPrefill = uin
         queryAuto = !uin.isEmpty
         showQuery = true
+    }
+
+    /// 真源：`captureCurrentPageLongShot` — 仅 WebView 长图，保存相册并弹出分享。
+    func captureLongShotFromShell() {
+        guard let wv = gameWebView else {
+            statusText = "页面尚未就绪"
+            return
+        }
+        guard !capturingLongShot else { return }
+        capturingLongShot = true
+        statusText = "正在截长图…"
+        Task { @MainActor in
+            // 先藏悬浮钮，等一帧再截
+            try? await Task.sleep(nanoseconds: 120_000_000)
+            defer { capturingLongShot = false }
+            do {
+                let result = try await WebViewLongScreenshot.captureAndSave(webView: wv)
+                statusText = "长图已保存，可分享"
+                if let presenter = Self.topViewController() {
+                    WebViewLongScreenshot.presentShare(image: result.image, from: presenter)
+                }
+            } catch {
+                statusText = "截长图失败：\(error.localizedDescription)"
+            }
+        }
+    }
+
+    private static func topViewController(base: UIViewController? = nil) -> UIViewController? {
+        let root: UIViewController? = {
+            if let base { return base }
+            let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            let win = scenes.flatMap(\.windows).first(where: \.isKeyWindow)
+                ?? scenes.flatMap(\.windows).first
+            return win?.rootViewController
+        }()
+        if let nav = root as? UINavigationController { return topViewController(base: nav.visibleViewController) }
+        if let tab = root as? UITabBarController { return topViewController(base: tab.selectedViewController) }
+        if let presented = root?.presentedViewController { return topViewController(base: presented) }
+        return root
     }
 
     func reload() {
