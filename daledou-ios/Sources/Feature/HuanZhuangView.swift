@@ -12,6 +12,8 @@ struct HuanZhuangView: View {
     @State private var active = 0
     @State private var knights: [LoadoutOpt] = []
     @State private var avatars: [LoadoutOpt] = []
+    @State private var mercs: [String: [LoadoutOpt]] = [:]
+    @State private var aoyis: [String: [LoadoutOpt]] = [:]
 
     private let t = FeatureToggleStore.shared
 
@@ -25,7 +27,7 @@ struct HuanZhuangView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
-                    Text("装扮方案仍走一键换装。本页可保存多套配置，并设置侠士 / 头像后点应用。专精、奥义、佣兵、附魔开关已预留，编辑器下一片接入。")
+                    Text("装扮方案仍走一键换装。本页可保存多套配置，并设置奥义、佣兵、侠士、头像后点应用。专精与附魔编辑器下一片接入。")
                         .font(.system(size: 12))
                         .foregroundStyle(DlColors.inkMuted)
 
@@ -162,6 +164,20 @@ struct HuanZhuangView: View {
                 .disabled(!LoadoutConfig.wiredSections.contains(key))
             }
 
+            ForEach(Array(LoadoutConfig.aoyiSlots.enumerated()), id: \.offset) { i, label in
+                let key = "\(i + 1)"
+                pickRow(title: "奥义·\(label)", token: cfg.aoyi[key] ?? "", opts: aoyis[key] ?? [], allowSkip: "不设置技能") { token in
+                    configs[active].aoyi[key] = token
+                    persist()
+                }
+            }
+            ForEach(Array(LoadoutConfig.mercSlots.enumerated()), id: \.offset) { i, label in
+                let key = "\(i + 1)"
+                pickRow(title: "佣兵·\(label)", token: cfg.mercenary[key] ?? "", opts: mercs[key] ?? [], allowSkip: "不设置佣兵") { token in
+                    configs[active].mercenary[key] = token
+                    persist()
+                }
+            }
             pickRow(title: "侠士·位置1", token: cfg.knight["0"] ?? "", opts: knights, allowSkip: "不设置侠士") { token in
                 configs[active].knight["0"] = token
                 persist()
@@ -249,13 +265,17 @@ struct HuanZhuangView: View {
         defer { loading = false }
         let cookie = SessionStore.shared.cookieHeader
         guard LoginURLs.hasGameSession(cookie) else {
-            tip = "请先登录后再刷新侠士 / 头像"
+            tip = "请先登录后再刷新换装列表"
             return
         }
         let ks = await LoadoutActions.fetchKnights(cookie: cookie)
         let av = await LoadoutActions.fetchAvatars(cookie: cookie)
+        let mc = await LoadoutActions.fetchMercs(cookie: cookie)
+        let ay = await LoadoutActions.fetchAoyi(cookie: cookie)
         knights = ks
         avatars = av.opts
+        mercs = mc
+        aoyis = ay
         if prefill {
             for i in configs.indices {
                 for k in ks {
@@ -267,10 +287,22 @@ struct HuanZhuangView: View {
                 if configs[i].avatar.isEmpty, let cur = av.current {
                     configs[i].avatar = LoadoutActions.token(cur.id, cur.name)
                 }
+                for (key, list) in mc {
+                    if (configs[i].mercenary[key] ?? "").isEmpty, let on = list.first(where: { $0.extra == "on" }) {
+                        configs[i].mercenary[key] = LoadoutActions.token(on.id, on.name)
+                    }
+                }
+                for (key, list) in ay {
+                    if (configs[i].aoyi[key] ?? "").isEmpty, let on = list.first(where: { $0.extra == "on" }) {
+                        configs[i].aoyi[key] = LoadoutActions.token(on.id, on.name)
+                    }
+                }
             }
             persist()
         }
-        tip = "侠士 \(ks.count) · 头像 \(av.opts.count)"
+        let mercN = mc.values.reduce(0) { $0 + $1.count }
+        let aoyiN = ay.values.reduce(0) { $0 + $1.count }
+        tip = "奥义 \(aoyiN) · 佣兵 \(mercN) · 侠士 \(ks.count) · 头像 \(av.opts.count)"
     }
 
     private func apply() async {
