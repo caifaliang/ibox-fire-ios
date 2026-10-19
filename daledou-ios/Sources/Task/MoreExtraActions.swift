@@ -1721,7 +1721,6 @@ enum MoreExtraActions {
         if t.getBool("huoyue", "cb_yjhz_xp") {
             parts.append(await XingPanActions.farmXingPanHuanZhuang(cookie: cookie, onLog: onLog))
         }
-        onLog("神将/佣兵/专精/头像等方案编辑器尚未接入，已跳过")
         return parts.joined(separator: "；")
     }
 
