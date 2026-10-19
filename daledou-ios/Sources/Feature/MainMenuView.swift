@@ -36,9 +36,15 @@ struct MainMenuView: View {
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(DlColors.ink)
                     .lineLimit(1)
-                Text(vm.backgroundEnabled ? "后台 · \(vm.backgroundIntervalSec)s" : "后台关")
-                    .font(.system(size: 11))
-                    .foregroundStyle(DlColors.inkSecondary)
+                Button {
+                    vm.cycleBackgroundInterval()
+                } label: {
+                    Text(vm.backgroundEnabled ? "后台 · \(vm.backgroundIntervalSec)s" : "后台关")
+                        .font(.system(size: 11))
+                        .foregroundStyle(DlColors.inkSecondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("切换后台间隔")
             }
             Spacer()
             Toggle("", isOn: $vm.backgroundEnabled)

@@ -113,9 +113,17 @@ struct ShellStatusBar: View {
                     .labelsHidden()
                     .tint(DlColors.accentBlue)
                     .scaleEffect(0.85)
-                Text("\(vm.backgroundIntervalSec)s")
-                    .font(.system(size: 11))
-                    .foregroundStyle(DlColors.inkMuted)
+                Button {
+                    vm.cycleBackgroundInterval()
+                } label: {
+                    Text("\(vm.backgroundIntervalSec)s")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(DlColors.inkMuted)
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 2)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("切换后台间隔")
             }
         }
         .padding(.horizontal, 14)

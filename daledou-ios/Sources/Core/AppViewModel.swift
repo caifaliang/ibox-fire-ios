@@ -54,14 +54,38 @@ final class AppViewModel: ObservableObject {
     @Published var canGoForward = false
     /// 页加载中：顶栏刷新位转圈（对齐 APK，无全屏/顶栏进度条）
     @Published var pageLoading = false
-    /// 后台开关 UI（Worker 未接，仅落盘）
-    @Published var backgroundEnabled: Bool = UserDefaults.standard.bool(forKey: "daledou.shell.bg_enabled") {
-        didSet { UserDefaults.standard.set(backgroundEnabled, forKey: "daledou.shell.bg_enabled") }
+    /// 后台总开关（对齐 TaskRunner.setBackgroundEnabled → BackgroundListenRunner）
+    @Published var backgroundEnabled: Bool = UserDefaults.standard.bool(forKey: BackgroundListenRunner.enabledKey) {
+        didSet {
+            guard !suppressBgSync else { return }
+            guard oldValue != backgroundEnabled else { return }
+            if !BackgroundListenRunner.shared.setGlobalEnabled(backgroundEnabled) {
+                suppressBgSync = true
+                backgroundEnabled = false
+                suppressBgSync = false
+                statusText = VipAccess.expiredMsg
+            }
+        }
     }
     @Published var backgroundIntervalSec: Int = {
-        let v = UserDefaults.standard.integer(forKey: "daledou.shell.bg_interval")
-        return v > 0 ? v : 10
-    }()
+        let v = UserDefaults.standard.integer(forKey: BackgroundListenRunner.intervalKey)
+        return (v > 0 ? v : 10).clampedBgInterval
+    }() {
+        didSet {
+            guard !suppressBgSync else { return }
+            guard oldValue != backgroundIntervalSec else { return }
+            BackgroundListenRunner.shared.setIntervalSec(backgroundIntervalSec)
+        }
+    }
+    /// 避免 Runner 回写时与 Toggle didSet 互递归
+    private var suppressBgSync = false
+
+    /// 点状态条「Ns」循环：8 / 10 / 15 / 30 / 60 / 120
+    func cycleBackgroundInterval() {
+        let presets = [8, 10, 15, 30, 60, 120]
+        let cur = backgroundIntervalSec
+        backgroundIntervalSec = presets.first(where: { $0 > cur }) ?? presets[0]
+    }
 
     var shellDisplayName: String {
         if session.isLoggedIn {
@@ -151,7 +175,27 @@ final class AppViewModel: ObservableObject {
             return
         }
         didBootstrap = true
-        BackgroundListenRunner.shared.restoreFromStore()
+        let runner = BackgroundListenRunner.shared
+        runner.onGlobalEnabledChange = { [weak self] on in
+            guard let self else { return }
+            guard self.backgroundEnabled != on else { return }
+            self.suppressBgSync = true
+            self.backgroundEnabled = on
+            self.suppressBgSync = false
+        }
+        runner.onIntervalChange = { [weak self] sec in
+            guard let self else { return }
+            guard self.backgroundIntervalSec != sec else { return }
+            self.suppressBgSync = true
+            self.backgroundIntervalSec = sec
+            self.suppressBgSync = false
+        }
+        runner.restoreFromStore()
+        // 与落盘对齐 UI（冷启 VIP 失效时 Runner 会关掉全局）
+        suppressBgSync = true
+        backgroundEnabled = runner.isGlobalEnabled
+        backgroundIntervalSec = runner.intervalSec
+        suppressBgSync = false
 
         // 进程在 QQ 期间被杀：用落盘的 qrsig 恢复一键，等用户回 App 再收尾
         if QqOneKeyLogin.persistedAwaitingReturn {
@@ -1829,4 +1873,8 @@ final class AppViewModel: ObservableObject {
         while s.contains("  ") { s = s.replacingOccurrences(of: "  ", with: " ") }
         return s.trimmingCharacters(in: .whitespacesAndNewlines)
     }
+}
+
+private extension Int {
+    var clampedBgInterval: Int { Swift.min(600, Swift.max(8, self)) }
 }

@@ -1,9 +1,12 @@
 import Foundation
 
-/// 后台监听心跳：矿洞 / 劫镖 / 粮草（对齐 APK TaskRunner.runNow + 周期轮询）。
+/// 后台监听心跳：矿洞 / 劫镖 / 粮草（对齐 APK TaskRunner + BackgroundPrefs 全局开关）。
 @MainActor
 final class BackgroundListenRunner: ObservableObject {
     static let shared = BackgroundListenRunner()
+
+    static let enabledKey = "daledou.shell.bg_enabled"
+    static let intervalKey = "daledou.shell.bg_interval"
 
     @Published private(set) var activeIds: Set<String> = []
     private var job: Task<Void, Never>?
@@ -15,21 +18,75 @@ final class BackgroundListenRunner: ObservableObject {
         "bagua", "xydb", "wulin_chiyao", "qiangdipan", "longhuang", "paomadeng", "renwu",
     ]
 
+    /// 壳 Toggle / 间隔 UI 回写（避免与 AppViewModel didSet 互递归）。
+    var onGlobalEnabledChange: ((Bool) -> Void)?
+    var onIntervalChange: ((Int) -> Void)?
+
     private init() {}
 
     var isAnyActive: Bool { !activeIds.isEmpty }
+
+    var isGlobalEnabled: Bool {
+        UserDefaults.standard.bool(forKey: Self.enabledKey)
+    }
+
+    var intervalSec: Int {
+        let v = UserDefaults.standard.integer(forKey: Self.intervalKey)
+        return (v > 0 ? v : 10).clamped(to: 8...600)
+    }
 
     func isActive(_ featureId: String) -> Bool {
         activeIds.contains(featureId)
     }
 
+    /// 对齐 `TaskRunner.setBackgroundEnabled`：会员门禁 + 启停轮询（保留各功能 isEnabled）。
+    @discardableResult
+    func setGlobalEnabled(_ enabled: Bool) -> Bool {
+        if enabled && !VipAccess.isActive() {
+            TaskLogStore.shared.append("Runner", VipAccess.expiredMsg)
+            UserDefaults.standard.set(false, forKey: Self.enabledKey)
+            onGlobalEnabledChange?(false)
+            stopLoop()
+            return false
+        }
+        UserDefaults.standard.set(enabled, forKey: Self.enabledKey)
+        onGlobalEnabledChange?(enabled)
+        if enabled {
+            if !activeIds.isEmpty {
+                ensureLoop()
+            }
+            TaskLogStore.shared.append(
+                "Runner",
+                "后台已启动，间隔 \(intervalSec)s"
+            )
+        } else {
+            stopLoop()
+            TaskLogStore.shared.append("Runner", "后台已停止")
+        }
+        return true
+    }
+
+    /// 对齐 `TaskRunner.setIntervalSec`（8…600）。
+    func setIntervalSec(_ sec: Int) {
+        let v = sec.clamped(to: 8...600)
+        UserDefaults.standard.set(v, forKey: Self.intervalKey)
+        onIntervalChange?(v)
+        guard isGlobalEnabled, !activeIds.isEmpty else { return }
+        stopLoop()
+        ensureLoop()
+        TaskLogStore.shared.append("Runner", "后台间隔已改为 \(v)s")
+    }
+
     func start(_ featureId: String) {
         guard listenIds.contains(featureId) else { return }
+        // 对齐 MorePlayScreens：开单项监听时顺带打开全局后台
+        if !isGlobalEnabled {
+            guard setGlobalEnabled(true) else { return }
+        }
         FeatureToggleStore.shared.setEnabled(featureId, true)
         activeIds.insert(featureId)
         ensureLoop()
         TaskLogStore.shared.append(label(featureId), "监听已开启")
-        // 立即跑一轮
         Task { await tickOne(featureId) }
     }
 
@@ -38,8 +95,7 @@ final class BackgroundListenRunner: ObservableObject {
         activeIds.remove(featureId)
         TaskLogStore.shared.append(label(featureId), "监听已停止")
         if activeIds.isEmpty {
-            job?.cancel()
-            job = nil
+            stopLoop()
         }
     }
 
@@ -47,23 +103,37 @@ final class BackgroundListenRunner: ObservableObject {
         for id in Array(activeIds) { stop(id) }
     }
 
-    /// 冷启：恢复上次 isEnabled 的监听。
+    /// 冷启：恢复上次 isEnabled 的监听；仅当全局后台开着才跑轮询。
     func restoreFromStore() {
         for id in listenIds where FeatureToggleStore.shared.isEnabled(id) {
             activeIds.insert(id)
         }
+        guard isGlobalEnabled else { return }
+        if !VipAccess.isActive() {
+            _ = setGlobalEnabled(false)
+            return
+        }
         if !activeIds.isEmpty { ensureLoop() }
     }
 
+    private func stopLoop() {
+        job?.cancel()
+        job = nil
+    }
+
     private func ensureLoop() {
+        guard isGlobalEnabled else { return }
+        guard !activeIds.isEmpty else { return }
         guard job == nil else { return }
         job = Task { [weak self] in
             while !Task.isCancelled {
                 guard let self else { break }
+                guard self.isGlobalEnabled else { break }
                 let ids = Array(self.activeIds)
                 if ids.isEmpty { break }
                 for id in ids {
                     if Task.isCancelled { break }
+                    guard self.isGlobalEnabled else { break }
                     // 被 farm* 自行关掉时同步 UI
                     if !FeatureToggleStore.shared.isEnabled(id) {
                         self.activeIds.remove(id)
@@ -72,7 +142,7 @@ final class BackgroundListenRunner: ObservableObject {
                     await self.tickOne(id)
                     try? await Task.sleep(nanoseconds: 400_000_000)
                 }
-                let sec = max(5, UserDefaults.standard.integer(forKey: "daledou.shell.bg_interval").nonZero(10))
+                let sec = self.intervalSec
                 try? await Task.sleep(nanoseconds: UInt64(sec) * 1_000_000_000)
             }
             await MainActor.run { self?.job = nil }
@@ -179,5 +249,7 @@ final class BackgroundListenRunner: ObservableObject {
 }
 
 private extension Int {
-    func nonZero(_ fallback: Int) -> Int { self > 0 ? self : fallback }
+    func clamped(to range: ClosedRange<Int>) -> Int {
+        Swift.min(range.upperBound, Swift.max(range.lowerBound, self))
+    }
 }

@@ -38,6 +38,7 @@
 | **日常强化细项** | **partial** | fd140：兵法/神装/技能/专精/武器栏/铭刻/徽章 + 任务库 status=2 |
 | **顶栏查询（信息）** | **partial** | fd144：QueryScreen 信息页 + petpk 全量解析；页内 UIN 预填 |
 | **顶栏截长图** | **partial** | fd145：WKWebView 滚屏拼接 + 相册/分享；截时藏 FAB |
+| **壳后台总开关** | **partial** | fd146：Toggle→TaskRunner 启停 + 点 Ns 循环间隔；单项监听顺带开全局 |
 | **活跃代玩（设置页 + CGI）** | **partial** | fd92–96：主战斗矩阵；fd99：矿洞/劫镖/粮草一键项 |
 | **领奖报名（设置页 + CGI）** | **partial** | fd97–98：keymap + 飞升/巅峰/结拜/盟主/武林/商会/QQ 邀请 |
 | **更多设置页** | **partial** | fd111 + fd113 掌上道聚城细项 |
@@ -62,4 +63,4 @@
 
 ## 下一切片
 
-PC 端（Flash 壳，暂缓）。
+PC 端（Flash 壳，暂缓）。可深化换装编辑器 / 后台 KeepAlive 前台提示。
