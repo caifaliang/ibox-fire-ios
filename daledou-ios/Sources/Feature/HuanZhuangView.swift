@@ -15,6 +15,7 @@ struct HuanZhuangView: View {
     @State private var mercs: [String: [LoadoutOpt]] = [:]
     @State private var aoyis: [String: [LoadoutOpt]] = [:]
     @State private var zjWeapons: [String: [LoadoutOpt]] = [:]
+    @State private var enchantHoles: [LoadoutActions.EnchantHole] = []
 
     private let t = FeatureToggleStore.shared
 
@@ -28,7 +29,7 @@ struct HuanZhuangView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
-                    Text("装扮方案仍走一键换装。可保存多套配置，并设置专精、奥义、佣兵、侠士、头像后点应用。附魔编辑器下一片接入。")
+                    Text("装扮方案仍走一键换装。可保存多套配置，并设置专精、奥义、佣兵、侠士、附魔、头像后点应用。")
                         .font(.system(size: 12))
                         .foregroundStyle(DlColors.inkMuted)
 
@@ -204,11 +205,54 @@ struct HuanZhuangView: View {
                 configs[active].knight["1"] = token
                 persist()
             }
+            if enchantHoles.isEmpty {
+                Text(cfg.enchantTitle.isEmpty ? "附魔：登录后点刷新读取孔位" : cfg.enchantTitle)
+                    .font(.system(size: 12))
+                    .foregroundStyle(DlColors.inkMuted)
+            } else {
+                ForEach(Array(enchantHoles.enumerated()), id: \.element.id) { idx, hole in
+                    let token = cfg.enchant[hole.stoneId] ?? LoadoutActions.token(hole.weaponId, hole.weaponName)
+                    pickRow(
+                        title: holeTitle(idx, hole),
+                        token: token,
+                        opts: enchantWeaponOpts,
+                        allowSkip: "空"
+                    ) { picked in
+                        configs[active].enchant[hole.stoneId] = picked
+                        persist()
+                    }
+                }
+            }
             pickRow(title: "头像", token: cfg.avatar, opts: avatars, allowSkip: nil) { token in
                 configs[active].avatar = token
                 persist()
             }
         }
+    }
+
+    private var enchantWeaponOpts: [LoadoutOpt] {
+        var seen = Set<String>()
+        var out: [LoadoutOpt] = []
+        let flat = zjWeapons.keys.sorted().flatMap { zjWeapons[$0] ?? [] }
+        for w in flat {
+            let key = w.id.isEmpty ? w.name : w.id
+            if seen.contains(key) { continue }
+            seen.insert(key)
+            let typeName = Int(w.extra).flatMap { LoadoutConfig.zjTypes.indices.contains($0) ? LoadoutConfig.zjTypes[$0] : nil } ?? ""
+            out.append(LoadoutOpt(id: w.id, name: w.name, extra: w.extra, detail: typeName))
+        }
+        return out.sorted {
+            let a = Int($0.extra) ?? 9
+            let b = Int($1.extra) ?? 9
+            if a != b { return a < b }
+            return $0.name < $1.name
+        }
+    }
+
+    private func holeTitle(_ idx: Int, _ hole: LoadoutActions.EnchantHole) -> String {
+        var s = "附魔·孔\(idx + 1)"
+        if !hole.stoneLv.isEmpty { s += " \(hole.stoneLv)阶" }
+        return s
     }
 
     private func pickRow(
@@ -291,11 +335,13 @@ struct HuanZhuangView: View {
         let mc = await LoadoutActions.fetchMercs(cookie: cookie)
         let ay = await LoadoutActions.fetchAoyi(cookie: cookie)
         let zj = await LoadoutActions.fetchSpecialize(cookie: cookie, qq: SessionStore.shared.qq)
+        let ench = await LoadoutActions.fetchEnchant(cookie: cookie)
         knights = ks
         avatars = av.opts
         mercs = mc
         aoyis = ay
         zjWeapons = zj.weapons
+        enchantHoles = ench.holes
         if prefill {
             for i in configs.indices {
                 for b in zj.boards {
@@ -325,13 +371,17 @@ struct HuanZhuangView: View {
                         configs[i].aoyi[key] = LoadoutActions.token(on.id, on.name)
                     }
                 }
+                if configs[i].enchant.isEmpty, !ench.map.isEmpty {
+                    configs[i].enchant = ench.map
+                    configs[i].enchantTitle = ench.title
+                }
             }
             persist()
         }
         let mercN = mc.values.reduce(0) { $0 + $1.count }
         let aoyiN = ay.values.reduce(0) { $0 + $1.count }
         let zjN = zj.weapons.values.reduce(0) { $0 + $1.count }
-        tip = "专精 \(zjN) · 奥义 \(aoyiN) · 佣兵 \(mercN) · 侠士 \(ks.count) · 头像 \(av.opts.count)"
+        tip = "专精 \(zjN) · 奥义 \(aoyiN) · 佣兵 \(mercN) · 侠士 \(ks.count) · 附魔 \(ench.holes.count) · 头像 \(av.opts.count)"
     }
 
     private func apply() async {

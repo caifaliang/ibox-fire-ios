@@ -278,7 +278,90 @@ enum LoadoutActions {
             }
             parts.append("奥义\(ok)")
         }
+        if cfg.enabled["附魔"] == true, !cfg.enchant.isEmpty {
+            parts.append(await applyEnchant(cfg: cfg, cookie: cookie, onLog: onLog))
+        }
         return parts.joined(separator: " ")
+    }
+
+    struct EnchantHole: Identifiable, Hashable {
+        var stoneId: String
+        var stoneLv: String
+        var score: String
+        var attrs: String
+        var weaponId: String
+        var weaponName: String
+        var id: String { stoneId }
+    }
+
+    struct EnchantPack {
+        var title: String
+        var map: [String: String]
+        var holes: [EnchantHole]
+    }
+
+    static func fetchEnchant(cookie: String) async -> EnchantPack {
+        let body = await LedouCGI.getPetPk(cmd: "enchant", extra: ["op": "viewindex"], cookie: cookie).1
+        guard let arr = jsonArray(body, key: "stones") else {
+            return EnchantPack(title: "", map: [:], holes: [])
+        }
+        var map: [String: String] = [:]
+        var holes: [EnchantHole] = []
+        var bits: [String] = []
+        for (i, item) in arr.enumerated() {
+            guard let o = item as? [String: Any] else { continue }
+            let sid = str(o["stoneId"])
+            if sid.isEmpty { continue }
+            let wid = str(o["weapon"]).ifEmpty("0")
+            let wname = str(o["weapon_name"]).ifEmpty(wid == "0" ? "空" : wid)
+            let lv = str(o["stoneLv"]).ifEmpty(str(o["stoneLvName"]))
+            let score = str(o["stoneScore"])
+            let attrs = attrsLine(o["stoneAttr"])
+            map[sid] = token(wid, wname)
+            holes.append(EnchantHole(
+                stoneId: sid, stoneLv: lv, score: score, attrs: attrs, weaponId: wid, weaponName: wname
+            ))
+            bits.append("\(i + 1):\(lv)阶-\(wname)")
+        }
+        return EnchantPack(title: bits.joined(separator: "、"), map: map, holes: holes)
+    }
+
+    private static func applyEnchant(
+        cfg: LoadoutConfig,
+        cookie: String,
+        onLog: (String) -> Void
+    ) async -> String {
+        let live = await fetchEnchant(cookie: cookie)
+        var liveMap: [String: String] = [:]
+        for h in live.holes { liveMap[h.stoneId] = h.weaponId }
+        var ok = 0
+        for (stoneId, token) in cfg.enchant {
+            let want = tokenId(token).ifEmpty("0")
+            let cur = liveMap[stoneId] ?? ""
+            if want == cur {
+                ok += 1
+                continue
+            }
+            if want != "0" {
+                for (sid, wid) in liveMap where sid != stoneId && wid == want {
+                    _ = await LedouCGI.getPetPk(
+                        cmd: "enchant",
+                        extra: ["weaponId": "0", "stoneId": sid, "op": "chooseweapon"],
+                        cookie: cookie
+                    )
+                }
+            }
+            let body = await LedouCGI.getPetPk(
+                cmd: "enchant",
+                extra: ["weaponId": want, "stoneId": stoneId, "op": "chooseweapon"],
+                cookie: cookie
+            ).1
+            let msg = plain(body)
+            if !msg.contains("失败") { ok += 1 }
+            onLog("附魔孔\(stoneId)→\(tokenName(token))：\(msg)")
+            liveMap[stoneId] = want
+        }
+        return "附魔\(ok)"
     }
 
     private static func applySpecialize(

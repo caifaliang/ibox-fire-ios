@@ -1,6 +1,6 @@
 import Foundation
 
-/// 换装配置。附魔编辑器仍待接入。
+/// 换装配置。
 struct LoadoutConfig: Codable, Identifiable, Equatable {
     var id: String
     var name: String
@@ -15,9 +15,12 @@ struct LoadoutConfig: Codable, Identifiable, Equatable {
     var avatar: String
     /// "type-lane" → "weaponId|name"；"-|"=解除；空=未编辑
     var specialize: [String: String]
+    /// stoneId → "weaponId|name"；"0|空"=卸下
+    var enchant: [String: String]
+    var enchantTitle: String
 
     static let sections = ["专精", "奥义", "佣兵", "侠士", "附魔", "头像"]
-    static let wiredSections: Set<String> = ["专精", "奥义", "佣兵", "侠士", "头像"]
+    static let wiredSections: Set<String> = ["专精", "奥义", "佣兵", "侠士", "附魔", "头像"]
     static let mercSlots = ["状态", "战斗", "防御"]
     static let aoyiSlots = ["青龙", "白虎", "朱雀", "玄武"]
     static let zjTypes = ["投掷", "小型", "中型", "大型"]
@@ -44,7 +47,9 @@ struct LoadoutConfig: Codable, Identifiable, Equatable {
             mercenary: merc,
             aoyi: aoyi,
             avatar: "",
-            specialize: sp
+            specialize: sp,
+            enchant: [:],
+            enchantTitle: ""
         )
     }
 
@@ -56,7 +61,9 @@ struct LoadoutConfig: Codable, Identifiable, Equatable {
         mercenary: [String: String],
         aoyi: [String: String],
         avatar: String,
-        specialize: [String: String]
+        specialize: [String: String],
+        enchant: [String: String],
+        enchantTitle: String
     ) {
         self.id = id
         self.name = name
@@ -66,6 +73,8 @@ struct LoadoutConfig: Codable, Identifiable, Equatable {
         self.aoyi = aoyi
         self.avatar = avatar
         self.specialize = specialize
+        self.enchant = enchant
+        self.enchantTitle = enchantTitle
     }
 
     init(from decoder: Decoder) throws {
@@ -88,6 +97,8 @@ struct LoadoutConfig: Codable, Identifiable, Equatable {
             }
         }
         specialize = sp
+        enchant = try c.decodeIfPresent([String: String].self, forKey: .enchant) ?? [:]
+        enchantTitle = try c.decodeIfPresent(String.self, forKey: .enchantTitle) ?? ""
     }
 
     func tokenName(_ token: String) -> String {
