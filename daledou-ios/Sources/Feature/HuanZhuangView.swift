@@ -14,6 +14,7 @@ struct HuanZhuangView: View {
     @State private var avatars: [LoadoutOpt] = []
     @State private var mercs: [String: [LoadoutOpt]] = [:]
     @State private var aoyis: [String: [LoadoutOpt]] = [:]
+    @State private var zjWeapons: [String: [LoadoutOpt]] = [:]
 
     private let t = FeatureToggleStore.shared
 
@@ -27,7 +28,7 @@ struct HuanZhuangView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
-                    Text("装扮方案仍走一键换装。本页可保存多套配置，并设置奥义、佣兵、侠士、头像后点应用。专精与附魔编辑器下一片接入。")
+                    Text("装扮方案仍走一键换装。可保存多套配置，并设置专精、奥义、佣兵、侠士、头像后点应用。附魔编辑器下一片接入。")
                         .font(.system(size: 12))
                         .foregroundStyle(DlColors.inkMuted)
 
@@ -164,6 +165,23 @@ struct HuanZhuangView: View {
                 .disabled(!LoadoutConfig.wiredSections.contains(key))
             }
 
+            ForEach(Array(LoadoutConfig.zjTypes.enumerated()), id: \.offset) { ti, typeName in
+                Text(typeName)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(DlColors.inkSecondary)
+                ForEach(Array(LoadoutConfig.zjLanes.enumerated()), id: \.offset) { li, laneName in
+                    let key = LoadoutConfig.zjKey(ti, li)
+                    pickRow(
+                        title: "专精·\(laneName)",
+                        token: cfg.specialize[key] ?? "",
+                        opts: zjWeapons["\(ti)"] ?? [],
+                        allowSkip: "解除"
+                    ) { token in
+                        configs[active].specialize[key] = token == "0|解除" ? "-|解除" : token
+                        persist()
+                    }
+                }
+            }
             ForEach(Array(LoadoutConfig.aoyiSlots.enumerated()), id: \.offset) { i, label in
                 let key = "\(i + 1)"
                 pickRow(title: "奥义·\(label)", token: cfg.aoyi[key] ?? "", opts: aoyis[key] ?? [], allowSkip: "不设置技能") { token in
@@ -272,12 +290,22 @@ struct HuanZhuangView: View {
         let av = await LoadoutActions.fetchAvatars(cookie: cookie)
         let mc = await LoadoutActions.fetchMercs(cookie: cookie)
         let ay = await LoadoutActions.fetchAoyi(cookie: cookie)
+        let zj = await LoadoutActions.fetchSpecialize(cookie: cookie, qq: SessionStore.shared.qq)
         knights = ks
         avatars = av.opts
         mercs = mc
         aoyis = ay
+        zjWeapons = zj.weapons
         if prefill {
             for i in configs.indices {
+                for b in zj.boards {
+                    for (li, lane) in b.lanes.enumerated() where !lane.weaponName.isEmpty {
+                        let key = LoadoutConfig.zjKey(b.typeIdx, li)
+                        if (configs[i].specialize[key] ?? "").isEmpty {
+                            configs[i].specialize[key] = LoadoutActions.token(lane.weaponId, lane.weaponName)
+                        }
+                    }
+                }
                 for k in ks {
                     guard let pos = Int(k.extra), pos == 0 || pos == 1 else { continue }
                     if (configs[i].knight["\(pos)"] ?? "").isEmpty {
@@ -302,7 +330,8 @@ struct HuanZhuangView: View {
         }
         let mercN = mc.values.reduce(0) { $0 + $1.count }
         let aoyiN = ay.values.reduce(0) { $0 + $1.count }
-        tip = "奥义 \(aoyiN) · 佣兵 \(mercN) · 侠士 \(ks.count) · 头像 \(av.opts.count)"
+        let zjN = zj.weapons.values.reduce(0) { $0 + $1.count }
+        tip = "专精 \(zjN) · 奥义 \(aoyiN) · 佣兵 \(mercN) · 侠士 \(ks.count) · 头像 \(av.opts.count)"
     }
 
     private func apply() async {

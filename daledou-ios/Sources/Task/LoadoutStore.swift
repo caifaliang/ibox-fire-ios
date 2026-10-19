@@ -1,6 +1,6 @@
 import Foundation
 
-/// 换装配置。专精 / 附魔编辑器仍待接入。
+/// 换装配置。附魔编辑器仍待接入。
 struct LoadoutConfig: Codable, Identifiable, Equatable {
     var id: String
     var name: String
@@ -13,11 +13,17 @@ struct LoadoutConfig: Codable, Identifiable, Equatable {
     var aoyi: [String: String]
     /// "profileId|name"
     var avatar: String
+    /// "type-lane" → "weaponId|name"；"-|"=解除；空=未编辑
+    var specialize: [String: String]
 
     static let sections = ["专精", "奥义", "佣兵", "侠士", "附魔", "头像"]
-    static let wiredSections: Set<String> = ["奥义", "佣兵", "侠士", "头像"]
+    static let wiredSections: Set<String> = ["专精", "奥义", "佣兵", "侠士", "头像"]
     static let mercSlots = ["状态", "战斗", "防御"]
     static let aoyiSlots = ["青龙", "白虎", "朱雀", "玄武"]
+    static let zjTypes = ["投掷", "小型", "中型", "大型"]
+    static let zjLanes = ["控制", "吸血", "凝神"]
+
+    static func zjKey(_ type: Int, _ lane: Int) -> String { "\(type)-\(lane)" }
 
     static func empty(name: String) -> LoadoutConfig {
         var en: [String: Bool] = [:]
@@ -26,6 +32,10 @@ struct LoadoutConfig: Codable, Identifiable, Equatable {
         for i in 1...3 { merc["\(i)"] = "" }
         var aoyi: [String: String] = [:]
         for i in 1...4 { aoyi["\(i)"] = "" }
+        var sp: [String: String] = [:]
+        for t in 0..<zjTypes.count {
+            for l in 0..<zjLanes.count { sp[zjKey(t, l)] = "" }
+        }
         return LoadoutConfig(
             id: String(Int(Date().timeIntervalSince1970 * 1000)),
             name: name,
@@ -33,7 +43,8 @@ struct LoadoutConfig: Codable, Identifiable, Equatable {
             knight: ["0": "", "1": ""],
             mercenary: merc,
             aoyi: aoyi,
-            avatar: ""
+            avatar: "",
+            specialize: sp
         )
     }
 
@@ -44,7 +55,8 @@ struct LoadoutConfig: Codable, Identifiable, Equatable {
         knight: [String: String],
         mercenary: [String: String],
         aoyi: [String: String],
-        avatar: String
+        avatar: String,
+        specialize: [String: String]
     ) {
         self.id = id
         self.name = name
@@ -53,6 +65,7 @@ struct LoadoutConfig: Codable, Identifiable, Equatable {
         self.mercenary = mercenary
         self.aoyi = aoyi
         self.avatar = avatar
+        self.specialize = specialize
     }
 
     init(from decoder: Decoder) throws {
@@ -68,6 +81,13 @@ struct LoadoutConfig: Codable, Identifiable, Equatable {
         for n in 1...4 where ay["\(n)"] == nil { ay["\(n)"] = "" }
         aoyi = ay
         avatar = try c.decodeIfPresent(String.self, forKey: .avatar) ?? ""
+        var sp = try c.decodeIfPresent([String: String].self, forKey: .specialize) ?? [:]
+        for t in 0..<Self.zjTypes.count {
+            for l in 0..<Self.zjLanes.count where sp[Self.zjKey(t, l)] == nil {
+                sp[Self.zjKey(t, l)] = ""
+            }
+        }
+        specialize = sp
     }
 
     func tokenName(_ token: String) -> String {
@@ -102,6 +122,12 @@ enum LoadoutStore {
             if configs[i].knight["1"] == nil { configs[i].knight["1"] = "" }
             for n in 1...3 where configs[i].mercenary["\(n)"] == nil { configs[i].mercenary["\(n)"] = "" }
             for n in 1...4 where configs[i].aoyi["\(n)"] == nil { configs[i].aoyi["\(n)"] = "" }
+            for t in 0..<LoadoutConfig.zjTypes.count {
+                for l in 0..<LoadoutConfig.zjLanes.count {
+                    let k = LoadoutConfig.zjKey(t, l)
+                    if configs[i].specialize[k] == nil { configs[i].specialize[k] = "" }
+                }
+            }
         }
         let active = min(max(0, snap.active), configs.count - 1)
         return Snapshot(configs: configs, active: active)

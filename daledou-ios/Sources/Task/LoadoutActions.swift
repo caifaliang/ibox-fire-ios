@@ -125,9 +125,74 @@ enum LoadoutActions {
         return map
     }
 
+    struct ZjLane {
+        var storageId: String
+        var weaponId: String
+        var weaponName: String
+    }
+
+    struct ZjBoard {
+        var typeIdx: Int
+        var title: String
+        var lanes: [ZjLane]
+    }
+
+    struct SpecializePack {
+        var boards: [ZjBoard]
+        var weapons: [String: [LoadoutOpt]]
+    }
+
+    static func fetchSpecialize(cookie: String, qq: String) async -> SpecializePack {
+        let uin = qq.filter(\.isNumber)
+        let zjBody: String
+        if uin.isEmpty {
+            zjBody = await LedouCGI.getPetPk(cmd: "weapon_specialize", extra: ["op": "0", "type_id": "0"], cookie: cookie).1
+        } else {
+            zjBody = await LedouCGI.getPetPk(cmd: "weapon_specialize", extra: ["op": "10", "op_uin": uin], cookie: cookie).1
+        }
+        var boards = parseSpecializeBoards(zjBody)
+        var weapons: [String: LoadoutOpt] = [:]
+        for b in boards {
+            for lane in b.lanes where !lane.weaponName.isEmpty {
+                let id = lane.weaponId.isEmpty ? lane.weaponName : lane.weaponId
+                weapons[id] = LoadoutOpt(id: lane.weaponId, name: lane.weaponName, extra: "\(b.typeIdx)", detail: "")
+            }
+        }
+        if !uin.isEmpty {
+            let visit = await LedouCGI.getPetPk(cmd: "visit", extra: ["puin": uin, "kind": "1"], cookie: cookie).1
+            for w in parseWeaponsFromVisit(visit) {
+                let key = w.id.isEmpty ? w.name : w.id
+                if weapons[key] == nil { weapons[key] = w }
+            }
+        }
+        if boards.isEmpty {
+            boards = (0..<LoadoutConfig.zjTypes.count).map { i in
+                ZjBoard(
+                    typeIdx: i,
+                    title: LoadoutConfig.zjTypes[i],
+                    lanes: (0..<3).map { li in
+                        ZjLane(storageId: "\(i * 3 + 1000 + li)", weaponId: "", weaponName: "")
+                    }
+                )
+            }
+        }
+        var byType: [String: [LoadoutOpt]] = [:]
+        for w in weapons.values {
+            byType[w.extra, default: []].append(w)
+        }
+        for k in byType.keys {
+            byType[k]?.sort { $0.name < $1.name }
+        }
+        return SpecializePack(boards: boards, weapons: byType)
+    }
+
     /// 应用已接线槽位。空槽保持现状。
     static func applyWired(cfg: LoadoutConfig, cookie: String, onLog: (String) -> Void) async -> String {
         var parts: [String] = []
+        if cfg.enabled["专精"] == true {
+            let qq = await MainActor.run { SessionStore.shared.qq }
+            parts.append(await applySpecialize(cfg: cfg, cookie: cookie, qq: qq, onLog: onLog))
+        }
         if cfg.enabled["侠士"] == true {
             var ok = 0
             let slots = ["位置1", "位置2"]
@@ -214,6 +279,159 @@ enum LoadoutActions {
             parts.append("奥义\(ok)")
         }
         return parts.joined(separator: " ")
+    }
+
+    private static func applySpecialize(
+        cfg: LoadoutConfig,
+        cookie: String,
+        qq: String,
+        onLog: (String) -> Void
+    ) async -> String {
+        let pack = await fetchSpecialize(cookie: cookie, qq: qq)
+        func liveMap(_ boards: [ZjBoard]) -> [String: ZjLane] {
+            var map: [String: ZjLane] = [:]
+            for b in boards {
+                for (li, lane) in b.lanes.enumerated() {
+                    var slot = lane
+                    if slot.storageId.isEmpty { slot.storageId = "\(b.typeIdx * 3 + 1000 + li)" }
+                    map[LoadoutConfig.zjKey(b.typeIdx, li)] = slot
+                }
+            }
+            return map
+        }
+        var live = liveMap(pack.boards)
+        var ok = 0, fail = 0, skip = 0
+        for t in 0..<LoadoutConfig.zjTypes.count {
+            for l in 0..<LoadoutConfig.zjLanes.count {
+                let key = LoadoutConfig.zjKey(t, l)
+                let token = cfg.specialize[key] ?? ""
+                let storage = live[key]?.storageId ?? "\(t * 3 + 1000 + l)"
+                let label = "专精\(LoadoutConfig.zjTypes[t])\(LoadoutConfig.zjLanes[l])"
+                if token == "-" || token == "-|" || token.hasPrefix("-|") {
+                    _ = await LedouCGI.getPetPk(cmd: "weapon_specialize", extra: ["op": "4", "storage_id": storage], cookie: cookie)
+                    _ = await LedouCGI.getPetPk(cmd: "weapon_specialize", extra: ["op": "7", "storage_id": storage], cookie: cookie)
+                    let body = await LedouCGI.getPetPk(
+                        cmd: "weapon_specialize",
+                        extra: ["op": "8", "storage_id": storage, "weapon_id": "0"],
+                        cookie: cookie
+                    ).1
+                    let plainMsg = plain(body)
+                    let after = await fetchSpecialize(cookie: cookie, qq: qq)
+                    live = liveMap(after.boards)
+                    let got = live[key]
+                    let cleared = (got?.weaponId ?? "").isEmpty || (got?.weaponName ?? "").isEmpty
+                    let success = cleared || plainMsg.contains("成功") || plainMsg.contains("卸下") || plainMsg.contains("解除")
+                    if success { ok += 1 } else { fail += 1 }
+                    onLog("\(label)：解除 → \(success ? "已空" : plainMsg)")
+                    continue
+                }
+                let widRaw = tokenId(token)
+                let wname = tokenName(token)
+                if widRaw.isEmpty && wname.isEmpty { skip += 1; continue }
+                let cgiWid = phoneWeaponId(widRaw)
+                let liveWid = phoneWeaponId(live[key]?.weaponId ?? "")
+                let liveName = live[key]?.weaponName ?? ""
+                if cgiWid != "0", cgiWid == liveWid || (!wname.isEmpty && wname == liveName) {
+                    skip += 1
+                    onLog("\(label)：已是 \(wname)，跳过")
+                    continue
+                }
+                _ = await LedouCGI.getPetPk(cmd: "weapon_specialize", extra: ["op": "4", "storage_id": storage], cookie: cookie)
+                _ = await LedouCGI.getPetPk(cmd: "weapon_specialize", extra: ["op": "7", "storage_id": storage], cookie: cookie)
+                let body = await LedouCGI.getPetPk(
+                    cmd: "weapon_specialize",
+                    extra: ["op": "8", "storage_id": storage, "weapon_id": cgiWid],
+                    cookie: cookie
+                ).1
+                let plainMsg = plain(body)
+                let after = await fetchSpecialize(cookie: cookie, qq: qq)
+                live = liveMap(after.boards)
+                let gotWid = phoneWeaponId(live[key]?.weaponId ?? "")
+                let gotName = live[key]?.weaponName ?? ""
+                let success = gotWid == cgiWid
+                    || (!wname.isEmpty && gotName.contains(String(wname.prefix(2))))
+                    || plainMsg.contains("成功")
+                    || plainMsg.contains("装备")
+                if success { ok += 1 } else { fail += 1 }
+                onLog("\(label)：\(wname) → \(success ? "已生效(\(gotName))" : "未生效 \(plainMsg)")")
+            }
+        }
+        return "专精成\(ok)/败\(fail)/跳\(skip)"
+    }
+
+    private static func phoneWeaponId(_ raw: String) -> String {
+        let digits = raw.filter(\.isNumber)
+        guard let n = Int(digits), n > 0 else { return "0" }
+        return n < 1000 ? "\(n + 1000)" : "\(n)"
+    }
+
+    private static func parseSpecializeBoards(_ body: String) -> [ZjBoard] {
+        guard let root = jsonObject(body) else { return [] }
+        let arr = (root["dst_weapons0"] as? [Any]) ?? (root["src_weapons0"] as? [Any]) ?? []
+        var out: [ZjBoard] = []
+        for (i, item) in arr.enumerated() {
+            guard let o = item as? [String: Any] else { continue }
+            let typeName = str(o["type_name"])
+            let typeIdx: Int
+            if typeName.contains("投掷") { typeIdx = 0 }
+            else if typeName.contains("小型") { typeIdx = 1 }
+            else if typeName.contains("中型") { typeIdx = 2 }
+            else if typeName.contains("大型") { typeIdx = 3 }
+            else { typeIdx = min(3, i) }
+            let stage = str(o["stage"])
+            let level = str(o["level"])
+            var title = LoadoutConfig.zjTypes[typeIdx]
+            if !stage.isEmpty || !level.isEmpty {
+                title += " \(stage)"
+                if !level.isEmpty { title += "\(level)星" }
+            }
+            var lanes: [ZjLane] = []
+            let storages = o["storages"] as? [Any] ?? []
+            for si in 0..<min(3, storages.count) {
+                guard let s = storages[si] as? [String: Any] else { continue }
+                let sid = str(s["storage_id"])
+                lanes.append(ZjLane(
+                    storageId: sid.isEmpty ? "\(typeIdx * 3 + 1000 + si)" : sid,
+                    weaponId: str(s["weapon_id"]),
+                    weaponName: str(s["weapon_name"])
+                ))
+            }
+            while lanes.count < 3 {
+                let li = lanes.count
+                lanes.append(ZjLane(storageId: "\(typeIdx * 3 + 1000 + li)", weaponId: "", weaponName: ""))
+            }
+            out.append(ZjBoard(typeIdx: typeIdx, title: title, lanes: lanes))
+        }
+        return out.sorted { $0.typeIdx < $1.typeIdx }
+    }
+
+    private static func parseWeaponsFromVisit(_ body: String) -> [LoadoutOpt] {
+        guard let goods = jsonObject(body)?["goods"] as? String, !goods.isEmpty else { return [] }
+        var out: [LoadoutOpt] = []
+        for item in goods.split(separator: ";") {
+            if item.isEmpty || item == "----" { continue }
+            let lines = item.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+            guard let headLine = lines.first else { continue }
+            let head = headLine.split(separator: ",").map(String.init)
+            let tail = lines.last?.split(separator: ",").map(String.init) ?? []
+            let rawName = head.first?.trimmingCharacters(in: .whitespaces) ?? ""
+            if rawName.isEmpty { continue }
+            let dmg = head.last ?? ""
+            let typeIdx: Int
+            if dmg.contains("投掷") || rawName.contains("投掷") { typeIdx = 0 }
+            else if dmg.contains("小型") || rawName.contains("小型") { typeIdx = 1 }
+            else if dmg.contains("中型") || rawName.contains("中型") { typeIdx = 2 }
+            else if dmg.contains("大型") || rawName.contains("大型") { typeIdx = 3 }
+            else { continue }
+            let tailId = tail.count >= 2 ? Int(tail[tail.count - 2].trimmingCharacters(in: .whitespaces)) : nil
+            let headId = head.count > 3 ? Int(head[3].trimmingCharacters(in: .whitespaces)) : nil
+            var weaponId = tailId ?? headId ?? 0
+            if weaponId >= 1000 { weaponId -= 1000 }
+            if weaponId <= 0 { continue }
+            let name = rawName.trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
+            out.append(LoadoutOpt(id: "\(weaponId)", name: name, extra: "\(typeIdx)", detail: ""))
+        }
+        return out
     }
 
     static func tokenId(_ token: String) -> String {
