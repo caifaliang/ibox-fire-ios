@@ -1630,20 +1630,39 @@ final class AppViewModel: ObservableObject {
         }
     }
 
+    /// 关动画防重入：onDismiss + dismantle 可能各触发一次。
+    private var replayDismissGeneration = 0
+
     func onReplayDismissed() {
         showReplay = false
-        // fd26：必须 destroy 动画 WebContent，再重建游戏页。
-        // 若只 park 暖挂，双 WebContent 叠峰 → jetsam → 直接回桌面。
+        // fd26/fd152：必须 destroy 动画 WebContent，并等进程回收后再重建游戏页。
+        // iOS 无独立 :ruffle 进程；双 WebContent 叠峰 → jetsam → 直接回桌面。
+        replayDismissGeneration &+= 1
+        let gen = replayDismissGeneration
         statusText = "释放动画内存…"
+        // 先丢大段 Act，减轻与新游戏页叠峰
+        replayAct = ""
+        replayId = ""
         RuffleWarmHolder.shared.destroy()
+        RuffleMemPolicy.retireProcessPool()
+        URLCache.shared.removeAllCachedResponses()
         let resume = resumeGameURL ?? (session.isLoggedIn ? URL(string: LoginURLs.ledouEntry) : nil)
         resumeGameURL = nil
         Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 1_200_000_000)
+            // 给 Ruffle WebContent 足够时间退出（1.2s 在低端机仍常 jetsam）
+            try? await Task.sleep(nanoseconds: 2_400_000_000)
+            guard gen == replayDismissGeneration else { return }
             statusText = "正在返回游戏…"
-            pendingURL = resume
+            // 先建轻量游戏壳，再导航回战报页，避免一创建页就加载 heavy viewfight
+            pendingURL = nil
             suspendGameWebForReplay = false
-            try? await Task.sleep(nanoseconds: 800_000_000)
+            try? await Task.sleep(nanoseconds: 900_000_000)
+            guard gen == replayDismissGeneration else { return }
+            if let resume {
+                pendingURL = resume
+            }
+            try? await Task.sleep(nanoseconds: 600_000_000)
+            guard gen == replayDismissGeneration else { return }
             if statusText == "正在返回游戏…" {
                 statusText = ""
             }

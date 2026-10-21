@@ -72,6 +72,7 @@ final class RuffleWarmHolder {
         handlersInstalled = false
     }
 
+    /// 关动画：卸 handler、卸树、about:blank，尽量让 WebContent 进程先死干净再重建游戏页（防 jetsam 回桌面）。
     func destroy() {
         uninstallHandlersIfNeeded()
         let wv = webView
@@ -82,8 +83,15 @@ final class RuffleWarmHolder {
         pendingAct = nil
         pendingReplayId = nil
         guard let wv else { return }
+        // 先停播，再拆树，避免 dismantle 与 JS 回调竞态
+        wv.evaluateJavaScript(
+            "try{window.DaledouReplay&&window.DaledouReplay.park()}catch(e){}",
+            completionHandler: nil
+        )
         wv.stopLoading()
         wv.navigationDelegate = nil
+        wv.uiDelegate = nil
+        wv.removeFromSuperview()
         wv.load(URLRequest(url: URL(string: "about:blank")!))
     }
 }

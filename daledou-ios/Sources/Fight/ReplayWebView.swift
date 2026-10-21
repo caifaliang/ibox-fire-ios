@@ -547,7 +547,9 @@ enum RuffleMemPolicy {
     private static let keyCrashed = "ruffle_wasm_crashed"
     private static let keyPolicyV = "ruffle_mem_policy_v"
     private static let defaults = UserDefaults.standard
-    static let sharedProcessPool = WKProcessPool()
+    /// 关动画后 retire，让旧 WebContent 进程可被系统回收，避免与游戏页叠峰 jetsam。
+    private static var processPool = WKProcessPool()
+    static var sharedProcessPool: WKProcessPool { processPool }
 
     static func migrateIfNeeded() {
         if defaults.integer(forKey: keyPolicyV) < 2 {
@@ -567,6 +569,10 @@ enum RuffleMemPolicy {
 
     static func markFightHealthy() {
         defaults.set(false, forKey: keyCrashed)
+    }
+
+    static func retireProcessPool() {
+        processPool = WKProcessPool()
     }
 }
 
