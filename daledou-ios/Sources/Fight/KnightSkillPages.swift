@@ -16,41 +16,56 @@ enum KnightSkillPages {
         LedouCGI.recoverIfMojibake(body)
     }
 
-    /// 技能 type=5 / 装备 type=3，与参考 QXLXDataActivity.F 一致。
-    static func skillViewUrls(id: Int) -> [String] {
+    /// 技能 type=5 / 装备 type=3。`preferWeapon` 时先试装备页（Act 武器 id）。
+    static func skillViewUrls(id: Int, preferWeapon: Bool = false) -> [String] {
         let base =
             "https://dld.qzapp.z.qq.com/qpet/cgi-bin/phonepk?zapp_uin=&sid=&channel=0&g_ut=1&cmd=view"
+        let skillFirst: [String]
+        let weaponFirst: [String]
         switch id {
         case 10...99:
-            return ["\(base)&type=5&id=20\(id)", "\(base)&type=3&id=10\(id)"]
+            skillFirst = ["\(base)&type=5&id=20\(id)", "\(base)&type=3&id=10\(id)"]
+            weaponFirst = ["\(base)&type=3&id=10\(id)", "\(base)&type=5&id=20\(id)"]
         case 100..<4000:
-            return ["\(base)&type=5&id=2\(id)", "\(base)&type=3&id=1\(id)"]
+            skillFirst = ["\(base)&type=5&id=2\(id)", "\(base)&type=3&id=1\(id)"]
+            weaponFirst = ["\(base)&type=3&id=1\(id)", "\(base)&type=5&id=2\(id)"]
         case 4000...:
-            return ["\(base)&type=3&id=1\(id)"]
+            skillFirst = ["\(base)&type=3&id=1\(id)"]
+            weaponFirst = skillFirst
         default:
             return []
         }
+        return preferWeapon ? weaponFirst : skillFirst
     }
 
     static func parseSkillNameFromPage(_ page: String) -> String {
         if page.isEmpty { return "" }
-        let first = page
+        let decoded = decodeHtml(page)
+        if decoded.contains("登陆校验") || decoded.contains("请先登录") || decoded.contains("系统繁忙") {
+            return ""
+        }
+        let first = decoded
             .components(separatedBy: "<br />").first?
             .components(separatedBy: "<br/>").first?
             .components(separatedBy: "<br>").first
-            ?? page
+            ?? decoded
         let last = first.components(separatedBy: "<p>").last?
             .components(separatedBy: "<P>").last
             ?? first
-        return last
+        let name = last
             .replacingOccurrences(of: "【", with: "")
             .replacingOccurrences(of: "】", with: "")
             .replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
+        // 拒掉整页噪声 / 纯数字（解析失败）
+        if name.isEmpty || name.count > 40 { return "" }
+        if name.range(of: #"^\d+$"#, options: .regularExpression) != nil { return "" }
+        if name.contains("http") || name.contains("cmd=") { return "" }
+        return name
     }
 
-    static func resolveName(id: Int, cookie: String) async -> String {
-        for url in skillViewUrls(id: id) {
+    static func resolveName(id: Int, cookie: String, preferWeapon: Bool = false) async -> String {
+        for url in skillViewUrls(id: id, preferWeapon: preferWeapon) {
             let page = await cachedPage(url: url, cookie: cookie)
             let name = parseSkillNameFromPage(page)
             if !name.isEmpty { return name }
@@ -58,10 +73,16 @@ enum KnightSkillPages {
         return "\(id)"
     }
 
-    static func resolveNames(ids: [Int], cookie: String, limit: Int = 8) async -> [String] {
+    static func resolveNames(ids: [Int], cookie: String, limit: Int = 16) async -> [String] {
         var out: [String] = []
         for id in ids.prefix(limit) {
-            out.append(await resolveName(id: id, cookie: cookie))
+            // 阵容栏技能/武器混排：两边都试
+            let skill = await resolveName(id: id, cookie: cookie, preferWeapon: false)
+            if skill != "\(id)" {
+                out.append(skill)
+                continue
+            }
+            out.append(await resolveName(id: id, cookie: cookie, preferWeapon: true))
         }
         return out
     }

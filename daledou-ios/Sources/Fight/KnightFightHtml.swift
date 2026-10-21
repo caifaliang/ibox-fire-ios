@@ -54,13 +54,16 @@ enum KnightFightHtml {
         var nameCache: [Int: String] = [:]
         func label(_ id: Int) async -> String {
             if let hit = nameCache[id] { return hit }
-            let n = await KnightSkillPages.resolveName(id: id, cookie: cookie)
+            var n = await KnightSkillPages.resolveName(id: id, cookie: cookie, preferWeapon: false)
+            if n == "\(id)" {
+                n = await KnightSkillPages.resolveName(id: id, cookie: cookie, preferWeapon: true)
+            }
             nameCache[id] = n
             return n
         }
         return await renderAsync(raw, skillLabel: label) { ids in
             var out: [String] = []
-            for id in ids.prefix(8) {
+            for id in ids.prefix(16) {
                 out.append(await label(id))
             }
             return out
@@ -440,7 +443,8 @@ enum KnightFightHtml {
         var sb = "<b><font color='black'>回合\(roundNo)：</font></b>"
         sb += "\(atk.name)\(atk.uin)"
         if !skillLabel.isEmpty {
-            sb += "使用技能<b><font color='blue'>\(skillLabel)</font></b>，"
+            // 技能/武器名已解析；不再写死「技能」以免武器行误标
+            sb += "使用<b><font color='blue'>\(skillLabel)</font></b>，"
         } else {
             sb += "发起攻击，"
         }

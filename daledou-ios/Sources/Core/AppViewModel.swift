@@ -151,6 +151,8 @@ final class AppViewModel: ObservableObject {
     private var spliceKnightActRaw: String?
     private var preViewFightUrl: String?
     private var prevNavUrlForFight: String?
+    /// `loadSplicedHtml` 触发的 didFinish 勿再进拼接（否则缓存命中会死循环刷新）
+    private var ignoreNextViewFightSplice = false
 
     /// 背包页悬浮钮（cmd=store/bag 或标题含「背包」）
     @Published var showBeiBaoFab = false
@@ -1330,17 +1332,25 @@ final class AppViewModel: ObservableObject {
         lastViewFightUrl = spliceBase
         showViewFightFab = true
 
-        let cacheHasKnight = spliceCacheFightId == fightId
-            && (spliceCacheHtml?.contains("阵容1侠士") == true)
-        if cacheHasKnight, !hideKnight, let cached = spliceCacheHtml {
-            loadSplicedHtml(cached, historyUrl: spliceBase)
-            lastSplicedUrl = spliceBase
-            viewFightLoading = false
+        // loadData 的 didFinish 会再次走进这里；必须先吞掉，否则缓存回灌 → 再 load → 无限刷新
+        if ignoreNextViewFightSplice {
+            ignoreNextViewFightSplice = false
+            if LoginURLs.isViewFightUrl(url) || spliceBase == lastSplicedUrl {
+                return
+            }
+        }
+
+        // 同场已拼完且非「查看详情」：勿重拉（含技能名二次注入后）
+        if !hideKnight, spliceBase == lastSplicedUrl, spliceCacheHtml != nil {
             return
         }
 
-        // 同场已拼完且非「查看详情」：勿重拉
-        if !hideKnight, spliceBase == lastSplicedUrl, spliceCacheHtml != nil {
+        let cacheHasKnight = spliceCacheFightId == fightId
+            && (spliceCacheHtml?.contains("阵容1侠士") == true)
+        if cacheHasKnight, !hideKnight, let cached = spliceCacheHtml {
+            lastSplicedUrl = spliceBase
+            loadSplicedHtml(cached, historyUrl: spliceBase)
+            viewFightLoading = false
             return
         }
 
@@ -1486,6 +1496,7 @@ final class AppViewModel: ObservableObject {
               let base = URL(string: historyUrl),
               let data = html.data(using: .utf8)
         else { return }
+        ignoreNextViewFightSplice = true
         wv.load(
             data,
             mimeType: "text/html",
