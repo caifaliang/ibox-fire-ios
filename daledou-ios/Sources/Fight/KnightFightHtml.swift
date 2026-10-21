@@ -1,7 +1,7 @@
 import Foundation
 
-/// 真源：`KnightFightReplayHtml.kt` — Act(`&Build:1;…`) → 阵容/战绩/过程 HTML。
-/// 拼接首屏默认 `resolveSkills=false`（对齐 GameShellScreen 加速）；再后台解析技能中文名。
+/// 真源：`KnightFightHtmlFormatter` + `KnightFightActHtml`。
+/// 拼接首屏默认不打技能页；后台 `toHtmlAsync` 按字段分流解析中文名。
 enum KnightFightHtml {
     private static let levelColors = [
         "#189FCB", "#F4B736", "#30CAAD", "#B39517", "#7192F3",
@@ -29,20 +29,22 @@ enum KnightFightHtml {
         let str: Int
         let agi: Int
         let spd: Int
+        /// 字段 6/7：技能 id
         let skillIds: [Int]
+        /// 字段 8：武器 id
+        let weaponIds: [Int]
         var skillNames: [String] = []
     }
 
-    /// 同步快路径：不打技能页（`resolveSkills` 忽略，一律按 ID 展示）。
+    /// 同步快路径：不打技能页（一律按 ID 展示）。
     static func toHtml(_ raw: String, resolveSkills: Bool = false) -> String {
-        // 保留旧签名；真正解析走 toHtmlAsync。
         _ = resolveSkills
-        return render(raw, skillLabel: { id in "\(id)" }, rosterNames: { ids in
-            ids.prefix(8).map { "\($0)" }
+        return render(raw, skillLabel: { id, _ in id }, rosterNames: { skills, weapons in
+            (skills + weapons).prefix(16).map { "\($0)" }
         })
     }
 
-    /// 真源：`KnightFightReplayHtml.toHtml(resolveSkills=…)` — 拉取 phonepk view 解析中文技能名。
+    /// 拉取 phonepk view：阵容按 type 分流；过程按 Act 协议 kind。
     static func toHtmlAsync(
         _ raw: String,
         resolveSkills: Bool,
@@ -51,22 +53,18 @@ enum KnightFightHtml {
         if !resolveSkills || cookie.isEmpty {
             return toHtml(raw, resolveSkills: false)
         }
-        var nameCache: [Int: String] = [:]
-        func label(_ id: Int) async -> String {
-            if let hit = nameCache[id] { return hit }
-            var n = await KnightSkillPages.resolveName(id: id, cookie: cookie, preferWeapon: false)
-            if n == "\(id)" {
-                n = await KnightSkillPages.resolveName(id: id, cookie: cookie, preferWeapon: true)
-            }
-            nameCache[id] = n
+        var nameCache: [String: String] = [:]
+        func label(_ id: String, _ kind: String) async -> String {
+            let key = "\(kind):\(id)"
+            if let hit = nameCache[key] { return hit }
+            let n = await KnightSkillPages.resolveLabel(id: id, kind: kind, cookie: cookie)
+            nameCache[key] = n
             return n
         }
-        return await renderAsync(raw, skillLabel: label) { ids in
-            var out: [String] = []
-            for id in ids.prefix(16) {
-                out.append(await label(id))
-            }
-            return out
+        return await renderAsync(raw, skillLabel: label) { skills, weapons in
+            await KnightSkillPages.resolveRosterNames(
+                skillIds: skills, weaponIds: weapons, cookie: cookie, limit: 16
+            )
         }
     }
 
@@ -109,8 +107,8 @@ enum KnightFightHtml {
 
     private static func render(
         _ raw: String,
-        skillLabel: (Int) -> String,
-        rosterNames: ([Int]) -> [String]
+        skillLabel: (String, String) -> String,
+        rosterNames: ([Int], [Int]) -> [String]
     ) -> String {
         let act = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !act.isEmpty else { return "本局轮空或无战斗数据" }
@@ -118,7 +116,6 @@ enum KnightFightHtml {
         guard !builds.isEmpty else { return "无法解析战斗数据" }
 
         var records = "侠士战斗记录：<br />"
-        var process = "战斗过程：<br />"
         var lastWinHtml = ""
         var seenSide1: [String: Fighter] = [:]
         var seenSide2: [String: Fighter] = [:]
@@ -136,8 +133,8 @@ enum KnightFightHtml {
                   var right = parseSide(seg, player1: false)
             else { continue }
 
-            left.skillNames = rosterNames(left.skillIds)
-            right.skillNames = rosterNames(right.skillIds)
+            left.skillNames = rosterNames(left.skillIds, left.weaponIds)
+            right.skillNames = rosterNames(right.skillIds, right.weaponIds)
 
             if seenSide1[left.name] == nil {
                 seenSide1[left.name] = left
@@ -152,7 +149,6 @@ enum KnightFightHtml {
             let lHp = "\(left.name)(血:<b><font color='red'>\(left.hp)</font></b>)"
             let rHp = "\(right.name)(血:<b><font color='red'>\(right.hp)</font></b>)"
             records += "(\(winHtml))\(tag)\(lHp) vs \(rHp)<br />"
-            process += appendActProcess(seg: seg, left: left, right: right, skillLabel: skillLabel)
         }
 
         var rosters = "战斗结果：\(lastWinHtml)<br />"
@@ -165,13 +161,14 @@ enum KnightFightHtml {
             title: "阵容2侠士",
             list: side2Order.compactMap { seenSide2[$0] }
         )
+        let process = KnightFightActHtml.format(act, skillName: skillLabel)
         return rosters + "<br />" + records + "<br />" + process
     }
 
     private static func renderAsync(
         _ raw: String,
-        skillLabel: (Int) async -> String,
-        rosterNames: ([Int]) async -> [String]
+        skillLabel: (String, String) async -> String,
+        rosterNames: ([Int], [Int]) async -> [String]
     ) async -> String {
         let act = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !act.isEmpty else { return "本局轮空或无战斗数据" }
@@ -179,7 +176,6 @@ enum KnightFightHtml {
         guard !builds.isEmpty else { return "无法解析战斗数据" }
 
         var records = "侠士战斗记录：<br />"
-        var process = "战斗过程：<br />"
         var lastWinHtml = ""
         var seenSide1: [String: Fighter] = [:]
         var seenSide2: [String: Fighter] = [:]
@@ -197,8 +193,8 @@ enum KnightFightHtml {
                   var right = parseSide(seg, player1: false)
             else { continue }
 
-            left.skillNames = await rosterNames(left.skillIds)
-            right.skillNames = await rosterNames(right.skillIds)
+            left.skillNames = await rosterNames(left.skillIds, left.weaponIds)
+            right.skillNames = await rosterNames(right.skillIds, right.weaponIds)
 
             if seenSide1[left.name] == nil {
                 seenSide1[left.name] = left
@@ -213,9 +209,6 @@ enum KnightFightHtml {
             let lHp = "\(left.name)(血:<b><font color='red'>\(left.hp)</font></b>)"
             let rHp = "\(right.name)(血:<b><font color='red'>\(right.hp)</font></b>)"
             records += "(\(winHtml))\(tag)\(lHp) vs \(rHp)<br />"
-            process += await appendActProcessAsync(
-                seg: seg, left: left, right: right, skillLabel: skillLabel
-            )
         }
 
         var rosters = "战斗结果：\(lastWinHtml)<br />"
@@ -228,6 +221,7 @@ enum KnightFightHtml {
             title: "阵容2侠士",
             list: side2Order.compactMap { seenSide2[$0] }
         )
+        let process = await KnightFightActHtml.formatAsync(act, skillName: skillLabel)
         return rosters + "<br />" + records + "<br />" + process
     }
 
@@ -261,14 +255,18 @@ enum KnightFightHtml {
             sb += "力:\(colorLevel(f.str)),速:\(colorLevel(f.spd)),敏:\(colorLevel(f.agi)))"
             if !f.skillNames.isEmpty {
                 sb += "<br />&emsp; \(f.skillNames.joined(separator: ", "))"
-            } else if !f.skillIds.isEmpty {
-                sb += "<br />&emsp; \(f.skillIds.map(String.init).joined(separator: ", "))"
+            } else {
+                let ids = f.skillIds.map(String.init) + f.weaponIds.map(String.init)
+                if !ids.isEmpty {
+                    sb += "<br />&emsp; \(ids.joined(separator: ", "))"
+                }
             }
             sb += "<br />"
         }
         return sb
     }
 
+    /// 字段：name;lv;hp;li;min;su;skills1;skills2;weapons
     private static func parseFighter(_ raw: String) -> Fighter? {
         let bits = raw.trimmingCharacters(in: .whitespacesAndNewlines)
             .trimmingCharacters(in: CharacterSet(charactersIn: ";"))
@@ -291,21 +289,38 @@ enum KnightFightHtml {
         let str = Int(at(3)) ?? 0
         let agi = Int(at(4)) ?? 0
         let spd = Int(at(5)) ?? 0
-        var ids: [Int] = []
-        if bits.count > 6 {
-            for i in 6..<bits.count {
-                let chunk = at(i)
-                if chunk.isEmpty || chunk == "0" { continue }
-                for p in chunk.split(separator: ",") {
-                    if let id = Int(p.trimmingCharacters(in: .whitespaces)), id > 0 {
-                        ids.append(id)
-                    }
+
+        func parseIds(_ chunk: String) -> [Int] {
+            if chunk.isEmpty || chunk == "0" { return [] }
+            var ids: [Int] = []
+            for p in chunk.split(separator: ",") {
+                if let id = Int(p.trimmingCharacters(in: .whitespaces)), id > 0 {
+                    ids.append(id)
                 }
             }
+            return ids
+        }
+
+        // 对齐 Java：split[6]/[7] 技能，split[8] 武器；多余字段并入技能兜底
+        var skillIds = parseIds(at(6)) + parseIds(at(7))
+        var weaponIds = parseIds(at(8))
+        if bits.count > 9 {
+            for i in 9..<bits.count {
+                skillIds += parseIds(at(i))
+            }
+        }
+        // 去重保序
+        func unique(_ ids: [Int]) -> [Int] {
+            var seen = Set<Int>()
+            var out: [Int] = []
+            for id in ids where seen.insert(id).inserted { out.append(id) }
+            return out
         }
         return Fighter(
             name: name, uin: uin, level: level, hp: hp,
-            str: str, agi: agi, spd: spd, skillIds: Array(Set(ids))
+            str: str, agi: agi, spd: spd,
+            skillIds: unique(skillIds),
+            weaponIds: unique(weaponIds)
         )
     }
 
@@ -333,129 +348,5 @@ enum KnightFightHtml {
         if eb == beats { return "[<b><font color='red'>克制</font></b>]" }
         if eb == beatenBy { return "[<b><font color='green'>被克</font></b>]" }
         return ""
-    }
-
-    private static func appendActProcess(
-        seg: String,
-        left: Fighter,
-        right: Fighter,
-        skillLabel: (Int) -> String
-    ) -> String {
-        guard let actRange = seg.range(of: "Act:") else { return "" }
-        var actBody = String(seg[actRange.upperBound...])
-        actBody = actBody.components(separatedBy: "&Win").first ?? actBody
-        actBody = actBody.components(separatedBy: "&Build").first ?? actBody
-        let rounds = actBody.split(separator: ";")
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty && $0.contains("|") }
-        var roundNo = 1
-        var hpL = left.hp
-        var hpR = right.hp
-        var sb = ""
-        for round in rounds {
-            let pipes = round.replacingOccurrences(of: "|", with: "#").components(separatedBy: "#")
-            guard let head0 = pipes.first else { continue }
-            let head = head0.split(separator: ",").map(String.init)
-            guard !head.isEmpty else { continue }
-            let side0 = head[0] == "0"
-            let atk = side0 ? left : right
-            let def = side0 ? right : left
-            var dmg = 0
-            for pipe in pipes.dropFirst() {
-                let nums = pipe.split(separator: ",").compactMap { Int($0.trimmingCharacters(in: .whitespaces)) }
-                if let cand = nums.filter({ (1...9999).contains($0) }).max() {
-                    dmg = cand
-                }
-            }
-            let skillId = head.compactMap(Int.init).first(where: { $0 >= 10 })
-            let skillName = skillId.map { skillLabel($0) } ?? ""
-            if side0 { hpR = max(0, hpR - dmg) } else { hpL = max(0, hpL - dmg) }
-            let remain = side0 ? hpR : hpL
-            sb += formatRound(
-                roundNo: roundNo, atk: atk, def: def,
-                skillLabel: skillName, dmg: dmg, remain: remain
-            )
-            roundNo += 1
-            if roundNo > 80 { break }
-        }
-        return sb
-    }
-
-    private static func appendActProcessAsync(
-        seg: String,
-        left: Fighter,
-        right: Fighter,
-        skillLabel: (Int) async -> String
-    ) async -> String {
-        guard let actRange = seg.range(of: "Act:") else { return "" }
-        var actBody = String(seg[actRange.upperBound...])
-        actBody = actBody.components(separatedBy: "&Win").first ?? actBody
-        actBody = actBody.components(separatedBy: "&Build").first ?? actBody
-        let rounds = actBody.split(separator: ";")
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty && $0.contains("|") }
-        var roundNo = 1
-        var hpL = left.hp
-        var hpR = right.hp
-        var sb = ""
-        for round in rounds {
-            let pipes = round.replacingOccurrences(of: "|", with: "#").components(separatedBy: "#")
-            guard let head0 = pipes.first else { continue }
-            let head = head0.split(separator: ",").map(String.init)
-            guard !head.isEmpty else { continue }
-            let side0 = head[0] == "0"
-            let atk = side0 ? left : right
-            let def = side0 ? right : left
-            var dmg = 0
-            for pipe in pipes.dropFirst() {
-                let nums = pipe.split(separator: ",").compactMap { Int($0.trimmingCharacters(in: .whitespaces)) }
-                if let cand = nums.filter({ (1...9999).contains($0) }).max() {
-                    dmg = cand
-                }
-            }
-            let skillId = head.compactMap(Int.init).first(where: { $0 >= 10 })
-            let skillName: String
-            if let skillId {
-                skillName = await skillLabel(skillId)
-            } else {
-                skillName = ""
-            }
-            if side0 { hpR = max(0, hpR - dmg) } else { hpL = max(0, hpL - dmg) }
-            let remain = side0 ? hpR : hpL
-            sb += formatRound(
-                roundNo: roundNo, atk: atk, def: def,
-                skillLabel: skillName, dmg: dmg, remain: remain
-            )
-            roundNo += 1
-            if roundNo > 80 { break }
-        }
-        return sb
-    }
-
-    private static func formatRound(
-        roundNo: Int,
-        atk: Fighter,
-        def: Fighter,
-        skillLabel: String,
-        dmg: Int,
-        remain: Int
-    ) -> String {
-        var sb = "<b><font color='black'>回合\(roundNo)：</font></b>"
-        sb += "\(atk.name)\(atk.uin)"
-        if !skillLabel.isEmpty {
-            // 技能/武器名已解析；不再写死「技能」以免武器行误标
-            sb += "使用<b><font color='blue'>\(skillLabel)</font></b>，"
-        } else {
-            sb += "发起攻击，"
-        }
-        sb += "击中\(def.name)"
-        if dmg > 0 {
-            sb += "，<b><font color='red'>HP-\(dmg)</font></b>"
-            sb += remain <= 0
-                ? " (HP余 0 )。中招身亡，实在是不堪一击！"
-                : "(HP余\(remain))。"
-        }
-        sb += "<br />"
-        return sb
     }
 }
