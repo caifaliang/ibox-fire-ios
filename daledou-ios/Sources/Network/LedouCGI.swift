@@ -43,17 +43,83 @@ enum LedouCGI {
         var req = URLRequest(url: url)
         req.httpMethod = "GET"
         req.setValue(LoginURLs.iphoneUA, forHTTPHeaderField: "User-Agent")
+        // 明示接受中文页：phonepk/petpk 常无 charset，默认按 GBK/GB18030
+        req.setValue("text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8", forHTTPHeaderField: "Accept")
+        req.setValue("zh-CN,zh;q=0.9", forHTTPHeaderField: "Accept-Language")
         if !cookie.isEmpty { req.setValue(cookie, forHTTPHeaderField: "Cookie") }
         if let referer, !referer.isEmpty { req.setValue(referer, forHTTPHeaderField: "Referer") }
         do {
             let (data, resp) = try await URLSession.shared.data(for: req)
-            let code = (resp as? HTTPURLResponse)?.statusCode ?? -1
-            let body = String(data: data, encoding: .utf8)
-                ?? String(data: data, encoding: .isoLatin1)
-                ?? ""
-            return (code, body)
+            let http = resp as? HTTPURLResponse
+            let code = http?.statusCode ?? -1
+            return (code, decodeBody(data, response: http))
         } catch {
             return (-3, error.localizedDescription)
+        }
+    }
+
+    /// phonepk/petpk 常无 charset：UTF-8 失败时按 GB18030（含 GBK），禁止先落 Latin-1（会把中文打成乱码）。
+    static func decodeBody(_ data: Data, response: HTTPURLResponse? = nil) -> String {
+        if data.isEmpty { return "" }
+        if let name = contentCharset(response),
+           let enc = encoding(named: name),
+           let s = String(data: data, encoding: enc)
+        {
+            return recoverIfMojibake(s)
+        }
+        if let s = String(data: data, encoding: .utf8) {
+            return recoverIfMojibake(s)
+        }
+        if let s = String(data: data, encoding: gb18030) {
+            return s
+        }
+        if let s = String(data: data, encoding: .isoLatin1) {
+            return recoverIfMojibake(s)
+        }
+        return ""
+    }
+
+    /// 若已误按 Latin-1 读入 GBK 字节，尝试还原。
+    static func recoverIfMojibake(_ body: String) -> String {
+        if body.isEmpty { return body }
+        if hasCJK(body) { return body }
+        guard let latin = body.data(using: .isoLatin1),
+              let recovered = String(data: latin, encoding: gb18030),
+              hasCJK(recovered)
+        else { return body }
+        return recovered
+    }
+
+    private static var gb18030: String.Encoding {
+        let raw = CFStringConvertEncodingToNSStringEncoding(
+            CFStringEncoding(CFStringEncodings.GB_18030_2000.rawValue)
+        )
+        return String.Encoding(rawValue: raw)
+    }
+
+    private static func hasCJK(_ s: String) -> Bool {
+        s.range(of: #"[一-龥]{2,}"#, options: .regularExpression) != nil
+    }
+
+    private static func contentCharset(_ response: HTTPURLResponse?) -> String? {
+        guard let raw = response?.value(forHTTPHeaderField: "Content-Type")?.lowercased() else { return nil }
+        guard let range = raw.range(of: "charset=") else { return nil }
+        var name = String(raw[range.upperBound...])
+        if let semi = name.firstIndex(of: ";") { name = String(name[..<semi]) }
+        name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
+        return name.isEmpty ? nil : name
+    }
+
+    private static func encoding(named name: String) -> String.Encoding? {
+        switch name.lowercased().replacingOccurrences(of: "-", with: "") {
+        case "utf8": return .utf8
+        case "gbk", "gb2312", "gb18030", "gb180302000": return gb18030
+        case "iso88591", "latin1", "windows1252": return .isoLatin1
+        default:
+            let cf = CFStringConvertIANACharSetNameToEncoding(name as CFString)
+            if cf == kCFStringEncodingInvalidId { return nil }
+            return String.Encoding(rawValue: CFStringConvertEncodingToNSStringEncoding(cf))
         }
     }
 

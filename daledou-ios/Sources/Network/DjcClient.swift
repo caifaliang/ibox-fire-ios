@@ -168,9 +168,7 @@ enum DjcClient {
         do {
             let (data, resp) = try await URLSession.shared.data(for: req)
             let code = (resp as? HTTPURLResponse)?.statusCode ?? -1
-            let body = String(data: data, encoding: .utf8)
-                ?? String(data: data, encoding: .isoLatin1)
-                ?? ""
+            let body = LedouCGI.decodeBody(data, response: resp as? HTTPURLResponse)
             return Result(code: code, body: body)
         } catch {
             return Result(code: -3, body: error.localizedDescription)

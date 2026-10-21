@@ -36,7 +36,7 @@
 | **战斗拼接** | **partial** | fd137：多页拼；fd138：侠士 Act；fd141：技能中文名后台解析 |
 | **大乐斗会员** | **partial** | fd139：状态查询/试用/DLDOU-兑换 + 功能门禁 |
 | **日常强化细项** | **partial** | fd140：兵法/神装/技能/专精/武器栏/铭刻/徽章 + 任务库 status=2 |
-| **顶栏查询（信息）** | **partial** | fd144：QueryScreen 信息页 + petpk 全量解析；页内 UIN 预填 |
+| **顶栏查询（信息）** | **partial** | fd144：QueryScreen；fd151：LedouCGI GBK/GB18030 解码修乱码 |
 | **顶栏截长图** | **partial** | fd145：WKWebView 滚屏拼接 + 相册/分享；截时藏 FAB |
 | **壳后台总开关** | **partial** | fd146：Toggle→TaskRunner 启停 + 点 Ns 循环间隔；单项监听顺带开全局 |
 | **换装配置** | **partial** | fd147–150：专精/奥义/佣兵/侠士/附魔/头像 |

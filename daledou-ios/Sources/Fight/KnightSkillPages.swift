@@ -13,20 +13,7 @@ enum KnightSkillPages {
     }
 
     static func decodeHtml(_ body: String) -> String {
-        if body.isEmpty { return "" }
-        if body.contains("系统繁忙") || body.contains("很抱歉") { return body }
-        if body.range(of: #"[一-龥]{2,}"#, options: .regularExpression) != nil { return body }
-        // LedouCGI 偶发按 ISO-8859-1 读入 GBK 字节；试转 GB18030
-        guard let latin = body.data(using: .isoLatin1) else { return body }
-        let gb18030 = CFStringConvertEncodingToNSStringEncoding(
-            CFStringEncoding(CFStringEncodings.GB_18030_2000.rawValue)
-        )
-        if let recovered = String(data: latin, encoding: String.Encoding(rawValue: gb18030)),
-           recovered.range(of: #"[一-龥]{2,}"#, options: .regularExpression) != nil
-        {
-            return recovered
-        }
-        return body
+        LedouCGI.recoverIfMojibake(body)
     }
 
     /// 技能 type=5 / 装备 type=3，与参考 QXLXDataActivity.F 一致。
