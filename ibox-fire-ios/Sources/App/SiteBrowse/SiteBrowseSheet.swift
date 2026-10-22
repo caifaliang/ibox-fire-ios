@@ -1,12 +1,12 @@
 import SwiftUI
 
-/// 右下角悬浮入口（打开逻辑见 SiteBrowsePresenter，纯 UIKit present）
+/// 右下角悬浮入口（打开逻辑见 SiteBrowsePresenter）
 struct SiteBrowseFAB: View {
     let action: () -> Void
 
     var body: some View {
         Button(action: {
-            Haptics.tap()
+            // 隔离闪退：本入口暂不打 Haptics（其它按钮的震动仍可用）
             action()
         }) {
             HStack(spacing: Space.xs) {

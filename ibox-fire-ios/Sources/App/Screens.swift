@@ -159,11 +159,11 @@ struct MainShell: View {
         }
 
         SiteBrowseFAB {
-            SiteBrowsePresenter.present(
-                siteToken: vm.siteUser?.token ?? "",
-                userCacheJSON: SiteBrowsePresenter.userCacheJSON(from: vm.siteUser),
-                iboxToken: vm.iboxToken
-            )
+            // 先拷贝到局部，避免 present 闭包里再碰 @MainActor vm
+            let token = vm.siteUser?.token ?? ""
+            let cache = SiteBrowsePresenter.userCacheJSON(from: vm.siteUser)
+            let ibox = vm.iboxToken
+            SiteBrowsePresenter.present(siteToken: token, userCacheJSON: cache, iboxToken: ibox)
         }
             .padding(.trailing, Space.l)
             .padding(.bottom, Space.xl)
