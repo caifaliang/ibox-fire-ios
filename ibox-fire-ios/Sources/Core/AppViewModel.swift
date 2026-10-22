@@ -258,6 +258,9 @@ final class AppViewModel: ObservableObject {
     @Published var materials: [SynthMaterial] = []
     @Published var checkedAlbums: Set<Int64> = []
     @Published var synthQty = "1"
+    /// direct=纯本机 | proxy=本机+易代理（对齐 Android synthRoute）
+    @Published var synthRoute = "direct"
+    @Published var synthAllowBatch = true
     @Published var busyMsg = ""
 
     @Published var synthQuota = QuotaInfo(limit: 2, remaining: 2)
@@ -304,6 +307,8 @@ final class AppViewModel: ObservableObject {
     private let kPhone = "ibox.phone"
     private let kProxy = "ibox.proxy_api"
     private let kWorkers = "ibox.workers"
+    private let kSynthRoute = "ibox.synth_route"
+    private let kSynthAllowBatch = "ibox.synth_allow_batch"
     private var nbSnipeSearchTask: Task<Void, Never>?
     private var lastQuotaRefreshAt: TimeInterval = 0
     private var activePrep: String?
@@ -311,6 +316,11 @@ final class AppViewModel: ObservableObject {
     init() {
         iboxPhone = prefs.string(forKey: kPhone) ?? ""
         workers = prefs.object(forKey: kWorkers) as? Int ?? 10
+        let route = prefs.string(forKey: kSynthRoute)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        synthRoute = (route == "proxy") ? "proxy" : "direct"
+        if prefs.object(forKey: kSynthAllowBatch) != nil {
+            synthAllowBatch = prefs.bool(forKey: kSynthAllowBatch)
+        }
         let savedProxy = prefs.string(forKey: kProxy)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         proxyExtractUrl = ProxyPool.effectiveExtractUrl(savedProxy)
         if savedProxy.isEmpty { prefs.set(proxyExtractUrl, forKey: kProxy) }
@@ -489,6 +499,16 @@ final class AppViewModel: ObservableObject {
     func setWorkers(_ w: Int) {
         workers = w
         prefs.set(w, forKey: kWorkers)
+    }
+
+    func setSynthRoute(_ route: String) {
+        synthRoute = (route == "proxy") ? "proxy" : "direct"
+        prefs.set(synthRoute, forKey: kSynthRoute)
+    }
+
+    func setSynthAllowBatch(_ on: Bool) {
+        synthAllowBatch = on
+        prefs.set(on, forKey: kSynthAllowBatch)
     }
 
     private func syncUserProxyFromSite() async {
@@ -1616,7 +1636,14 @@ final class AppViewModel: ObservableObject {
                 return
             }
             busyMsg = "本地监听中"
-            let cfg = AnnounceConfig(token: iboxToken, orderMode: announceOrderMode, maxSinglePrice: Double(announceMaxPrice) ?? 0, maxCount: Int(announceMaxCount) ?? 1, s1SearchBase: api.siteBase)
+            let cfg = AnnounceConfig(
+                token: iboxToken,
+                orderMode: announceOrderMode,
+                maxSinglePrice: Double(announceMaxPrice) ?? 0,
+                maxCount: Int(announceMaxCount) ?? 1,
+                pollMs: 300,
+                s1SearchBase: api.siteBase
+            )
             appendLog("公告发现本机直连（不走代理）", mode: .announce)
             let engine = AnnounceEngine(cfg: cfg, onLog: { [weak self] m in
                 Task { @MainActor in self?.appendLog(m, mode: .announce) }
@@ -1628,7 +1655,10 @@ final class AppViewModel: ObservableObject {
     }
 
     func startSynth() {
-        guard requireVip(), iboxLoggedIn else { return }
+        guard requireVip(), iboxLoggedIn else {
+            if !iboxLoggedIn { appendLog("请先登录 iBox（我的 / 抢合页）", type: "error", mode: .synth) }
+            return
+        }
         guard selectedActivity != nil else { appendLog("请选择活动", type: "error", mode: .synth); return }
         let sid = channelId > 0 ? channelId : (selectedActivity?.id ?? 0)
         guard sid > 0 else { appendLog("请先选择活动", type: "error", mode: .synth); return }
@@ -1636,6 +1666,8 @@ final class AppViewModel: ObservableObject {
         guard fireTimeNotTooLate() else { return }
         guard guardNotRunning(.synth, prepKey: "synth") else { return }
         guard prepBusy("synth", "扣次中…") else { return }
+        let useProxy = synthRoute == "proxy"
+        let allowBatch = synthAllowBatch
         Task { [weak self] in
             guard let self else { return }
             defer { if activePrep == "synth" { clearPrep() } }
@@ -1649,29 +1681,40 @@ final class AppViewModel: ObservableObject {
                     return
                 }
             }
-            busyMsg = "提取+验活中…"
-            appendLog("抽取代理中…", mode: .synth)
-            let url = resolveProxyUrl()
-            do {
-                let pool = try await ProxyPool.extractAlivePool(url)
-                appendLog("代理池就绪 \(pool.proxies.count) 条 | \(pool.detail)", mode: .synth)
-                if pool.proxies.count < 12 {
-                    appendLog("存活仅 \(pool.proxies.count) 条，放弃", type: "error", mode: .synth)
-                    return
+            var proxies: [String] = []
+            if useProxy {
+                busyMsg = "提取易代理…"
+                let url = resolveProxyUrl()
+                appendLog("易代理抽取 \(ProxyPool.synthExtractN) 条…", mode: .synth)
+                let pool = await ProxyPool.extractAliveForSynth(url)
+                proxies = pool.proxies
+                appendLog("代理就绪 \(proxies.count) | \(pool.detail)", mode: .synth)
+                if proxies.isEmpty {
+                    appendLog("无存活代理，仅本机一路", mode: .synth)
                 }
-                if pool.needMore { appendLog("存活代理不足", type: "error", mode: .synth); return }
-                let fireAt = todayFireAtEpochSec(h: fireH, m: fireM, s: fireS)
-                let w = max(1, min(20, min(workers, pool.proxies.count)))
-                busyMsg = "本地开火中"
-                appendLog("启动本地抢合 ID=\(sid) workers=\(w)", mode: .synth)
-                let engine = FireEngine(cfg: FireConfig(token: iboxToken, syntheticId: sid, syntheticNum: Int(synthQty) ?? 1, albumIds: Array(checkedAlbums), fireAtEpochSec: fireAt, workers: w, proxies: pool.proxies), onLog: { [weak self] m in
-                    Task { @MainActor in self?.appendLog(m, mode: .synth) }
-                })
-                clearPrep()
-                runner.start(kind: .synth, stop: { engine.requestStop() }, keepAlive: true) { _ = try? await engine.run() }
-            } catch {
-                appendLog("代理失败 \(error.localizedDescription)", type: "error", mode: .synth)
             }
+            let fireAt = todayFireAtEpochSec(h: fireH, m: fireM, s: fireS)
+            let batchHint = (allowBatch && proxies.isEmpty) ? "可批量" : "每次1"
+            let modeHint = proxies.isEmpty ? "纯本地" : "本机+易代理×\(proxies.count)"
+            appendLog("启动\(modeHint) 抢合 ID=\(sid) · \(batchHint) · 提前0.8s", mode: .synth)
+            busyMsg = proxies.isEmpty ? "本机直连开火中" : "本机+易代理开火中"
+            let cfg = FireConfig(
+                token: iboxToken,
+                syntheticId: sid,
+                syntheticNum: Int(synthQty) ?? 1,
+                albumIds: Array(checkedAlbums),
+                fireAtEpochSec: fireAt,
+                workers: 1 + proxies.count,
+                proxies: proxies,
+                earlyS: 0.8,
+                durationS: 0.0,
+                allowBatch: allowBatch
+            )
+            let engine = FireEngine(cfg: cfg, onLog: { [weak self] m in
+                Task { @MainActor in self?.appendLog(m, mode: .synth) }
+            })
+            clearPrep()
+            runner.start(kind: .synth, stop: { engine.requestStop() }, keepAlive: true) { _ = try? await engine.run() }
         }
     }
 

@@ -7,7 +7,7 @@
 | 期 | 内容 |
 |---|---|
 | 一期 | 站点/VIP/Profile、iBox JWT、查询/捡漏/卖求购/上下架、前台保活 |
-| 二期 | 公告锁定、抢合 FireEngine、稳定 device-id、本地通知 |
+| 二期 | 公告锁定(300ms/S1映射)、抢合 FireEngine(纯本地|本机+易代理)、稳定 device-id、本地通知 |
 | 三期 | 抢购（服务端极验降级）、HFPay、NewBee 抢购/捡漏、短信、Sweep 引擎 |
 
 ## 本机无 Mac

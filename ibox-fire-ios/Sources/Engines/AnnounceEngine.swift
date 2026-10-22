@@ -6,7 +6,8 @@ struct AnnounceConfig {
     var maxSinglePrice: Double = 0
     var maxCount: Int = 1
     var durationS: Double = 3600
-    var pollMs: UInt64 = 1000
+    /// 对齐 Android 默认 300ms
+    var pollMs: UInt64 = 300
     var s1SearchBase: String = "https://ai.iboxai.top/api"
 }
 
@@ -14,8 +15,8 @@ struct AnnounceConfig {
 final class AnnounceEngine: @unchecked Sendable {
     private let cfg: AnnounceConfig
     private let onLog: (String) -> Void
-    private let api = ApiRepository()
     private var stop = false
+    private var gidResolver: AnnounceGidResolver!
 
     private let sailHost = "https://sail-api.ibox.art"
     private let bulletinOrigin = "https://announcement.ibox.art"
@@ -41,8 +42,11 @@ final class AnnounceEngine: @unchecked Sendable {
             return 0
         }
         let client = IboxClient(token: cfg.token, proxyLine: nil, deviceIdMode: .stableMD5)
+        gidResolver = AnnounceGidResolver(s1SearchBase: cfg.s1SearchBase) { path in
+            await client.get(path)
+        }
         let mode = cfg.orderMode.lowercased() == "single" ? "single" : "batch"
-        let basePoll = max(400, min(5000, cfg.pollMs))
+        let basePoll = max(200, min(5000, cfg.pollMs))
 
         onLog("⚡本地模式 mode=\(mode)（bulletin \(basePoll)ms · 本机直连）")
         if mode == "batch" {
@@ -134,12 +138,26 @@ final class AnnounceEngine: @unchecked Sendable {
             onLog("新公告 #\(nid.prefix(12)) → (无)")
             return 0
         }
+        let linkGids = AnnounceParser.extractMarketGidMap(contentHtml: content)
+        if !linkGids.isEmpty {
+            for (name, gid) in linkGids {
+                gidResolver.remember(name, gid)
+            }
+            let tip = linkGids.prefix(6).map { "\($0.key)=\($0.value)" }.joined(separator: ",")
+            onLog("链接GID \(linkGids.count)个 \(tip.prefix(80))")
+        }
         onLog("新公告 #\(nid.prefix(12)) → \(formatTargetTip(targets).prefix(80))")
         var locked = 0
         for name in targets.all {
             if stop { break }
-            guard let gid = await resolveGid(name: name, client: client) else {
-                onLog("未映射 \(name)")
+            let gid: Int64?
+            if let g = linkGids[name] {
+                gid = g
+            } else {
+                gid = await gidResolver.resolve(name)
+            }
+            guard let gid else {
+                onLog("未映射 \(name)（无市场链接且索引未命中）")
                 continue
             }
             guard lockedGids.insert(gid).inserted else { continue }
@@ -148,7 +166,17 @@ final class AnnounceEngine: @unchecked Sendable {
             if ok.ok {
                 locked += 1
                 if ok.mode == "batch" {
-                    onLog("批量锁定OK \(name) gid=\(gid) ≤¥\(cfg.maxSinglePrice) x\(cfg.maxCount) \(ms)ms")
+                    let tip = AnnounceBatchSummary.formatLockLog(
+                        cap: ok.cap, qty: ok.qty, summary: ok.batchSummary
+                    )
+                    onLog("批量锁定OK \(name) gid=\(gid) \(tip) \(ms)ms")
+                    ok.batchSummary?.lines.prefix(30).forEach { ln in
+                        let extra = ln.tokenId.isEmpty ? "" : " #\(ln.tokenId)"
+                        onLog("  └ ¥\(ln.price) ×\(ln.qty)\(extra)")
+                    }
+                    if let oid = ok.batchSummary?.orderId, !oid.isEmpty {
+                        onLog("  订单 \(oid.prefix(24))")
+                    }
                 } else {
                     onLog("锁定OK \(name) gid=\(gid) ¥\(ok.price) \(ms)ms")
                 }
@@ -165,6 +193,10 @@ final class AnnounceEngine: @unchecked Sendable {
         var mode: String
         var reason: String = ""
         var price: Double = 0
+        var cap: Double = 0
+        var qty: Int = 0
+        var batchSummary: AnnounceBatchSummary.Summary? = nil
+        var orderId: String = ""
     }
 
     private func placeLock(client: IboxClient, uid: Int64, gid: Int64, mode: String) async -> LockOutcome {
@@ -201,7 +233,49 @@ final class AnnounceEngine: @unchecked Sendable {
         ]
         let order = await client.postJson("/order-create-service/batch-purchase-consignment-orders?uid=\(uid)", body: body)
         let ok = JSONX.code(order) == 0
-        return LockOutcome(ok: ok, mode: "batch", reason: ok ? "" : "c=\(JSONX.code(order)) \(JSONX.message(order).prefix(40))")
+        let summary: AnnounceBatchSummary.Summary? = ok
+            ? await AnnounceBatchSummary.summarize(
+                orderResp: order,
+                qtyReq: qty,
+                cap: cap,
+                gid: gid,
+                fetchOrder: { oid in await client.get("/order-service/orders/\(oid)") },
+                fetchRecentUnpaid: { g in await self.fetchRecentUnpaid(client: client, gid: g) }
+            )
+            : nil
+        return LockOutcome(
+            ok: ok,
+            mode: "batch",
+            reason: ok ? "" : "c=\(JSONX.code(order)) \(JSONX.message(order).prefix(40))",
+            cap: cap,
+            qty: qty,
+            batchSummary: summary,
+            orderId: summary?.orderId ?? ""
+        )
+    }
+
+    private func fetchRecentUnpaid(client: IboxClient, gid: Int64) async -> [AnnounceBatchSummary.Line] {
+        var lines: [AnnounceBatchSummary.Line] = []
+        let cutoff = Int64(Date().timeIntervalSince1970 * 1000) - 180_000
+        for page in 1...3 {
+            let path = "/order-service/orders?pageNo=\(page)&pageSize=50&productType=0&orderType=0&orderStatus=0"
+            let data = await client.get(path)
+            guard JSONX.code(data) == 0 else { break }
+            let list = JSONX.dataList(data)
+            if list.isEmpty { break }
+            for it in list {
+                let ts = JSONX.int64Val(it["createdAt"]) ?? JSONX.int64Val(it["createTime"]) ?? 0
+                if ts > 0, ts < cutoff { continue }
+                let pp = it["productPreview"] as? [String: Any]
+                let g = JSONX.int64Val(pp?["groupId"]) ?? JSONX.int64Val(it["groupId"]) ?? 0
+                guard g == gid else { continue }
+                let price = JSONX.doubleVal(it["price"]) ?? JSONX.doubleVal(it["orderAmount"]) ?? 0
+                guard price > 0 else { continue }
+                let tid = (pp?["tokenId"] as? String) ?? ""
+                lines.append(AnnounceBatchSummary.Line(price: price, qty: 1, tokenId: tid))
+            }
+        }
+        return lines
     }
 
     private func unlocked(_ it: [String: Any]) -> Bool {
@@ -209,25 +283,6 @@ final class AnnounceEngine: @unchecked Sendable {
         if let st = JSONX.int64Val(it["orderStatus"]), st != 2 { return false }
         if let ls = JSONX.int64Val((it["digitalCollection"] as? [String: Any])?["lockStatus"]), ls != 0 { return false }
         return true
-    }
-
-    private func resolveGid(name: String, client: IboxClient) async -> Int64? {
-        let raw = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !raw.isEmpty else { return nil }
-        let path = "/public-service/search?keyword=\(raw.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? raw)&pageNo=1&pageSize=10&groupType=0"
-        let data = await client.get(path)
-        if JSONX.code(data) != 0 { return try? await api.searchCollections(raw).first?.id }
-        let payload = JSONX.dataDict(data)
-        let list = (payload["list"] as? [[String: Any]]) ?? (payload["records"] as? [[String: Any]]) ?? []
-        for it in list {
-            let n = ((it["name"] as? String) ?? (it["groupName"] as? String) ?? "").trimmingCharacters(in: .whitespaces)
-            if n == raw || n.contains(raw) {
-                if let g = JSONX.int64Val(it["id"]) ?? JSONX.int64Val(it["groupId"]) ?? JSONX.int64Val(it["digitalCollectionGroupId"]), g > 0 {
-                    return g
-                }
-            }
-        }
-        return try? await api.searchCollections(raw).first?.id
     }
 
     private func seedSeenNotices() async -> Bool {

@@ -9,6 +9,7 @@ enum DeviceIdMode {
 /// 对齐 Android `IboxClient`。
 final class IboxClient: @unchecked Sendable {
     private let host = "https://sail-api.ibox.art"
+    private let rawToken: String
     private let auth: String
     let deviceId: String
     let modeLabel: String
@@ -22,6 +23,7 @@ final class IboxClient: @unchecked Sendable {
         deviceIdMode: DeviceIdMode = .random
     ) {
         let raw = JwtUtil.normalize(token)
+        self.rawToken = raw
         self.auth = JwtUtil.bearer(raw)
         switch deviceIdMode {
         case .random:
@@ -34,7 +36,15 @@ final class IboxClient: @unchecked Sendable {
             deviceId = Self.hashDeviceId(raw)
             modeLabel = "Hash派生"
         }
+        // URLSession 无独立 connect 超时；用 readMs 对齐 Android readTimeout
+        _ = connectMs
         http = ProxyURLSession(proxyLine: proxyLine, timeout: readMs / 1000.0)
+    }
+
+    /// 对齐 App / 网站 `talos_` + md5(jwt)
+    static func installationId(_ token: String) -> String {
+        let t = JwtUtil.normalize(token).isEmpty ? "ibox" : JwtUtil.normalize(token)
+        return "talos_\(md5Hex(t))"
     }
 
     /// 对齐 backend `_make_device_id` / Android `makeDeviceId`
@@ -67,72 +77,106 @@ final class IboxClient: @unchecked Sendable {
         return "\(p.prefix(8))-\(p.dropFirst(8).prefix(4))-\(p.dropFirst(12).prefix(4))-\(p.dropFirst(16).prefix(4))-\(p.dropFirst(20).prefix(12))"
     }
 
-    private func headerMap() -> [String: String] {
-        [
+    private static func isSynthGo(_ path: String) -> Bool {
+        path.hasPrefix("/ibox-synthesis-service-go")
+    }
+
+    private func headerMap(for path: String) -> [String: String] {
+        var h: [String: String] = [
             "Authorization": auth,
             "platform-type": "1",
             "channel": "website",
             "device-id": deviceId,
             "msg-id": UUID().uuidString.lowercased() + "_android",
-            "app-version-number": "30002",
-            "app-version": "3.0.2",
-            "Content-Type": "application/json;charset=UTF-8",
             "User-Agent": "Dart/3.11 (dart:io)",
             "accept": "application/json"
         ]
+        if Self.isSynthGo(path) {
+            h["app-version-number"] = "30013"
+            h["app-version"] = "3.0.13"
+            h["Content-Type"] = "application/json"
+            h["x-installation-id"] = Self.installationId(rawToken)
+        } else {
+            h["app-version-number"] = "30002"
+            h["app-version"] = "3.0.2"
+            h["Content-Type"] = "application/json;charset=UTF-8"
+        }
+        return h
     }
 
     func get(_ path: String) async -> [String: Any] {
+        do {
+            return try await getThrowing(path)
+        } catch {
+            return ["code": -1, "message": error.localizedDescription]
+        }
+    }
+
+    /// 传输失败抛错（对齐 Android OkHttp）；业务 JSON 仍以字典返回。
+    func getThrowing(_ path: String) async throws -> [String: Any] {
         let p = path.hasPrefix("/") ? path : "/\(path)"
-        guard let url = URL(string: host + p) else { return ["code": -1, "message": "bad url"] }
+        guard let url = URL(string: host + p) else {
+            return ["code": -1, "message": "bad url"]
+        }
         var req = URLRequest(url: url)
         req.httpMethod = "GET"
-        headerMap().forEach { req.setValue($0.value, forHTTPHeaderField: $0.key) }
-        return await exec(req)
+        headerMap(for: p).forEach { req.setValue($0.value, forHTTPHeaderField: $0.key) }
+        return try await execThrowing(req)
     }
 
     func postJson(_ path: String, body: [String: Any]) async -> [String: Any] {
         do {
-            let data = try JSONSerialization.data(withJSONObject: body)
-            let plain = String(data: data, encoding: .utf8) ?? "{}"
-            let enc = try IboxCrypto.encryptBody(plain)
-            return await postRaw(path, encryptedBody: enc)
+            return try await postJsonThrowing(path, body: body)
         } catch {
             return ["code": -1, "message": error.localizedDescription]
         }
+    }
+
+    /// 对齐 Android：body 仍走 `encryptBody`；synth-go 仅头差异（3.0.13 + x-installation-id）。
+    func postJsonThrowing(_ path: String, body: [String: Any]) async throws -> [String: Any] {
+        let data = try JSONSerialization.data(withJSONObject: body)
+        let plain = String(data: data, encoding: .utf8) ?? "{}"
+        let enc = try IboxCrypto.encryptBody(plain)
+        return try await postRawThrowing(path, encryptedBody: enc)
     }
 
     func postRaw(_ path: String, encryptedBody: String) async -> [String: Any] {
-        let p = path.hasPrefix("/") ? path : "/\(path)"
-        guard let url = URL(string: host + p) else { return ["code": -1, "message": "bad url"] }
-        var req = URLRequest(url: url)
-        req.httpMethod = "POST"
-        req.httpBody = Data(encryptedBody.utf8)
-        headerMap().forEach { req.setValue($0.value, forHTTPHeaderField: $0.key) }
-        return await exec(req)
-    }
-
-    private func exec(_ req: URLRequest) async -> [String: Any] {
         do {
-            let (data, resp) = try await http.data(for: req)
-            let status = (resp as? HTTPURLResponse)?.statusCode ?? 0
-            if status == 401 || status == 403 || status == 429 {
-                return ["code": status, "message": "HTTP \(status)"]
-            }
-            let text = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            if text.isEmpty { return ["code": -1, "message": "empty"] }
-            if text.hasPrefix("<") { return ["code": status, "message": "HTML \(status)"] }
-            guard var obj = try JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any] else {
-                return ["code": -1, "message": String(text.prefix(60))]
-            }
-            if obj["encryptKey"] != nil {
-                let plain = try IboxCrypto.decryptResponse(text)
-                obj = (try JSONSerialization.jsonObject(with: Data(plain.utf8)) as? [String: Any]) ?? obj
-            }
-            return obj
+            return try await postRawThrowing(path, encryptedBody: encryptedBody)
         } catch {
             return ["code": -1, "message": error.localizedDescription]
         }
+    }
+
+    func postRawThrowing(_ path: String, encryptedBody: String) async throws -> [String: Any] {
+        let p = path.hasPrefix("/") ? path : "/\(path)"
+        guard let url = URL(string: host + p) else {
+            return ["code": -1, "message": "bad url"]
+        }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.httpBody = Data(encryptedBody.utf8)
+        headerMap(for: p).forEach { req.setValue($0.value, forHTTPHeaderField: $0.key) }
+        return try await execThrowing(req)
+    }
+
+    private func execThrowing(_ req: URLRequest) async throws -> [String: Any] {
+        let (data, resp) = try await http.data(for: req)
+        let status = (resp as? HTTPURLResponse)?.statusCode ?? 0
+        if status == 401 || status == 403 || status == 429 {
+            return ["code": status, "message": "HTTP \(status)"]
+        }
+        let text = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if text.isEmpty { return ["code": -1, "message": "empty"] }
+        if text.hasPrefix("<") { return ["code": status, "message": "HTML \(status)"] }
+        guard var obj = try JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any] else {
+            return ["code": -1, "message": String(text.prefix(60))]
+        }
+        if obj["encryptKey"] != nil {
+            let plain = try IboxCrypto.decryptResponse(text)
+            obj = (try JSONSerialization.jsonObject(with: Data(plain.utf8)) as? [String: Any]) ?? obj
+        }
+        return obj
     }
 }
 

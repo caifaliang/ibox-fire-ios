@@ -300,7 +300,7 @@ final class ApiRepository {
 
     func fetchSynthQuota(platformToken: String) async throws -> QuotaInfo {
         let enc = platformToken.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? platformToken
-        let (data, resp) = try await siteSession().data(from: URL(string: "\(base())/snipe/synth-quota?platform_token=\(enc)")!)
+        let (data, resp) = try await siteSession().data(from: URL(string: "\(base())/snipe/synth-quota?client=app&platform_token=\(enc)")!)
         let o = jsonObject(data)
         if (resp as? HTTPURLResponse)?.statusCode == 403 {
             throw NSError(domain: "quota", code: 403, userInfo: [NSLocalizedDescriptionKey: o["detail"] as? String ?? "需要 VIP"])
@@ -482,14 +482,33 @@ final class ApiRepository {
         )
     }
 
+    private let loginDeviceKey = "ibox.login.deviceId"
+
+    /// 短信与验证码登录共用。换掉这个号，已发出的验证码会失效。
+    private func loginDeviceId() -> String {
+        if let saved = UserDefaults.standard.string(forKey: loginDeviceKey), saved.count >= 8 {
+            return saved
+        }
+        let id = "dev_" + UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
+        UserDefaults.standard.set(id, forKey: loginDeviceKey)
+        return id
+    }
+
+    private func rememberLoginDevice(_ id: String) {
+        let t = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard t.count >= 8 else { return }
+        UserDefaults.standard.set(t, forKey: loginDeviceKey)
+    }
+
     func sendSmsAuto(phone: String) async throws {
-        let body = try JSONSerialization.data(withJSONObject: ["phone": phone, "proxy": ""])
+        let did = loginDeviceId()
+        let body = try JSONSerialization.data(withJSONObject: ["phone": phone, "proxy": "", "device_id": did])
         var req = URLRequest(url: URL(string: "\(base())/snipe/send-sms-auto")!)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = body
-        req.timeoutInterval = 90
-        let (data, resp) = try await siteSession(timeout: 90).data(for: req)
+        req.timeoutInterval = 120
+        let (data, resp) = try await siteSession(timeout: 120).data(for: req)
         let o = jsonObject(data)
         let httpCode = (resp as? HTTPURLResponse)?.statusCode ?? 0
         if httpCode >= 400 {
@@ -498,35 +517,41 @@ final class ApiRepository {
         if o["status"] as? String != "ok" && o["ok"] as? Bool != true {
             throw NSError(domain: "sms", code: 1, userInfo: [NSLocalizedDescriptionKey: (o["message"] as? String) ?? "短信发送失败"])
         }
+        if let back = o["device_id"] as? String {
+            rememberLoginDevice(back)
+        }
     }
 
+    /// 验证码登录走网站 /snipe/login，带上发短信时的 device_id。极验模型留在服务器。
     func loginSms(phone: String, code: String) async throws -> (token: String, uid: Int64) {
+        let did = loginDeviceId()
         let body = try JSONSerialization.data(withJSONObject: [
-            "phoneNumber": phone.trimmingCharacters(in: .whitespacesAndNewlines),
-            "code": code.trimmingCharacters(in: .whitespacesAndNewlines)
+            "phone": phone.trimmingCharacters(in: .whitespacesAndNewlines),
+            "code": code.trimmingCharacters(in: .whitespacesAndNewlines),
+            "device_id": did,
+            "direct": "1"
         ])
-        var req = URLRequest(url: URL(string: "https://sail-api.ibox.art/box-server/api/v1/login/verify")!)
+        var req = URLRequest(url: URL(string: "\(base())/snipe/login")!)
         req.httpMethod = "POST"
         req.httpBody = body
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.setValue("Dart/3.11 (dart:io)", forHTTPHeaderField: "User-Agent")
-        let (data, _) = try await siteSession(timeout: 20).data(for: req)
-        guard var obj = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+        req.timeoutInterval = 60
+        let (data, resp) = try await siteSession(timeout: 60).data(for: req)
+        let httpCode = (resp as? HTTPURLResponse)?.statusCode ?? 0
+        guard let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw NSError(domain: "login", code: 1, userInfo: [NSLocalizedDescriptionKey: "响应无效"])
         }
-        if obj["encryptKey"] != nil {
-            let plain = try IboxCrypto.decryptResponse(String(data: data, encoding: .utf8) ?? "")
-            obj = (try JSONSerialization.jsonObject(with: Data(plain.utf8)) as? [String: Any]) ?? obj
+        if httpCode >= 400 || (obj["status"] as? String) != "ok" {
+            throw NSError(domain: "login", code: httpCode, userInfo: [NSLocalizedDescriptionKey: (obj["message"] as? String) ?? "登录失败"])
         }
-        if JSONX.code(obj) != 0 {
-            throw NSError(domain: "login", code: Int(JSONX.code(obj)), userInfo: [NSLocalizedDescriptionKey: JSONX.message(obj)])
+        if let back = obj["device_id"] as? String {
+            rememberLoginDevice(back)
         }
-        let d = JSONX.dataDict(obj)
-        guard let tokenRaw = d["token"] as? String, !tokenRaw.isEmpty else {
+        guard let tokenRaw = obj["token"] as? String, !tokenRaw.isEmpty else {
             throw NSError(domain: "login", code: 2, userInfo: [NSLocalizedDescriptionKey: "无 token"])
         }
         let token = JwtUtil.normalize(tokenRaw)
-        let uid = JSONX.int64Val((d["userInfo"] as? [String: Any])?["userId"]) ?? JwtUtil.uid(token) ?? 0
+        let uid = (obj["user_id"] as? NSNumber)?.int64Value ?? JwtUtil.uid(token) ?? 0
         return (token, uid)
     }
 
@@ -577,7 +602,7 @@ final class ApiRepository {
             let d = try await fetchActivityDetail(id: Int64(qq) ?? 0, token: token)
             return [SynthActivity(id: d.id, name: d.name)]
         }
-        var path = "/synthesis-service/synthetic/activity/list?pageNo=1&pageSize=20"
+        var path = "/ibox-synthesis-service-go/synthetic/activity/list?pageNo=1&pageSize=20"
         if !qq.isEmpty {
             path += "&name=\(qq.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? qq)"
         }
@@ -596,7 +621,7 @@ final class ApiRepository {
     }
 
     func fetchActivityDetail(id: Int64, token: String) async throws -> ActivityDetail {
-        let data = try await iboxGet("/synthesis-service/synthetic/activity/detail?id=\(id)", token: token)
+        let data = try await iboxGet("/ibox-synthesis-service-go/synthetic/activity/detail?id=\(id)", token: token)
         if JSONX.code(data) != 0 { throw NSError(domain: "synth", code: Int(JSONX.code(data)), userInfo: [NSLocalizedDescriptionKey: JSONX.message(data)]) }
         let a = JSONX.dataDict(data)
         let chArr = a["channels"] as? [[String: Any]] ?? []
@@ -614,7 +639,7 @@ final class ApiRepository {
     }
 
     func fetchChannelMaterials(centerId: Int64, token: String) async throws -> [SynthMaterial] {
-        let data = try await iboxGet("/synthesis-service/synthetic/center/\(centerId)", token: token)
+        let data = try await iboxGet("/ibox-synthesis-service-go/synthetic/center/\(centerId)", token: token)
         if JSONX.code(data) != 0 { throw NSError(domain: "synth", code: Int(JSONX.code(data)), userInfo: [NSLocalizedDescriptionKey: JSONX.message(data)]) }
         let c = JSONX.dataDict(data)
         let burn = c["burnAlbums"] as? [[String: Any]] ?? []

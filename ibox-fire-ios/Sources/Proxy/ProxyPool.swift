@@ -4,6 +4,8 @@ enum ProxyPool {
     static let extractN = 50
     static let fireCap = 50
     static let minAlive = 12
+    /** 抢合抽代理默认条数（Android SYNTH_EXTRACT_N）；存活为 0 也可纯本机 */
+    static let synthExtractN = 10
     static let defaultExtractURL =
         "http://api3.ydaili.cn/tools/MeasureApi.ashx?action=EAPI" +
         "&secret=65FD05455A5E3E7E1EFDAEDCA23C835F04472EAEA0853CE6" +
@@ -194,5 +196,26 @@ enum ProxyPool {
         let raw = try await fetchYdaili(apiUrl)
         let (alive, detail) = await filterAlive(raw, cap: max(1, want))
         return AliveResult(proxies: alive, detail: "\(detail) → 取\(alive.count)", needMore: alive.isEmpty)
+    }
+
+    /** 抢合专用：默认抽 10；存活为 0 也可继续纯本机（对齐 Android extractAliveForSynth） */
+    static func extractAliveForSynth(_ apiUrl: String, want: Int = synthExtractN) async -> AliveResult {
+        let n = max(1, min(fireCap, want))
+        do {
+            let bumped = bumpExtractCount(apiUrl, want: n)
+            let raw = try await fetchYdaili(bumped)
+            let (alive, detail) = await filterAlive(raw, cap: max(1, raw.count))
+            return AliveResult(
+                proxies: alive,
+                detail: "\(detail) → 抢合取\(alive.count)/提\(raw.count)(要\(n))",
+                needMore: alive.isEmpty
+            )
+        } catch {
+            return AliveResult(
+                proxies: [],
+                detail: "抽失败(\(error.localizedDescription.prefix(80)))",
+                needMore: true
+            )
+        }
     }
 }

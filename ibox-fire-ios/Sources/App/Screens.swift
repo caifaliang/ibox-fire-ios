@@ -614,13 +614,40 @@ struct SynthPane: View {
                     }
                 }
                 TimeFields(h: $vm.fireH, m: $vm.fireM, s: $vm.fireS)
-                HStack {
-                    TextField("数量", text: $vm.synthQty).keyboardType(.numberPad).fieldStyle()
-                    WorkerPicker(workers: $vm.workers) { vm.setWorkers($0) }
+                Text("模式").font(.caption.bold())
+                HStack(spacing: 8) {
+                    ModeChip(title: "纯本地", selected: vm.synthRoute == "direct") {
+                        vm.setSynthRoute("direct")
+                    }
+                    ModeChip(title: "本地+易代理", selected: vm.synthRoute == "proxy") {
+                        vm.setSynthRoute("proxy")
+                    }
                 }
+                if vm.synthRoute == "proxy" {
+                    Text("到点前抽\(ProxyPool.synthExtractN)条易代理，本机+存活代理并发 submit")
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
+                HStack(spacing: 8) {
+                    ModeChip(title: "可批量", selected: vm.synthAllowBatch) {
+                        vm.setSynthAllowBatch(true)
+                    }
+                    ModeChip(title: "每次1次", selected: !vm.synthAllowBatch) {
+                        vm.setSynthAllowBatch(false)
+                    }
+                }
+                TextField("数量", text: $vm.synthQty).keyboardType(.numberPad).fieldStyle()
+                Text(
+                    vm.synthRoute == "proxy"
+                        ? "提前 0.8s · 不限时(手动停) · 本机+易代理并发"
+                        : "提前 0.8s · 不限时(手动停) · 本机直连 sail-api"
+                ).font(.caption2).foregroundStyle(.secondary)
                 StopStartButton(
                     running: runner.isRunning(.synth),
-                    startTitle: "开始抢合（本地 · \(vm.synthQty)×\(vm.workers)线程）",
+                    startTitle: {
+                        let batch = vm.synthAllowBatch ? "批量" : "每次1"
+                        let route = vm.synthRoute == "proxy" ? "本机+易代理" : "纯本地"
+                        return "开始抢合（\(route) · 数量\(vm.synthQty) · \(batch)）"
+                    }(),
                     stopTitle: "停止抢合",
                     enabled: vm.synthQuota.unlimited || vm.synthQuota.remaining > 0,
                     onStart: { vm.startSynth() },

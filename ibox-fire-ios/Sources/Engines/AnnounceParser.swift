@@ -26,6 +26,49 @@ enum AnnounceParser {
         return s.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// 从公告 HTML 市场链接提取 name→gid（对齐 Android extractMarketGidMap）。
+    static func extractMarketGidMap(contentHtml: String) -> [String: Int64] {
+        var out: [String: Int64] = [:]
+        let aRe = try? NSRegularExpression(
+            pattern: #"href=["']([^"']*activity-market/market/(\d+)[^"']*)["'][^>]*>(.*?)</a>"#,
+            options: [.caseInsensitive, .dotMatchesLineSeparators]
+        )
+        let nameRe = try? NSRegularExpression(pattern: "《([^》]+)》", options: [])
+        let ns = contentHtml as NSString
+        let full = NSRange(location: 0, length: ns.length)
+        guard let aRe else { return out }
+        for m in aRe.matches(in: contentHtml, range: full) {
+            guard m.numberOfRanges >= 4,
+                  let gidR = Range(m.range(at: 2), in: contentHtml),
+                  let innerR = Range(m.range(at: 3), in: contentHtml),
+                  let gid = Int64(contentHtml[gidR]), gid > 0 else { continue }
+            let inner = String(contentHtml[innerR])
+            var names: [String] = []
+            nameRe?.matches(in: inner, range: NSRange(inner.startIndex..., in: inner)).forEach { nm in
+                if let r = Range(nm.range(at: 1), in: inner) {
+                    let n = String(inner[r]).trimmingCharacters(in: .whitespaces)
+                    if !n.isEmpty { names.append(n) }
+                }
+            }
+            if names.isEmpty {
+                let plain = stripHtml(inner).trimmingCharacters(in: .whitespacesAndNewlines)
+                nameRe?.matches(in: plain, range: NSRange(plain.startIndex..., in: plain)).forEach { nm in
+                    if let r = Range(nm.range(at: 1), in: plain) {
+                        let n = String(plain[r]).trimmingCharacters(in: .whitespaces)
+                        if !n.isEmpty { names.append(n) }
+                    }
+                }
+                if names.isEmpty, !plain.isEmpty, !plain.contains("《"), plain.count <= 40 {
+                    names = [plain]
+                }
+            }
+            for n in names where out[n] == nil {
+                out[n] = gid
+            }
+        }
+        return out
+    }
+
     static func extractLockTargets(title: String, contentHtml: String) -> LockTargets {
         var plain = stripHtml(contentHtml)
         if !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
