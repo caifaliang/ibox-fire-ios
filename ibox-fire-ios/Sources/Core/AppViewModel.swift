@@ -323,7 +323,10 @@ final class AppViewModel: ObservableObject {
         }
         let savedProxy = prefs.string(forKey: kProxy)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         proxyExtractUrl = ProxyPool.effectiveExtractUrl(savedProxy)
-        if savedProxy.isEmpty { prefs.set(proxyExtractUrl, forKey: kProxy) }
+        // 空或旧订单 → 写入新默认，避免一直打已耗尽的易代理单
+        if savedProxy.isEmpty || savedProxy != proxyExtractUrl {
+            prefs.set(proxyExtractUrl, forKey: kProxy)
+        }
         if let t = prefs.string(forKey: kSite), !t.isEmpty {
             Task { await restoreSite(t) }
         }
@@ -492,7 +495,7 @@ final class AppViewModel: ObservableObject {
 
     func saveProxyExtractUrl() {
         let t = proxyExtractUrl.trimmingCharacters(in: .whitespacesAndNewlines)
-        proxyExtractUrl = t.isEmpty ? ProxyPool.defaultExtractURL : t
+        proxyExtractUrl = ProxyPool.effectiveExtractUrl(t)
         prefs.set(proxyExtractUrl, forKey: kProxy)
     }
 
@@ -1695,7 +1698,12 @@ final class AppViewModel: ObservableObject {
             }
             let fireAt = todayFireAtEpochSec(h: fireH, m: fireM, s: fireS)
             let batchHint = (allowBatch && proxies.isEmpty) ? "可批量" : "每次1"
-            let modeHint = proxies.isEmpty ? "纯本地" : "本机+易代理×\(proxies.count)"
+            let modeHint: String = {
+                if proxies.isEmpty {
+                    return useProxy ? "代理0·降级纯本地" : "纯本地"
+                }
+                return "本机+易代理×\(proxies.count)"
+            }()
             appendLog("启动\(modeHint) 抢合 ID=\(sid) · \(batchHint) · 提前0.8s", mode: .synth)
             busyMsg = proxies.isEmpty ? "本机直连开火中" : "本机+易代理开火中"
             let cfg = FireConfig(

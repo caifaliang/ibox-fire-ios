@@ -6,10 +6,14 @@ enum ProxyPool {
     static let minAlive = 12
     /** 抢合抽代理默认条数（Android SYNTH_EXTRACT_N）；存活为 0 也可纯本机 */
     static let synthExtractN = 10
+    /** APP 默认易代理订单（与 Android DEFAULT_EXTRACT_URL 一致） */
     static let defaultExtractURL =
         "http://api3.ydaili.cn/tools/MeasureApi.ashx?action=EAPI" +
-        "&secret=65FD05455A5E3E7E1EFDAEDCA23C835F04472EAEA0853CE6" +
-        "&number=30&orderId=SH20260814213448412&format=txt&type=1&split=3"
+        "&secret=2F21B68F8C7AE20EBDF57ADC90CD07F857D73FA8F2FD2C79" +
+        "&number=10&orderId=SH20260819103610448&format=txt&type=1&split=3"
+
+    private static let legacyOrder = "SH20260814213448412"
+    private static let legacySecret = "65FD05455A5E3E7E1EFDAEDCA23C835F04472EAEA0853CE6"
 
     struct AliveResult {
         let proxies: [String]
@@ -19,7 +23,10 @@ enum ProxyPool {
 
     static func effectiveExtractUrl(_ custom: String) -> String {
         let t = custom.trimmingCharacters(in: .whitespacesAndNewlines)
-        return t.isEmpty ? defaultExtractURL : t
+        if t.isEmpty { return defaultExtractURL }
+        // 旧默认订单已耗尽，启动时自动迁移（对齐 Android）
+        if t.contains(legacyOrder) || t.contains(legacySecret) { return defaultExtractURL }
+        return t
     }
 
     static func bumpExtractCount(_ apiUrl: String, want: Int = extractN) -> String {
@@ -34,6 +41,17 @@ enum ProxyPool {
         }
         let sep = apiUrl.contains("?") ? "&" : "?"
         return "\(apiUrl)\(sep)number=\(want)"
+    }
+
+    /** 从易代理错误文案解析剩余可提取数量，如「剩余数量为：2」 */
+    static func parseRemainingQuota(_ text: String) -> Int? {
+        guard let re = try? NSRegularExpression(pattern: #"剩余数量为[：:]\s*(\d+)"#, options: []) else { return nil }
+        let ns = text as NSString
+        guard let m = re.firstMatch(in: text, range: NSRange(location: 0, length: ns.length)),
+              m.numberOfRanges >= 2,
+              let r = Range(m.range(at: 1), in: text),
+              let n = Int(text[r]), n > 0 else { return nil }
+        return n
     }
 
     static func normalizeProxyUrl(_ raw: String) -> String {
@@ -81,16 +99,7 @@ enum ProxyPool {
         return ProxyEndpoint(host: String(hp[0]), port: port, user: user, pass: pass)
     }
 
-    static func fetchYdaili(_ apiUrl: String) async throws -> [String] {
-        let urlStr = bumpExtractCount(apiUrl.trimmingCharacters(in: .whitespacesAndNewlines))
-        guard let url = URL(string: urlStr) else { throw NSError(domain: "Proxy", code: 1) }
-        var req = URLRequest(url: url, timeoutInterval: 20)
-        req.httpMethod = "GET"
-        let (data, _) = try await URLSession.shared.data(for: req)
-        let text = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        if text.hasPrefix("<") || (text.contains("\"code\"") && text.contains("{")) {
-            throw NSError(domain: "Proxy", code: 2, userInfo: [NSLocalizedDescriptionKey: "易代理返回异常: \(text.prefix(80))"])
-        }
+    private static func parseProxyLines(_ text: String, cap: Int) -> [String] {
         var seen = Set<String>()
         var out: [String] = []
         for line in text.split(whereSeparator: \.isNewline) {
@@ -104,11 +113,49 @@ enum ProxyPool {
             let px = normalizeProxyUrl(l.hasPrefix("http") || l.hasPrefix("socks") ? l : "http://\(l)")
             if seen.insert(px).inserted {
                 out.append(px)
-                if out.count >= extractN { break }
+                if out.count >= cap { break }
             }
         }
-        if out.isEmpty { throw NSError(domain: "Proxy", code: 3, userInfo: [NSLocalizedDescriptionKey: "易代理未返回可用代理"]) }
         return out
+    }
+
+    private static func isYdailiErrorBody(_ text: String) -> Bool {
+        if text.hasPrefix("<") { return true }
+        guard text.hasPrefix("{") else { return false }
+        return text.contains("\"status\"") || text.contains("\"code\"") || text.contains("\"info\"")
+    }
+
+    /** 对齐 Android：按 want 抽取；余额不足时按「剩余数量」降级再抽一次 */
+    static func fetchYdaili(_ apiUrl: String, want: Int = extractN) async throws -> [String] {
+        var cap = max(1, want)
+        let trimmed = apiUrl.trimmingCharacters(in: .whitespacesAndNewlines)
+        for attempt in 0..<2 {
+            let urlStr = bumpExtractCount(trimmed, want: cap)
+            guard let url = URL(string: urlStr) else {
+                throw NSError(domain: "Proxy", code: 1, userInfo: [NSLocalizedDescriptionKey: "易代理 URL 无效"])
+            }
+            var req = URLRequest(url: url, timeoutInterval: 20)
+            req.httpMethod = "GET"
+            let (data, _) = try await URLSession.shared.data(for: req)
+            let text = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if isYdailiErrorBody(text) {
+                if attempt == 0, let left = parseRemainingQuota(text), left < cap {
+                    cap = left
+                    continue
+                }
+                throw NSError(
+                    domain: "Proxy",
+                    code: 2,
+                    userInfo: [NSLocalizedDescriptionKey: "易代理返回异常: \(text.prefix(80))"]
+                )
+            }
+            let list = parseProxyLines(text, cap: cap)
+            if list.isEmpty {
+                throw NSError(domain: "Proxy", code: 3, userInfo: [NSLocalizedDescriptionKey: "易代理未返回可用代理"])
+            }
+            return list
+        }
+        throw NSError(domain: "Proxy", code: 3, userInfo: [NSLocalizedDescriptionKey: "易代理未返回可用代理"])
     }
 
     private static let probeURLs = [
@@ -198,12 +245,11 @@ enum ProxyPool {
         return AliveResult(proxies: alive, detail: "\(detail) → 取\(alive.count)", needMore: alive.isEmpty)
     }
 
-    /** 抢合专用：默认抽 10；存活为 0 也可继续纯本机（对齐 Android extractAliveForSynth） */
+    /** 抢合专用：默认抽 10；余额不足则按剩余数量再抽；存活为 0 也可继续纯本机 */
     static func extractAliveForSynth(_ apiUrl: String, want: Int = synthExtractN) async -> AliveResult {
         let n = max(1, min(fireCap, want))
         do {
-            let bumped = bumpExtractCount(apiUrl, want: n)
-            let raw = try await fetchYdaili(bumped)
+            let raw = try await fetchYdaili(apiUrl, want: n)
             let (alive, detail) = await filterAlive(raw, cap: max(1, raw.count))
             return AliveResult(
                 proxies: alive,
