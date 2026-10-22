@@ -47,7 +47,6 @@ struct SiteLoginScreen: View {
 struct MainShell: View {
     @EnvironmentObject var vm: AppViewModel
     @EnvironmentObject var runner: TaskRunner
-    @State private var showSiteBrowse = false
 
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
@@ -159,15 +158,17 @@ struct MainShell: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
 
-        SiteBrowseFAB { showSiteBrowse = true }
+        SiteBrowseFAB {
+            SiteBrowsePresenter.present(
+                siteToken: vm.siteUser?.token ?? "",
+                userCacheJSON: SiteBrowsePresenter.userCacheJSON(from: vm.siteUser),
+                iboxToken: vm.iboxToken
+            )
+        }
             .padding(.trailing, Space.l)
             .padding(.bottom, Space.xl)
         }
         .appScreenBackground()
-        .fullScreenCover(isPresented: $showSiteBrowse) {
-            SiteBrowseSheet()
-                .environmentObject(vm)
-        }
     }
 
     private func platformBtn(_ p: AppPlatform, _ title: String) -> some View {
