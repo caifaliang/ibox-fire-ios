@@ -6,8 +6,9 @@ struct SiteBrowseSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var reloadToken = 0
     @State private var pageTitle = "iBox 站"
-    @State private var loading = true
-    @State private var canGoBack = false
+    @State private var loading = false
+    /// 延后挂载 WebView，避开 fullScreenCover 动画期同步初始化崩溃
+    @State private var mountWeb = false
 
     private var siteURL: URL {
         URL(string: "https://ai.iboxai.top/")!
@@ -31,47 +32,79 @@ struct SiteBrowseSheet: View {
     }
 
     var body: some View {
-        NavigationStack {
-            ZStack(alignment: .top) {
-                SiteWebView(
-                    url: siteURL,
-                    siteToken: vm.siteUser?.token ?? "",
-                    userCacheJSON: userCacheJSON,
-                    iboxToken: vm.iboxToken,
-                    reloadToken: $reloadToken,
-                    onTitle: { pageTitle = $0.isEmpty ? "iBox 站" : $0 },
-                    onLoading: { loading = $0 }
-                )
-                .ignoresSafeArea(edges: .bottom)
+        VStack(spacing: 0) {
+            HStack(spacing: Space.m) {
+                Button("关闭") {
+                    Haptics.softTap()
+                    dismiss()
+                }
+                .font(Typo.label)
+                .foregroundStyle(Palette.accent)
 
-                if loading {
+                Spacer()
+
+                Text(pageTitle)
+                    .font(Typo.label)
+                    .foregroundStyle(Palette.textPrimary)
+                    .lineLimit(1)
+
+                Spacer()
+
+                Button {
+                    Haptics.softTap()
+                    reloadToken += 1
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .foregroundStyle(Palette.textPrimary)
+                }
+                .disabled(!mountWeb || loading)
+            }
+            .padding(.horizontal, Space.l)
+            .padding(.vertical, Space.m)
+            .background(Palette.surface)
+            .overlay(alignment: .bottom) {
+                Rectangle().fill(Palette.hairline).frame(height: 0.5)
+            }
+
+            ZStack {
+                Palette.bg.ignoresSafeArea()
+                if mountWeb {
+                    SiteWebView(
+                        url: siteURL,
+                        siteToken: vm.siteUser?.token ?? "",
+                        userCacheJSON: userCacheJSON,
+                        iboxToken: vm.iboxToken,
+                        reloadToken: $reloadToken,
+                        onTitle: { t in
+                            DispatchQueue.main.async {
+                                pageTitle = t.isEmpty ? "iBox 站" : t
+                            }
+                        },
+                        onLoading: { on in
+                            DispatchQueue.main.async { loading = on }
+                        }
+                    )
+                } else {
+                    ProgressView("加载中…")
+                        .font(Typo.caption)
+                        .foregroundStyle(Palette.textSecondary)
+                }
+
+                if mountWeb && loading {
                     ProgressView()
                         .padding(Space.s)
-                        .background(.ultraThinMaterial, in: Capsule())
-                        .padding(.top, Space.s)
+                        .background(Palette.surface.opacity(0.92), in: Capsule())
                 }
             }
-            .navigationTitle(pageTitle)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("关闭") {
-                        Haptics.softTap()
-                        dismiss()
-                    }
-                }
-                ToolbarItemGroup(placement: .topBarTrailing) {
-                    Button {
-                        Haptics.softTap()
-                        reloadToken += 1
-                    } label: {
-                        Image(systemName: "arrow.clockwise")
-                    }
-                    .disabled(loading)
-                }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .background(Palette.bg.ignoresSafeArea())
+        .onAppear {
+            // present 完成后再建 WKWebView
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                mountWeb = true
             }
         }
-        .interactiveDismissDisabled(false)
     }
 }
 
