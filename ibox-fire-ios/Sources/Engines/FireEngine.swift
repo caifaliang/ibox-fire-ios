@@ -409,7 +409,8 @@ final class FireEngine: @unchecked Sendable {
                 return .soft
             case NSURLErrorCannotConnectToHost, NSURLErrorCannotFindHost,
                  NSURLErrorDNSLookupFailed, NSURLErrorNotConnectedToInternet,
-                 NSURLErrorProxyConnectionFailure, NSURLErrorSecureConnectionFailed:
+                 NSURLErrorSecureConnectionFailed:
+                // 代理连不上走下方 msg.contains("proxy") 硬挂分支（部分 SDK 无 ProxyConnectionFailure 符号）
                 return .hard
             default:
                 break
