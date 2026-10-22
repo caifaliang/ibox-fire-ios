@@ -38,6 +38,9 @@ struct PrimaryButtonStyle: ButtonStyle {
             .scaleEffect(configuration.isPressed ? 0.98 : 1)
             .opacity(configuration.isPressed ? 0.9 : 1)
             .animation(.easeOut(duration: Motion.feedback), value: configuration.isPressed)
+            .onChange(of: configuration.isPressed) { pressed in
+                if pressed, isEnabled { Haptics.tap() }
+            }
     }
 }
 
@@ -59,6 +62,9 @@ struct SecondaryButtonStyle: ButtonStyle {
             )
             .scaleEffect(configuration.isPressed ? 0.98 : 1)
             .animation(.easeOut(duration: Motion.feedback), value: configuration.isPressed)
+            .onChange(of: configuration.isPressed) { pressed in
+                if pressed, isEnabled { Haptics.softTap() }
+            }
     }
 }
 
@@ -76,6 +82,9 @@ struct DangerButtonStyle: ButtonStyle {
             )
             .scaleEffect(configuration.isPressed ? 0.98 : 1)
             .animation(.easeOut(duration: Motion.feedback), value: configuration.isPressed)
+            .onChange(of: configuration.isPressed) { pressed in
+                if pressed, isEnabled { Haptics.warn() }
+            }
     }
 }
 
@@ -147,7 +156,11 @@ struct StatusChip: View {
                     .strokeBorder(border, lineWidth: selected || kind != .neutral ? 0 : 0.5)
             )
         if let action {
-            Button(action: action) { label }.buttonStyle(.plain)
+            Button {
+                Haptics.selection()
+                action()
+            } label: { label }
+            .buttonStyle(.plain)
         } else {
             label
         }

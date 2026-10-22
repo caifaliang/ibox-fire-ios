@@ -21,6 +21,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
+        Haptics.prepare()
         Task { @MainActor in
             TaskRunner.shared.requestNotificationPermission()
         }

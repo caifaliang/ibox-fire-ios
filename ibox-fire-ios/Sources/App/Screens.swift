@@ -108,6 +108,7 @@ struct MainShell: View {
                     HStack(spacing: Space.xs) {
                         ForEach(FeatureCat.allCases) { cat in
                             Button {
+                                Haptics.selection()
                                 vm.selectFeatureCat(cat)
                             } label: {
                                 Text(cat.label)
@@ -273,7 +274,10 @@ struct ModeChip: View {
     let selected: Bool
     let action: () -> Void
     var body: some View {
-        Button(action: action) {
+        Button {
+            Haptics.selection()
+            action()
+        } label: {
             Text(title)
                 .font(Typo.caption.weight(.semibold))
                 .frame(maxWidth: .infinity)
@@ -331,9 +335,12 @@ struct StopStartButton: View {
             Button(stopTitle, action: onStop)
                 .buttonStyle(DangerButtonStyle())
         } else {
-            Button(startTitle, action: onStart)
-                .buttonStyle(PrimaryButtonStyle())
-                .disabled(!enabled)
+            Button(startTitle) {
+                Haptics.commit()
+                onStart()
+            }
+            .buttonStyle(PrimaryButtonStyle())
+            .disabled(!enabled)
         }
     }
 }

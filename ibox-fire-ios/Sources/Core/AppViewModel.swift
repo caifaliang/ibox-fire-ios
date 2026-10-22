@@ -416,6 +416,8 @@ final class AppViewModel: ObservableObject {
         if key == techMode.logKey && runner.isRunning(techMode.taskKind) {
             logExpanded = true
         }
+        // 成功/失败日志带触觉；引擎成功句也识别（多数仍打 type=info）
+        Haptics.fromLog(msg: msg, type: type)
     }
 
     func clearLogs(_ mode: TechMode? = nil) {
@@ -532,10 +534,12 @@ final class AppViewModel: ObservableObject {
             siteLoggedIn = true
             vipPreviewBanner = !u.isVip && !u.isAdmin
             prefs.set(u.token, forKey: kSite)
+            Haptics.success()
             await syncUserProxyFromSite()
             await refreshAllQuotas(force: true)
         } catch {
             siteError = error.localizedDescription
+            Haptics.error()
         }
     }
 

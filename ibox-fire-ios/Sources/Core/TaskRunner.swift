@@ -40,6 +40,7 @@ final class TaskRunner: ObservableObject {
             setIdleTimerDisabled(false)
             BackgroundKeepAlive.shared.end()
         }
+        Haptics.warn()
         notify(title: "已停止", body: kind.rawValue)
     }
 
@@ -54,6 +55,7 @@ final class TaskRunner: ObservableObject {
         runningKinds.insert(kind.rawValue)
         stops[kind.rawValue] = stop
         setIdleTimerDisabled(true)
+        Haptics.commit()
         if keepAlive {
             BackgroundKeepAlive.shared.begin()
             notify(title: "任务运行中", body: "音频保活已开 · 可锁屏/切后台（自签）")
