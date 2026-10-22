@@ -6,6 +6,8 @@ struct HoldingGroup: Identifiable, Equatable {
     var holdNum: Int
     var consignNum: Int
     var lockCount: Int
+    /// 封面（对齐 Android coverPicUrl / coverUrl / imageUrl）
+    var coverPicUrl: String = ""
     var floorHint: Double = 0
     var unit: Double? = nil
 }
@@ -32,12 +34,19 @@ enum HoldingsBrowse {
             guard id > 0 else { return nil }
             let floor = ["floorPrice", "lowestPrice", "consignmentPrice", "referencePrice", "price"]
                 .compactMap { JSONX.doubleVal(it[$0]) }.first { $0 > 0 } ?? 0
+            let cover = [
+                JSONX.stringVal(it["coverPicUrl"]),
+                JSONX.stringVal(it["coverUrl"]),
+                JSONX.stringVal(it["imageUrl"]),
+                JSONX.stringVal(it["picUrl"]),
+            ].first { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty } ?? ""
             return HoldingGroup(
                 id: id,
                 name: JSONX.stringVal(it["name"]),
                 holdNum: Int(JSONX.int64Val(it["holdNum"]) ?? 0),
                 consignNum: Int(JSONX.int64Val(it["consignmentNum"]) ?? 0),
                 lockCount: Int(JSONX.int64Val(it["lockCount"]) ?? 0),
+                coverPicUrl: cover.trimmingCharacters(in: .whitespacesAndNewlines),
                 floorHint: floor
             )
         }

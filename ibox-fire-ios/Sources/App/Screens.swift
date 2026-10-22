@@ -1732,6 +1732,40 @@ struct DiscoverPushPane: View {
     }
 }
 
+/// 持仓封面缩略图（对齐 Android HoldingsRow AsyncImage）
+private struct HoldingCoverThumb: View {
+    let url: String
+    let name: String
+    private var letter: String {
+        let t = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return t.isEmpty ? "#" : String(t.prefix(1))
+    }
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: Radius.s, style: .continuous)
+                .fill(Palette.surfaceMuted)
+            if let u = URL(string: url), !url.isEmpty {
+                AsyncImage(url: u) { phase in
+                    switch phase {
+                    case .success(let img):
+                        img.resizable().scaledToFill()
+                    case .failure:
+                        Text(letter).font(Typo.label).foregroundStyle(Palette.textMuted)
+                    case .empty:
+                        ProgressView().scaleEffect(0.7)
+                    @unknown default:
+                        Text(letter).font(Typo.label).foregroundStyle(Palette.textMuted)
+                    }
+                }
+            } else {
+                Text(letter).font(Typo.label).foregroundStyle(Palette.textMuted)
+            }
+        }
+        .frame(width: 40, height: 40)
+        .clipShape(RoundedRectangle(cornerRadius: Radius.s, style: .continuous))
+    }
+}
+
 struct HoldingsPane: View {
     @EnvironmentObject var vm: AppViewModel
     var body: some View {
@@ -1755,21 +1789,30 @@ struct HoldingsPane: View {
                 Text(vm.holdingsError).font(.caption).foregroundStyle(.red)
             }
             ForEach(vm.holdingsItems) { g in
-                HStack {
+                HStack(spacing: Space.m) {
+                    HoldingCoverThumb(url: g.coverPicUrl, name: g.name)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(g.name).font(.subheadline).lineLimit(1)
+                        Text(g.name.isEmpty ? "未命名" : g.name)
+                            .font(Typo.label)
+                            .foregroundStyle(Palette.textPrimary)
+                            .lineLimit(1)
                         Text("持有\(g.holdNum) · 寄售\(g.consignNum) · 锁定\(g.lockCount)")
-                            .font(.caption2).foregroundStyle(.secondary)
+                            .font(Typo.caption2)
+                            .foregroundStyle(Palette.textSecondary)
                     }
-                    Spacer()
+                    Spacer(minLength: Space.s)
                     if let u = g.unit {
                         Text(u == u.rounded() ? "¥\(Int(u))" : String(format: "¥%.2f", u))
-                            .font(.caption.bold())
+                            .font(Typo.label.monospacedDigit())
+                            .foregroundStyle(Palette.textPrimary)
                     } else {
-                        Text("…").font(.caption).foregroundStyle(.secondary)
+                        Text("…")
+                            .font(Typo.caption)
+                            .foregroundStyle(Palette.textMuted)
                     }
                 }
-                Divider()
+                .padding(.vertical, Space.xs)
+                Rectangle().fill(Palette.hairline).frame(height: 0.5)
             }
             if vm.holdingsItems.isEmpty && !vm.holdingsLoading {
                 Text("暂无持仓").font(.caption).foregroundStyle(.secondary)
