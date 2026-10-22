@@ -14,19 +14,32 @@ struct RootView: View {
 struct SiteLoginScreen: View {
     @EnvironmentObject var vm: AppViewModel
     var body: some View {
-        VStack(spacing: 16) {
-            Text("iBox Fire").font(.largeTitle.bold())
-            Text("网站会员登录").foregroundStyle(.secondary)
-            TextField("用户名", text: $vm.siteUserName)
-                .textInputAutocapitalization(.never)
-                .fieldStyle()
-            SecureField("密码", text: $vm.sitePassword).fieldStyle()
-            if !vm.siteError.isEmpty { Text(vm.siteError).foregroundStyle(.red).font(.caption) }
-            Button(vm.loginLoading ? "登录中…" : "登录") { Task { await vm.siteLogin() } }
-                .buttonStyle(.borderedProminent).frame(maxWidth: .infinity)
-                .disabled(vm.loginLoading)
+        VStack(spacing: Space.l) {
+            Spacer(minLength: Space.xl)
+            VStack(spacing: Space.s) {
+                Text("iBox Fire")
+                    .font(Typo.title)
+                    .foregroundStyle(Palette.textPrimary)
+                Text("网站会员登录")
+                    .font(Typo.caption)
+                    .foregroundStyle(Palette.textSecondary)
+            }
+            Card {
+                VStack(spacing: Space.m) {
+                    AppTextField(label: "用户名", text: $vm.siteUserName)
+                    AppTextField(label: "密码", text: $vm.sitePassword, isSecure: true, error: vm.siteError)
+                    Button(vm.loginLoading ? "登录中…" : "登录") {
+                        Task { await vm.siteLogin() }
+                    }
+                    .buttonStyle(PrimaryButtonStyle())
+                    .disabled(vm.loginLoading)
+                }
+            }
+            Spacer()
         }
-        .padding(24)
+        .padding(.horizontal, Space.l)
+        .appScreenBackground()
+        .scrollDismissesKeyboard(.interactively)
         .dismissKeyboardOnTap()
     }
 }
@@ -37,83 +50,103 @@ struct MainShell: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
+            HStack(spacing: Space.s) {
                 platformBtn(.ibox, "iBox")
                 platformBtn(.newbee, "NewBee")
                 Spacer()
                 Button { vm.techMode = .profile } label: {
-                    Image(systemName: "person.circle").font(.title2)
+                    Image(systemName: "person.circle")
+                        .font(.system(size: 22, weight: .regular))
+                        .foregroundStyle(Palette.textPrimary)
                 }
             }
-            .padding(.horizontal).padding(.vertical, 8)
+            .padding(.horizontal, Space.l)
+            .padding(.vertical, Space.s)
 
             if vm.vipPreviewBanner {
                 Text("非VIP预览模式：可浏览，开火需开通会员")
-                    .font(.caption).foregroundStyle(.orange)
-                    .frame(maxWidth: .infinity).padding(6)
-                    .background(Color.orange.opacity(0.12))
+                    .font(Typo.caption)
+                    .foregroundStyle(Palette.warning)
+                    .frame(maxWidth: .infinity)
+                    .padding(Space.s)
+                    .background(Palette.warningSoft)
             }
 
             if !runner.runningKinds.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
+                    HStack(spacing: Space.s) {
                         ForEach(runner.runningKinds.sorted(), id: \.self) { k in
-                            HStack(spacing: 4) {
-                                Text(k).font(.caption2.bold())
+                            HStack(spacing: Space.xs) {
+                                StatusChip(title: k, kind: .success)
                                 Button("停") {
                                     if let kind = TaskKind(rawValue: k) { vm.stopTask(kind) }
-                                }.font(.caption2).foregroundStyle(.red)
+                                }
+                                .font(Typo.caption2.weight(.semibold))
+                                .foregroundStyle(Palette.danger)
                             }
-                            .padding(.horizontal, 8).padding(.vertical, 4)
-                            .background(Color.green.opacity(0.15)).clipShape(Capsule())
                         }
                         Button("全部停止") { vm.stopAllTasks() }
-                            .font(.caption2.bold()).foregroundStyle(.red)
-                    }.padding(.horizontal)
-                }.padding(.vertical, 4)
+                            .font(Typo.caption2.weight(.semibold))
+                            .foregroundStyle(Palette.danger)
+                    }
+                    .padding(.horizontal, Space.l)
+                }
+                .padding(.vertical, Space.xs)
             }
 
             if !vm.busyMsg.isEmpty {
                 Text(vm.busyMsg)
-                    .font(.caption.bold()).foregroundStyle(.blue)
-                    .frame(maxWidth: .infinity).padding(.vertical, 6)
-                    .background(Color.blue.opacity(0.08))
+                    .font(Typo.caption.weight(.semibold))
+                    .foregroundStyle(Palette.accent)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, Space.s)
+                    .background(Palette.accentSoft)
             }
 
             if vm.techMode != .profile {
                 if vm.appPlatform == .ibox {
-                    HStack(spacing: 0) {
+                    HStack(spacing: Space.xs) {
                         ForEach(FeatureCat.allCases) { cat in
-                            Button(cat.label) { vm.selectFeatureCat(cat) }
-                                .font(.caption.bold())
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 8)
-                                .background(vm.featureCat == cat ? Color.primary : Color(.systemGray5))
-                                .foregroundStyle(vm.featureCat == cat ? Color(.systemBackground) : .primary)
+                            Button {
+                                vm.selectFeatureCat(cat)
+                            } label: {
+                                Text(cat.label)
+                                    .font(Typo.caption.weight(.semibold))
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, Space.s)
+                                    .foregroundStyle(vm.featureCat == cat ? Palette.onBrand : Palette.textPrimary)
+                                    .background(
+                                        vm.featureCat == cat ? Palette.brand : Palette.surfaceMuted,
+                                        in: RoundedRectangle(cornerRadius: Radius.s, style: .continuous)
+                                    )
+                            }
+                            .buttonStyle(.plain)
                         }
                     }
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                    .padding(.horizontal)
-                    .padding(.bottom, 4)
+                    .padding(.horizontal, Space.l)
+                    .padding(.bottom, Space.xs)
                 }
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
+                    HStack(spacing: Space.s) {
                         ForEach(vm.appPlatform == .ibox ? vm.iboxTabs : vm.nbTabs) { t in
-                            Button(t.label) {
-                                vm.techMode = t
-                                vm.onTechModeChanged(t)
-                            }
-                            .font(.caption.bold())
-                            .padding(.horizontal, 12).padding(.vertical, 8)
-                            .background(vm.techMode == t ? Color.primary : Color(.systemGray5))
-                            .foregroundStyle(vm.techMode == t ? Color(.systemBackground) : .primary)
-                            .clipShape(Capsule())
+                            StatusChip(
+                                title: t.label,
+                                selected: vm.techMode == t,
+                                action: {
+                                    vm.techMode = t
+                                    vm.onTechModeChanged(t)
+                                }
+                            )
                         }
-                    }.padding(.horizontal)
-                }.padding(.bottom, 6)
+                    }
+                    .padding(.horizontal, Space.l)
+                }
+                .padding(.bottom, Space.s)
             }
 
-            Divider()
+            Rectangle()
+                .fill(Palette.hairline)
+                .frame(height: 0.5)
 
             Group {
                 if vm.techMode == .profile { ProfileScreen() }
@@ -122,10 +155,12 @@ struct MainShell: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .appScreenBackground()
     }
 
     private func platformBtn(_ p: AppPlatform, _ title: String) -> some View {
-        Button(title) {
+        let on = vm.appPlatform == p
+        return Button {
             vm.appPlatform = p
             if p == .ibox {
                 vm.featureCat = .tech
@@ -133,41 +168,47 @@ struct MainShell: View {
             } else {
                 vm.techMode = .nb_presale
             }
+        } label: {
+            Text(title)
+                .font(Typo.headline)
+                .foregroundStyle(on ? Palette.textPrimary : Palette.textSecondary)
+                .padding(.horizontal, Space.m)
+                .padding(.vertical, Space.s)
+                .overlay(
+                    RoundedRectangle(cornerRadius: Radius.s, style: .continuous)
+                        .strokeBorder(on ? Palette.brand : Color.clear, lineWidth: 1.5)
+                )
         }
-        .font(.headline)
-        .foregroundStyle(vm.appPlatform == p ? .primary : .secondary)
-        .padding(.horizontal, 10).padding(.vertical, 6)
-        .overlay(RoundedRectangle(cornerRadius: 8).stroke(vm.appPlatform == p ? Color.primary : .clear, lineWidth: 2))
+        .buttonStyle(.plain)
     }
 }
 
 // MARK: - Shared chrome
 
-private extension View {
-    func fieldStyle() -> some View {
-        self.padding(10).background(Color(.systemGray6)).clipShape(RoundedRectangle(cornerRadius: 10))
-    }
-    func dismissKeyboardOnTap() -> some View {
-        self.onTapGesture {
-            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-        }
-    }
+extension View {
+    /// 兼容旧调用；新代码优先用 `appFieldStyle()` / `AppTextField`
+    func fieldStyle() -> some View { appFieldStyle() }
 }
 
 struct QuotaBanner: View {
     let q: QuotaInfo
     let label: String
     var body: some View {
-        HStack {
-            Text(label).font(.caption.bold())
-            Spacer()
-            Text(q.unlimited ? "不限次" : "剩 \(q.remaining)/\(q.limit)")
-                .font(.caption)
-                .foregroundStyle(q.unlimited || q.remaining > 0 ? .green : .red)
-        }
-        .padding(8)
-        .background(Color(.systemGray6))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        KeyValueRow(
+            key: label,
+            value: q.unlimited ? "不限次" : "剩 \(q.remaining)/\(q.limit)",
+            valueColor: (q.unlimited || q.remaining > 0) ? Palette.success : Palette.danger,
+            mono: true
+        )
+        .padding(Space.m)
+        .background(
+            Palette.surfaceMuted,
+            in: RoundedRectangle(cornerRadius: Radius.s, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.s, style: .continuous)
+                .strokeBorder(Palette.hairline, lineWidth: 0.5)
+        )
     }
 }
 
@@ -176,9 +217,9 @@ struct TimeFields: View {
     @Binding var m: Int
     @Binding var s: Int
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("开火时间（北京）").font(.caption.bold())
-            HStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: Space.s) {
+            SectionHeader(title: "开火时间（北京）")
+            HStack(spacing: Space.s) {
                 stepper("时", $h, 0...23)
                 stepper("分", $m, 0...59)
                 stepper("秒", $s, 0...59)
@@ -186,14 +227,23 @@ struct TimeFields: View {
         }
     }
     private func stepper(_ title: String, _ v: Binding<Int>, _ range: ClosedRange<Int>) -> some View {
-        VStack(spacing: 2) {
-            Text(title).font(.caption2).foregroundStyle(.secondary)
-            HStack(spacing: 4) {
+        VStack(spacing: Space.xs) {
+            Text(title).font(Typo.caption2).foregroundStyle(Palette.textSecondary)
+            HStack(spacing: Space.xs) {
                 Button("−") { v.wrappedValue = max(range.lowerBound, v.wrappedValue - 1) }
-                Text(String(format: "%02d", v.wrappedValue)).font(.body.monospacedDigit()).frame(width: 28)
+                    .foregroundStyle(Palette.textPrimary)
+                Text(String(format: "%02d", v.wrappedValue))
+                    .font(Typo.body.monospacedDigit())
+                    .foregroundStyle(Palette.textPrimary)
+                    .frame(width: 28)
                 Button("+") { v.wrappedValue = min(range.upperBound, v.wrappedValue + 1) }
+                    .foregroundStyle(Palette.textPrimary)
             }
-            .padding(6).background(Color(.systemGray6)).clipShape(RoundedRectangle(cornerRadius: 8))
+            .padding(Space.s)
+            .background(
+                Palette.surfaceMuted,
+                in: RoundedRectangle(cornerRadius: Radius.s, style: .continuous)
+            )
         }
         .frame(maxWidth: .infinity)
     }
@@ -209,11 +259,11 @@ struct WorkerPicker: View {
             }
         } label: {
             HStack {
-                Text("并发 \(workers) 线程").font(.subheadline)
+                Text("并发 \(workers) 线程").font(Typo.label).foregroundStyle(Palette.textPrimary)
                 Spacer()
-                Image(systemName: "chevron.up.chevron.down").font(.caption)
+                Image(systemName: "chevron.up.chevron.down").font(Typo.caption).foregroundStyle(Palette.textMuted)
             }
-            .fieldStyle()
+            .appFieldStyle()
         }
     }
 }
@@ -224,12 +274,21 @@ struct ModeChip: View {
     let action: () -> Void
     var body: some View {
         Button(action: action) {
-            Text(title).font(.caption.bold())
-                .frame(maxWidth: .infinity).padding(.vertical, 8)
-                .background(selected ? Color.primary : Color(.systemGray5))
-                .foregroundStyle(selected ? Color(.systemBackground) : .primary)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
+            Text(title)
+                .font(Typo.caption.weight(.semibold))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, Space.s)
+                .foregroundStyle(selected ? Palette.onBrand : Palette.textPrimary)
+                .background(
+                    selected ? Palette.brand : Palette.surfaceMuted,
+                    in: RoundedRectangle(cornerRadius: Radius.s, style: .continuous)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: Radius.s, style: .continuous)
+                        .strokeBorder(selected ? Color.clear : Palette.hairline, lineWidth: 0.5)
+                )
         }
+        .buttonStyle(.plain)
     }
 }
 
@@ -240,13 +299,23 @@ struct PickedBar: View {
     var body: some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.subheadline.bold()).lineLimit(1)
-                Text(subtitle).font(.caption2).foregroundStyle(.secondary)
+                Text(title).font(Typo.label).foregroundStyle(Palette.textPrimary).lineLimit(1)
+                Text(subtitle).font(Typo.caption2).foregroundStyle(Palette.textSecondary)
             }
             Spacer()
-            Button("重选", action: onClear).font(.caption)
+            Button("重选", action: onClear)
+                .font(Typo.caption)
+                .foregroundStyle(Palette.accent)
         }
-        .padding(10).background(Color(.systemGray6)).clipShape(RoundedRectangle(cornerRadius: 10))
+        .padding(Space.m)
+        .background(
+            Palette.surfaceMuted,
+            in: RoundedRectangle(cornerRadius: Radius.m, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.m, style: .continuous)
+                .strokeBorder(Palette.hairline, lineWidth: 0.5)
+        )
     }
 }
 
@@ -260,10 +329,10 @@ struct StopStartButton: View {
     var body: some View {
         if running {
             Button(stopTitle, action: onStop)
-                .buttonStyle(.borderedProminent).tint(.red).frame(maxWidth: .infinity)
+                .buttonStyle(DangerButtonStyle())
         } else {
             Button(startTitle, action: onStart)
-                .buttonStyle(.borderedProminent).frame(maxWidth: .infinity)
+                .buttonStyle(PrimaryButtonStyle())
                 .disabled(!enabled)
         }
     }
@@ -359,27 +428,38 @@ struct IboxLoginCard: View {
     @EnvironmentObject var vm: AppViewModel
     @State private var showToken = false
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("登录 iBox（开火账号）").font(.headline)
-            TextField("手机号", text: $vm.iboxPhone).keyboardType(.phonePad).fieldStyle()
-            TextField("验证码", text: $vm.iboxCode).keyboardType(.numberPad).fieldStyle()
-            Button(vm.smsLoading ? "发送中…" : "获取验证码") { vm.sendSms() }
-                .buttonStyle(.bordered).disabled(vm.smsLoading)
-            if vm.smsSent { Text("验证码已发送").font(.caption).foregroundStyle(.green) }
-            if !vm.iboxLoginError.isEmpty { Text(vm.iboxLoginError).font(.caption).foregroundStyle(.red) }
-            Button(vm.loginLoading ? "登录中…" : "登录 iBox") { vm.loginSms() }
-                .buttonStyle(.borderedProminent).disabled(vm.loginLoading)
-            Button(showToken ? "收起 Token" : "Token 登录") { showToken.toggle() }.font(.caption)
-            if showToken {
-                TextEditor(text: $vm.iboxTokenInput).frame(minHeight: 80)
-                    .padding(6).background(Color(.systemGray6)).clipShape(RoundedRectangle(cornerRadius: 10))
-                Button("验证 Token") { vm.loginToken() }.buttonStyle(.bordered)
+        Card {
+            VStack(alignment: .leading, spacing: Space.m) {
+                SectionHeader(title: "登录 iBox", subtitle: "开火账号")
+                AppTextField(label: "手机号", text: $vm.iboxPhone, keyboard: .phonePad)
+                AppTextField(label: "验证码", text: $vm.iboxCode, keyboard: .numberPad, error: vm.iboxLoginError)
+                Button(vm.smsLoading ? "发送中…" : "获取验证码") { vm.sendSms() }
+                    .buttonStyle(SecondaryButtonStyle())
+                    .disabled(vm.smsLoading)
+                if vm.smsSent {
+                    Text("验证码已发送")
+                        .font(Typo.caption)
+                        .foregroundStyle(Palette.success)
+                }
+                Button(vm.loginLoading ? "登录中…" : "登录 iBox") { vm.loginSms() }
+                    .buttonStyle(PrimaryButtonStyle())
+                    .disabled(vm.loginLoading)
+                Button(showToken ? "收起 Token" : "Token 登录") { showToken.toggle() }
+                    .font(Typo.caption)
+                    .foregroundStyle(Palette.accent)
+                if showToken {
+                    TextEditor(text: $vm.iboxTokenInput)
+                        .frame(minHeight: 80)
+                        .padding(Space.s)
+                        .background(
+                            Palette.surfaceMuted,
+                            in: RoundedRectangle(cornerRadius: Radius.m, style: .continuous)
+                        )
+                    Button("验证 Token") { vm.loginToken() }
+                        .buttonStyle(SecondaryButtonStyle())
+                }
             }
         }
-        .padding()
-        .background(Color(.systemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color(.systemGray4)))
     }
 }
 
@@ -497,10 +577,12 @@ struct ModePane: View {
                     default: EmptyView()
                     }
                 }
-                .padding()
-                .padding(.bottom, 24)
+                .padding(.horizontal, Space.l)
+                .padding(.vertical, Space.m)
+                .padding(.bottom, Space.xl)
             }
             .scrollDismissesKeyboard(.interactively)
+            .background(Palette.bg)
             ModeLogPanel()
         }
         .dismissKeyboardOnTap()
@@ -550,110 +632,163 @@ struct SynthPane: View {
     @EnvironmentObject var runner: TaskRunner
     @State private var listExpanded = true
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: Space.m) {
             QuotaBanner(q: vm.synthQuota, label: "抢合")
-            Text("本地开火 · 抢合/抢购已内置易代理").font(.caption).foregroundStyle(.secondary)
+            Text("本地开火 · 抢合/抢购已内置易代理")
+                .font(Typo.caption)
+                .foregroundStyle(Palette.textSecondary)
+
             if !vm.iboxLoggedIn {
                 IboxLoginCard()
             } else {
-
-            if let sel = vm.selectedActivity, !listExpanded {
-                PickedBar(title: sel.name, subtitle: "#\(sel.id) · \(sel.startTime)", onClear: {
-                    vm.clearSynthSelection(); listExpanded = true
-                })
-            } else {
-                HStack {
-                    TextField("搜索活动", text: $vm.activitySearch).fieldStyle()
-                    Button { Task { await vm.refreshActivities(vm.activitySearch) } } label: {
-                        Image(systemName: "arrow.clockwise")
-                    }
-                }
-                Text("\(vm.activities.count) 条活动 · 选择后列表收起").font(.caption2).foregroundStyle(.secondary)
-                ForEach(vm.activities) { a in
-                    Button {
-                        vm.selectActivity(a); listExpanded = false
-                    } label: {
-                        VStack(alignment: .leading) {
-                            Text(a.name).font(.subheadline)
-                            Text("#\(a.id) · \(a.startTime)").font(.caption2).foregroundStyle(.secondary)
-                        }.frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    Divider()
-                }
-            }
-
-            if vm.selectedActivity != nil {
-                if !vm.busyMsg.isEmpty { Text(vm.busyMsg).font(.caption).foregroundStyle(.blue) }
-                if !vm.channels.isEmpty {
-                    Text("通道").font(.caption.bold())
-                    ForEach(vm.channels) { ch in
-                        Button {
-                            vm.selectChannel(ch.id)
-                        } label: {
-                            HStack {
-                                Text(ch.name.isEmpty ? "通道 \(ch.id)" : ch.name).font(.caption)
-                                Spacer()
-                                if vm.channelId == ch.id { Image(systemName: "checkmark.circle.fill") }
+                Card(padding: Space.m) {
+                    VStack(alignment: .leading, spacing: Space.m) {
+                        if let sel = vm.selectedActivity, !listExpanded {
+                            PickedBar(title: sel.name, subtitle: "#\(sel.id) · \(sel.startTime)", onClear: {
+                                vm.clearSynthSelection(); listExpanded = true
+                            })
+                        } else {
+                            SectionHeader(title: "选择活动", subtitle: "\(vm.activities.count) 条 · 点选后收起")
+                            HStack(spacing: Space.s) {
+                                TextField("搜索活动", text: $vm.activitySearch)
+                                    .appFieldStyle()
+                                Button {
+                                    Task { await vm.refreshActivities(vm.activitySearch) }
+                                } label: {
+                                    Image(systemName: "arrow.clockwise")
+                                        .foregroundStyle(Palette.accent)
+                                        .frame(width: 44, height: 44)
+                                        .background(
+                                            Palette.accentSoft,
+                                            in: RoundedRectangle(cornerRadius: Radius.m, style: .continuous)
+                                        )
+                                }
+                                .buttonStyle(.plain)
                             }
-                            .padding(8)
-                            .background(vm.channelId == ch.id ? Color.primary.opacity(0.12) : Color(.systemGray6))
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                            if vm.activities.isEmpty {
+                                EmptyState(title: "暂无活动", detail: "下拉刷新或换个关键词", systemImage: "calendar")
+                            } else {
+                                ForEach(vm.activities) { a in
+                                    Button {
+                                        vm.selectActivity(a); listExpanded = false
+                                    } label: {
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(a.name).font(Typo.label).foregroundStyle(Palette.textPrimary)
+                                            Text("#\(a.id) · \(a.startTime)")
+                                                .font(Typo.caption2)
+                                                .foregroundStyle(Palette.textSecondary)
+                                        }
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .padding(.vertical, Space.s)
+                                    }
+                                    .buttonStyle(.plain)
+                                    if a.id != vm.activities.last?.id {
+                                        Rectangle().fill(Palette.hairline).frame(height: 0.5)
+                                    }
+                                }
+                            }
                         }
-                        .buttonStyle(.plain)
                     }
                 }
-                if !vm.materials.isEmpty {
-                    Text("材料").font(.caption.bold())
-                    ForEach(vm.materials, id: \.albumId) { m in
-                        Toggle("\(m.name) (\(m.albumId))", isOn: Binding(
-                            get: { vm.checkedAlbums.contains(m.albumId) },
-                            set: { on in
-                                if on { vm.checkedAlbums.insert(m.albumId) } else { vm.checkedAlbums.remove(m.albumId) }
+
+                if vm.selectedActivity != nil {
+                    Card(padding: Space.m) {
+                        VStack(alignment: .leading, spacing: Space.m) {
+                            if !vm.busyMsg.isEmpty {
+                                Text(vm.busyMsg)
+                                    .font(Typo.caption)
+                                    .foregroundStyle(Palette.accent)
                             }
-                        )).font(.caption)
+                            if !vm.channels.isEmpty {
+                                SectionHeader(title: "通道")
+                                ForEach(vm.channels) { ch in
+                                    Button {
+                                        vm.selectChannel(ch.id)
+                                    } label: {
+                                        HStack {
+                                            Text(ch.name.isEmpty ? "通道 \(ch.id)" : ch.name)
+                                                .font(Typo.caption)
+                                                .foregroundStyle(Palette.textPrimary)
+                                            Spacer()
+                                            if vm.channelId == ch.id {
+                                                Image(systemName: "checkmark.circle.fill")
+                                                    .foregroundStyle(Palette.accent)
+                                            }
+                                        }
+                                        .padding(Space.s)
+                                        .background(
+                                            vm.channelId == ch.id ? Palette.accentSoft : Palette.surfaceMuted,
+                                            in: RoundedRectangle(cornerRadius: Radius.s, style: .continuous)
+                                        )
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                            if !vm.materials.isEmpty {
+                                SectionHeader(title: "材料")
+                                ForEach(vm.materials, id: \.albumId) { m in
+                                    Toggle("\(m.name) (\(m.albumId))", isOn: Binding(
+                                        get: { vm.checkedAlbums.contains(m.albumId) },
+                                        set: { on in
+                                            if on { vm.checkedAlbums.insert(m.albumId) }
+                                            else { vm.checkedAlbums.remove(m.albumId) }
+                                        }
+                                    ))
+                                    .font(Typo.caption)
+                                    .tint(Palette.accent)
+                                }
+                            }
+                            TimeFields(h: $vm.fireH, m: $vm.fireM, s: $vm.fireS)
+                            SectionHeader(title: "模式")
+                            HStack(spacing: Space.s) {
+                                ModeChip(title: "纯本地", selected: vm.synthRoute == "direct") {
+                                    vm.setSynthRoute("direct")
+                                }
+                                ModeChip(title: "本地+易代理", selected: vm.synthRoute == "proxy") {
+                                    vm.setSynthRoute("proxy")
+                                }
+                            }
+                            if vm.synthRoute == "proxy" {
+                                Text("到点前抽\(ProxyPool.synthExtractN)条易代理，本机+存活代理并发 submit")
+                                    .font(Typo.caption2)
+                                    .foregroundStyle(Palette.textSecondary)
+                            }
+                            HStack(spacing: Space.s) {
+                                ModeChip(title: "可批量", selected: vm.synthAllowBatch) {
+                                    vm.setSynthAllowBatch(true)
+                                }
+                                ModeChip(title: "每次1次", selected: !vm.synthAllowBatch) {
+                                    vm.setSynthAllowBatch(false)
+                                }
+                            }
+                            AppTextField(
+                                label: "数量",
+                                text: $vm.synthQty,
+                                keyboard: .numberPad
+                            )
+                            Text(
+                                vm.synthRoute == "proxy"
+                                    ? "提前 0.8s · 不限时(手动停) · 本机+易代理并发"
+                                    : "提前 0.8s · 不限时(手动停) · 本机直连 sail-api"
+                            )
+                            .font(Typo.caption2)
+                            .foregroundStyle(Palette.textSecondary)
+                        }
                     }
+
+                    StopStartButton(
+                        running: runner.isRunning(.synth),
+                        startTitle: {
+                            let batch = vm.synthAllowBatch ? "批量" : "每次1"
+                            let route = vm.synthRoute == "proxy" ? "本机+易代理" : "纯本地"
+                            return "开始抢合（\(route) · 数量\(vm.synthQty) · \(batch)）"
+                        }(),
+                        stopTitle: "停止抢合",
+                        enabled: vm.synthQuota.unlimited || vm.synthQuota.remaining > 0,
+                        onStart: { vm.startSynth() },
+                        onStop: { runner.stop(.synth) }
+                    )
                 }
-                TimeFields(h: $vm.fireH, m: $vm.fireM, s: $vm.fireS)
-                Text("模式").font(.caption.bold())
-                HStack(spacing: 8) {
-                    ModeChip(title: "纯本地", selected: vm.synthRoute == "direct") {
-                        vm.setSynthRoute("direct")
-                    }
-                    ModeChip(title: "本地+易代理", selected: vm.synthRoute == "proxy") {
-                        vm.setSynthRoute("proxy")
-                    }
-                }
-                if vm.synthRoute == "proxy" {
-                    Text("到点前抽\(ProxyPool.synthExtractN)条易代理，本机+存活代理并发 submit")
-                        .font(.caption2).foregroundStyle(.secondary)
-                }
-                HStack(spacing: 8) {
-                    ModeChip(title: "可批量", selected: vm.synthAllowBatch) {
-                        vm.setSynthAllowBatch(true)
-                    }
-                    ModeChip(title: "每次1次", selected: !vm.synthAllowBatch) {
-                        vm.setSynthAllowBatch(false)
-                    }
-                }
-                TextField("数量", text: $vm.synthQty).keyboardType(.numberPad).fieldStyle()
-                Text(
-                    vm.synthRoute == "proxy"
-                        ? "提前 0.8s · 不限时(手动停) · 本机+易代理并发"
-                        : "提前 0.8s · 不限时(手动停) · 本机直连 sail-api"
-                ).font(.caption2).foregroundStyle(.secondary)
-                StopStartButton(
-                    running: runner.isRunning(.synth),
-                    startTitle: {
-                        let batch = vm.synthAllowBatch ? "批量" : "每次1"
-                        let route = vm.synthRoute == "proxy" ? "本机+易代理" : "纯本地"
-                        return "开始抢合（\(route) · 数量\(vm.synthQty) · \(batch)）"
-                    }(),
-                    stopTitle: "停止抢合",
-                    enabled: vm.synthQuota.unlimited || vm.synthQuota.remaining > 0,
-                    onStart: { vm.startSynth() },
-                    onStop: { runner.stop(.synth) }
-                )
-            }
             }
         }
         .onAppear { if vm.activities.isEmpty { Task { await vm.refreshActivities("") } } }
