@@ -64,6 +64,8 @@ enum Haptics {
         default:
             // 引擎多数仍用 info，靠关键字识别关键成功
             if msg.contains("锁定OK") || msg.contains("批量锁定OK")
+                || msg.contains("下单成功") || msg.contains("卖出成功")
+                || msg.contains("批购成功") || msg.contains("confirm OK")
                 || msg.contains("抢满") || msg.contains("支付成功") {
                 key = "success"
             }

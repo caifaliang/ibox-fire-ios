@@ -552,6 +552,19 @@ struct ProfileScreen: View {
                     .font(.caption)
                 Button("保存代理链接") { vm.saveProxyExtractUrl() }
             }
+            Section("成功通知") {
+                Toggle(isOn: Binding(
+                    get: { vm.successNotifyEnabled },
+                    set: { vm.successNotifyEnabled = $0 }
+                )) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("系统通知栏提醒")
+                        Text("公告锁/捡漏/抢合抢购/卖求购成功时弹出")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
             Section("后台保活（自签）") {
                 KeepAliveStatusBlock()
             }

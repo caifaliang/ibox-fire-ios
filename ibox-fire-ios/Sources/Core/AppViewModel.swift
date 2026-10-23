@@ -407,7 +407,8 @@ final class AppViewModel: ObservableObject {
     }
 
     func appendLog(_ msg: String, type: String = "info", mode: TechMode? = nil) {
-        let key = (mode ?? techMode).logKey
+        let m = mode ?? techMode
+        let key = m.logKey
         var list = modeLogs[key] ?? []
         list.insert(LogLine(time: bjTimeString(), msg: msg, type: type), at: 0)
         if list.count > 300 { list = Array(list.prefix(300)) }
@@ -417,6 +418,16 @@ final class AppViewModel: ObservableObject {
         }
         // 成功/失败日志带触觉；引擎成功句也识别（多数仍打 type=info）
         Haptics.fromLog(msg: msg, type: type)
+        // 通知栏成功弹窗（对齐 Android SuccessNotifier）
+        SuccessNotifier.onLog(kind: m.rawValue, msg: msg)
+    }
+
+    var successNotifyEnabled: Bool {
+        get { SuccessNotifier.enabled }
+        set {
+            SuccessNotifier.enabled = newValue
+            objectWillChange.send()
+        }
     }
 
     func clearLogs(_ mode: TechMode? = nil) {
