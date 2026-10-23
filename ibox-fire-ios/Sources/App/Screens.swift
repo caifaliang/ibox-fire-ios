@@ -54,6 +54,7 @@ struct MainShell: View {
             HStack(spacing: Space.s) {
                 platformBtn(.ibox, "iBox")
                 platformBtn(.newbee, "NewBee")
+                platformBtn(.topstar, "矩星")
                 Spacer()
                 Button { vm.techMode = .profile } label: {
                     Image(systemName: "person.circle")
@@ -130,7 +131,7 @@ struct MainShell: View {
                 }
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: Space.s) {
-                        ForEach(vm.appPlatform == .ibox ? vm.iboxTabs : vm.nbTabs) { t in
+                        ForEach(platformTabs) { t in
                             StatusChip(
                                 title: t.label,
                                 selected: vm.techMode == t,
@@ -153,6 +154,7 @@ struct MainShell: View {
             Group {
                 if vm.techMode == .profile { ProfileScreen() }
                 else if vm.appPlatform == .newbee && !vm.nbLoggedIn { NbLoginScreen() }
+                else if vm.appPlatform == .topstar && !vm.tsLoggedIn { TsLoginScreen() }
                 else { ModePane() }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -171,15 +173,26 @@ struct MainShell: View {
         .appScreenBackground()
     }
 
+    private var platformTabs: [TechMode] {
+        switch vm.appPlatform {
+        case .ibox: return vm.iboxTabs
+        case .newbee: return vm.nbTabs
+        case .topstar: return vm.tsTabs
+        }
+    }
+
     private func platformBtn(_ p: AppPlatform, _ title: String) -> some View {
         let on = vm.appPlatform == p
         return Button {
             vm.appPlatform = p
-            if p == .ibox {
+            switch p {
+            case .ibox:
                 vm.featureCat = .tech
                 vm.techMode = .seg_snipe
-            } else {
+            case .newbee:
                 vm.techMode = .nb_presale
+            case .topstar:
+                vm.techMode = .ts_market
             }
         } label: {
             Text(title)
@@ -502,6 +515,29 @@ struct NbLoginScreen: View {
     }
 }
 
+struct TsLoginScreen: View {
+    @EnvironmentObject var vm: AppViewModel
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("矩星登录").font(.title2.bold())
+                Text("直连 api.topstar.art · 账号密码登录").font(.caption).foregroundStyle(.secondary)
+                TextField("账号/手机号", text: $vm.tsAccount).keyboardType(.phonePad).fieldStyle()
+                SecureField("密码", text: $vm.tsPassword).fieldStyle()
+                Button(vm.tsLoginLoading ? "登录中…" : "登录") { vm.tsPasswordLogin() }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(vm.tsLoginLoading)
+                Text("或粘贴 Token").font(.caption)
+                TextEditor(text: $vm.tsTokenInput).frame(minHeight: 80)
+                    .padding(8).background(Color(.systemGray6)).clipShape(RoundedRectangle(cornerRadius: 10))
+                Button("保存 Token") { vm.saveTsToken() }
+                if !vm.tsError.isEmpty { Text(vm.tsError).foregroundStyle(.red).font(.caption) }
+            }.padding()
+        }
+        .dismissKeyboardOnTap()
+    }
+}
+
 private struct KeepAliveStatusBlock: View {
     @ObservedObject private var ka = BackgroundKeepAlive.shared
     var body: some View {
@@ -541,6 +577,15 @@ struct ProfileScreen: View {
                 if vm.nbLoggedIn {
                     Button("复制 Token") { UIPasteboard.general.string = vm.nbToken }
                     Button("退出 NewBee", role: .destructive) { vm.clearNb() }
+                }
+            }
+            Section("矩星") {
+                Text(vm.tsLoggedIn
+                     ? (vm.tsNickname.isEmpty ? (vm.tsAccount.isEmpty ? "已登录" : vm.tsAccount) : vm.tsNickname)
+                     : "未登录")
+                if vm.tsLoggedIn {
+                    Button("复制 Token") { UIPasteboard.general.string = vm.tsToken }
+                    Button("退出矩星", role: .destructive) { vm.clearTs() }
                 }
             }
             Section("易代理 API") {
@@ -606,6 +651,8 @@ struct ModePane: View {
                     case .discover_push: DiscoverPushPane()
                     case .nb_presale: NbPresalePane()
                     case .nb_snipe: NbSnipePane()
+                    case .ts_market: TsMarketPane()
+                    case .ts_snipe: TsSnipePane()
                     default: EmptyView()
                     }
                 }
@@ -1429,6 +1476,103 @@ struct NbSnipePane: View {
         case "fast": return "快捷：地板达标后 fastBuy，间隔 1s"
         case "batch": return "批量：batchBuy（汇付140），间隔 2s"
         default: return "交叉：批量→快捷→快捷→批量…，间隔 1s"
+        }
+    }
+}
+
+struct TsMarketPane: View {
+    @EnvironmentObject var vm: AppViewModel
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("搜索市场 · 点选可带入捡漏").font(.caption).foregroundStyle(.secondary)
+            TextField("搜索商品 / GID", text: Binding(
+                get: { vm.tsMarketSearch },
+                set: { vm.searchTsMarket($0, forSnipe: false) }
+            )).fieldStyle()
+            if vm.tsMarketHits.isEmpty {
+                Text(vm.tsMarketSearch.isEmpty ? "输入关键词搜索" : "无匹配").font(.caption).foregroundStyle(.secondary)
+            } else {
+                ForEach(vm.tsMarketHits) { h in
+                    HStack {
+                        Button {
+                            vm.pickTsSnipe(h)
+                            vm.techMode = .ts_snipe
+                        } label: {
+                            VStack(alignment: .leading) {
+                                Text(h.name).font(.subheadline)
+                                Text("GID \(h.id)" + (h.floor.isEmpty ? "" : " · 地板 \(h.floor)"))
+                                    .font(.caption2).foregroundStyle(.secondary)
+                            }.frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        Button("地板") { vm.refreshTsMarketFloor(h) }
+                            .font(.caption2)
+                    }
+                    Divider()
+                }
+            }
+        }
+    }
+}
+
+struct TsSnipePane: View {
+    @EnvironmentObject var vm: AppViewModel
+    @EnvironmentObject var runner: TaskRunner
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("本地开火 · 盯盘地板 → 批量(有则) / 快捷 → 汇付支付").font(.caption).foregroundStyle(.secondary)
+            if vm.tsSnipeGid <= 0 {
+                TextField("搜索商品 / GID", text: Binding(
+                    get: { vm.tsSnipeSearch },
+                    set: { vm.searchTsMarket($0, forSnipe: true) }
+                )).fieldStyle()
+                if vm.tsSnipeHits.isEmpty {
+                    Text(vm.tsSnipeSearch.isEmpty ? "输入关键词搜索" : "无匹配").font(.caption).foregroundStyle(.secondary)
+                } else {
+                    ForEach(vm.tsSnipeHits) { h in
+                        Button { vm.pickTsSnipe(h) } label: {
+                            VStack(alignment: .leading) {
+                                Text(h.name).font(.subheadline)
+                                Text("GID \(h.id)" + (h.floor.isEmpty ? "" : " · 地板 \(h.floor)"))
+                                    .font(.caption2).foregroundStyle(.secondary)
+                            }.frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        Divider()
+                    }
+                }
+            } else {
+                PickedBar(
+                    title: vm.tsSnipeName,
+                    subtitle: "GID \(vm.tsSnipeGid)" + (vm.tsSnipeBatchPay ? " · 批量开x\(vm.tsSnipeBatchNum)" : " · 仅快捷"),
+                    onClear: { vm.clearTsSnipeSelection() }
+                )
+                HStack {
+                    ModeChip(title: "自动", selected: vm.tsSnipeMode == "auto") { vm.tsSnipeMode = "auto" }
+                    ModeChip(title: "快捷", selected: vm.tsSnipeMode == "fast") { vm.tsSnipeMode = "fast" }
+                    ModeChip(title: "批量", selected: vm.tsSnipeMode == "batch") { vm.tsSnipeMode = "batch" }
+                }
+                Text(tsModeTip).font(.caption2).foregroundStyle(.secondary)
+                HStack {
+                    TextField("目标价 ≤¥", text: $vm.tsSnipePrice).keyboardType(.decimalPad).fieldStyle()
+                    TextField("数量", text: $vm.tsSnipeQty).keyboardType(.numberPad).frame(width: 88).fieldStyle()
+                }
+                Toggle("自动支付（汇付）", isOn: $vm.tsSnipeAutoPay)
+                if vm.tsSnipeAutoPay { SecureField("支付密码", text: $vm.tsSnipePayPwd).fieldStyle() }
+                StopStartButton(
+                    running: runner.isRunning(.tsSnipe),
+                    startTitle: "开始捡漏（本地）",
+                    stopTitle: "停止矩星捡漏",
+                    enabled: vm.isVip,
+                    onStart: { vm.startTsSnipe() },
+                    onStop: { runner.stop(.tsSnipe) }
+                )
+            }
+        }
+    }
+    private var tsModeTip: String {
+        switch vm.tsSnipeMode {
+        case "fast": return "快捷：fastOrderNew，间隔 1s"
+        case "batch": return "批量：batchBuy，未开启则回落快捷，间隔 2s"
+        default: return "自动：商品开批量则 batch，否则 fast；批量失败回落快捷"
         }
     }
 }

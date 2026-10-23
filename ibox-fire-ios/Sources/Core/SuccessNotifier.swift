@@ -69,7 +69,7 @@ enum SuccessNotifier {
         }
         if msg.contains("支付直达") {
             switch kind {
-            case "buy", "nb_snipe": return "捡漏待支付"
+            case "buy", "nb_snipe", "ts_snipe": return "捡漏待支付"
             case "seg_snipe": return "板块盯盘待支付"
             case "announce", "recommend_lock": return "公告锁待支付"
             default: return "待支付"
@@ -77,7 +77,7 @@ enum SuccessNotifier {
         }
         if msg.contains("下单成功") {
             switch kind {
-            case "buy", "nb_snipe": return "捡漏下单成功"
+            case "buy", "nb_snipe", "ts_snipe": return "捡漏下单成功"
             case "seg_snipe": return "板块盯盘下单成功"
             case "presale", "nb_presale": return "抢购下单成功"
             case "sweep": return "点对点下单成功"
@@ -86,7 +86,7 @@ enum SuccessNotifier {
         }
         if msg.contains("自动支付成功") || msg.contains("支付成功") {
             switch kind {
-            case "buy", "nb_snipe": return "捡漏支付成功"
+            case "buy", "nb_snipe", "ts_snipe": return "捡漏支付成功"
             case "seg_snipe": return "板块盯盘支付成功"
             case "presale", "nb_presale": return "抢购支付成功"
             case "sweep": return "点对点支付成功"
@@ -95,6 +95,9 @@ enum SuccessNotifier {
         }
         if kind == "nb_snipe" && msg.contains("成功") && msg.contains("¥") {
             return "NB捡漏成功"
+        }
+        if kind == "ts_snipe" && msg.contains("成功") && msg.contains("¥") {
+            return "矩星捡漏成功"
         }
         // Android: OK #；iOS FireEngine: confirm OK；NB: OK #
         if kind == "synth" && (msg.hasPrefix("OK #") || msg.contains("confirm OK")) {
@@ -115,6 +118,7 @@ enum SuccessNotifier {
         case "presale": return "抢购"
         case "nb_presale": return "NB抢购"
         case "nb_snipe": return "NB捡漏"
+        case "ts_snipe": return "矩星捡漏"
         case "announce": return "公告锁"
         case "recommend_lock": return "推荐锁定"
         case "buy": return "捡漏"

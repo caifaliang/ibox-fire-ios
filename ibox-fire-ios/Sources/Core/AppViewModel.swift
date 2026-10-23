@@ -3,7 +3,7 @@ import Combine
 import SwiftUI
 
 enum AppPlatform: String {
-    case ibox, newbee
+    case ibox, newbee, topstar
 }
 
 enum FeatureCat: String, CaseIterable, Identifiable {
@@ -23,6 +23,7 @@ enum TechMode: String, CaseIterable, Identifiable {
     case query_purchase, query_consignment, holdings, query
     case price_alert, market_push, announce_push, discover_push
     case nb_presale, nb_snipe
+    case ts_market, ts_snipe
     case profile
     var id: String { rawValue }
     var label: String {
@@ -47,6 +48,8 @@ enum TechMode: String, CaseIterable, Identifiable {
         case .discover_push: return "发现趋势推送"
         case .nb_presale: return "抢购"
         case .nb_snipe: return "捡漏"
+        case .ts_market: return "市场"
+        case .ts_snipe: return "捡漏"
         case .profile: return "我的"
         }
     }
@@ -75,6 +78,7 @@ enum TechMode: String, CaseIterable, Identifiable {
         case .presale: return .presale
         case .nb_presale: return .nbPresale
         case .nb_snipe: return .nbSnipe
+        case .ts_snipe: return .tsSnipe
         case .sweep: return .sweep
         case .seg_snipe: return .segSnipe
         case .recommend_lock: return .recommendLock
@@ -120,6 +124,15 @@ final class AppViewModel: ObservableObject {
     @Published var nbMobile = ""
     @Published var nbPassword = ""
     @Published var nbError = ""
+
+    @Published var tsLoggedIn = false
+    @Published var tsToken = ""
+    @Published var tsTokenInput = ""
+    @Published var tsAccount = ""
+    @Published var tsPassword = ""
+    @Published var tsNickname = ""
+    @Published var tsError = ""
+    @Published var tsLoginLoading = false
 
     @Published var appPlatform: AppPlatform = .ibox
     @Published var featureCat: FeatureCat = .tech
@@ -291,6 +304,21 @@ final class AppViewModel: ObservableObject {
     @Published var nbSnipeAutoPay = true
     @Published var nbSnipePayPwd = ""
 
+    @Published var tsMarketSearch = ""
+    @Published var tsMarketHits: [TsMarketHit] = []
+    @Published var tsSnipeSearch = ""
+    @Published var tsSnipeHits: [TsMarketHit] = []
+    @Published var tsSnipeGid: Int64 = 0
+    @Published var tsSnipeName = ""
+    @Published var tsSnipeGoodsType = 2
+    @Published var tsSnipeBatchPay = false
+    @Published var tsSnipeBatchNum = 1
+    @Published var tsSnipePrice = ""
+    @Published var tsSnipeQty = "1"
+    @Published var tsSnipeMode = "auto"
+    @Published var tsSnipeAutoPay = true
+    @Published var tsSnipePayPwd = ""
+
     @Published var proxyExtractUrl = ""
     @Published var modeLogs: [String: [LogLine]] = [:]
     @Published var logExpanded = false
@@ -303,12 +331,15 @@ final class AppViewModel: ObservableObject {
     private let kSite = "ibox.site.token"
     private let kIbox = "ibox.jwt"
     private let kNb = "ibox.nb.token"
+    private let kTs = "ibox.ts.token"
+    private let kTsAccount = "ibox.ts.account"
     private let kPhone = "ibox.phone"
     private let kProxy = "ibox.proxy_api"
     private let kWorkers = "ibox.workers"
     private let kSynthRoute = "ibox.synth_route"
     private let kSynthAllowBatch = "ibox.synth_allow_batch"
     private var nbSnipeSearchTask: Task<Void, Never>?
+    private var tsSearchTask: Task<Void, Never>?
     private var lastQuotaRefreshAt: TimeInterval = 0
     private var activePrep: String?
 
@@ -338,6 +369,11 @@ final class AppViewModel: ObservableObject {
             nbToken = t
             nbLoggedIn = true
             Task { await refreshNbPresaleList(silent: true) }
+        }
+        tsAccount = prefs.string(forKey: kTsAccount) ?? ""
+        if let t = prefs.string(forKey: kTs), !t.isEmpty {
+            tsToken = t
+            tsLoggedIn = true
         }
         let s = AlertWatchStore.shared
         pushMarketEnabled = s.marketWatchEnabled
@@ -401,6 +437,7 @@ final class AppViewModel: ObservableObject {
         }
     }
     var nbTabs: [TechMode] { [.nb_presale, .nb_snipe] }
+    var tsTabs: [TechMode] { [.ts_market, .ts_snipe] }
 
     var currentLogs: [LogLine] {
         modeLogs[techMode.logKey] ?? []
@@ -724,6 +761,51 @@ final class AppViewModel: ObservableObject {
             await refreshNbPresaleList(silent: true)
         } catch {
             nbError = error.localizedDescription
+        }
+    }
+
+    func saveTsToken() {
+        let t = tsTokenInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard t.count >= 8 else { tsError = "请粘贴有效矩星 Token"; return }
+        tsToken = t
+        tsTokenInput = ""
+        tsLoggedIn = true
+        tsError = ""
+        prefs.set(t, forKey: kTs)
+        appendLog("矩星 Token 已保存", mode: .ts_market)
+    }
+
+    func clearTs() {
+        tsLoggedIn = false
+        tsToken = ""
+        tsNickname = ""
+        tsSnipeGid = 0
+        tsSnipeName = ""
+        tsMarketHits = []
+        tsSnipeHits = []
+        prefs.removeObject(forKey: kTs)
+    }
+
+    func tsPasswordLogin() {
+        let account = tsAccount.trimmingCharacters(in: .whitespacesAndNewlines)
+        if account.isEmpty { tsError = "请输入账号/手机号"; return }
+        if tsPassword.count < 4 { tsError = "密码至少4位"; return }
+        tsLoginLoading = true
+        tsError = ""
+        Task {
+            do {
+                let r = try await TopstarClient.login(account: account, password: tsPassword)
+                tsToken = r.token
+                tsNickname = r.nickname
+                tsLoggedIn = true
+                tsLoginLoading = false
+                prefs.set(r.token, forKey: kTs)
+                prefs.set(account, forKey: kTsAccount)
+                appendLog("矩星登录成功 \(r.nickname.isEmpty ? r.mobile : r.nickname)", type: "buy", mode: .ts_market)
+            } catch {
+                tsError = error.localizedDescription
+                tsLoginLoading = false
+            }
         }
     }
 
@@ -1091,6 +1173,104 @@ final class AppViewModel: ObservableObject {
     func clearNbSnipeSelection() {
         nbSnipePid = 0
         nbSnipeName = ""
+    }
+
+    func searchTsMarket(_ q: String, forSnipe: Bool = false) {
+        if forSnipe { tsSnipeSearch = q } else { tsMarketSearch = q }
+        guard tsLoggedIn, !tsToken.isEmpty else {
+            if forSnipe { tsSnipeHits = [] } else { tsMarketHits = [] }
+            return
+        }
+        let qq = q.trimmingCharacters(in: .whitespacesAndNewlines)
+        if qq.isEmpty {
+            if forSnipe { tsSnipeHits = [] } else { tsMarketHits = [] }
+            tsSearchTask?.cancel()
+            return
+        }
+        if let gid = Int64(qq), gid > 0, qq.allSatisfy(\.isNumber) {
+            tsSearchTask?.cancel()
+            let hit = TsMarketHit(id: gid, name: "GID \(gid)")
+            if forSnipe { tsSnipeHits = [hit] } else { tsMarketHits = [hit] }
+            return
+        }
+        tsSearchTask?.cancel()
+        tsSearchTask = Task {
+            try? await Task.sleep(nanoseconds: 350_000_000)
+            guard !Task.isCancelled else { return }
+            let cur = forSnipe ? tsSnipeSearch : tsMarketSearch
+            guard cur.trimmingCharacters(in: .whitespacesAndNewlines) == qq else { return }
+            let client = TopstarClient(token: tsToken)
+            let hits = await client.marketSearch(keyword: qq)
+            guard !Task.isCancelled else { return }
+            let cur2 = forSnipe ? tsSnipeSearch : tsMarketSearch
+            guard cur2.trimmingCharacters(in: .whitespacesAndNewlines) == qq else { return }
+            if forSnipe {
+                tsSnipeHits = Array(hits.prefix(20))
+                if hits.isEmpty { appendLog("未找到「\(qq)」", mode: .ts_snipe) }
+            } else {
+                tsMarketHits = Array(hits.prefix(30))
+                if hits.isEmpty { appendLog("未找到「\(qq)」", mode: .ts_market) }
+            }
+        }
+    }
+
+    func pickTsSnipe(_ hit: TsMarketHit) {
+        tsSnipeGid = hit.id
+        tsSnipeName = hit.name
+        tsSnipeGoodsType = hit.goodsType
+        tsSnipeBatchPay = hit.batchPay
+        tsSnipeBatchNum = max(1, hit.batchPayNum)
+        tsSnipeHits = []
+        tsSnipeSearch = ""
+        let floorDigits = hit.floor.filter { $0.isNumber || $0 == "." }
+        if !floorDigits.isEmpty { tsSnipePrice = floorDigits }
+        Task { await enrichTsSnipeDetail(gid: hit.id) }
+    }
+
+    func clearTsSnipeSelection() {
+        guard !runner.isRunning(.tsSnipe) else { return }
+        tsSnipeGid = 0
+        tsSnipeName = ""
+        tsSnipeBatchPay = false
+    }
+
+    private func enrichTsSnipeDetail(gid: Int64) async {
+        guard tsLoggedIn, !tsToken.isEmpty, gid > 0 else { return }
+        let client = TopstarClient(token: tsToken)
+        if let det = try? await client.productDetail(id: gid) {
+            guard tsSnipeGid == gid else { return }
+            if let bp = det["batch_pay"] as? Bool { tsSnipeBatchPay = bp }
+            else if let n = JSONX.int64Val(det["batch_pay"]) { tsSnipeBatchPay = n == 1 }
+            if let n = JSONX.int64Val(det["batch_pay_num"]), n > 0 { tsSnipeBatchNum = Int(n) }
+            if let gt = JSONX.int64Val(det["goods_type"]) { tsSnipeGoodsType = Int(gt) }
+            let name = JSONX.stringVal(det["name"])
+            if !name.isEmpty { tsSnipeName = name }
+            if let f = JSONX.doubleVal(det["min_price"]), f > 0, tsSnipePrice.isEmpty {
+                tsSnipePrice = String(format: "%.2f", f)
+            }
+            appendLog(
+                "已选 \(tsSnipeName) · batch=\(tsSnipeBatchPay ? "开x\(tsSnipeBatchNum)" : "关")",
+                mode: .ts_snipe
+            )
+        }
+        let floor = await client.queryFloor(goodsId: gid, goodsType: tsSnipeGoodsType)
+        if let f = floor.floor, tsSnipeGid == gid {
+            if tsSnipePrice.isEmpty { tsSnipePrice = String(format: "%.2f", f) }
+            appendLog("当前地板 ¥\(String(format: "%.2f", f))", mode: techMode == .ts_market ? .ts_market : .ts_snipe)
+        }
+    }
+
+    func refreshTsMarketFloor(_ hit: TsMarketHit) {
+        guard tsLoggedIn, !tsToken.isEmpty else { return }
+        Task {
+            let client = TopstarClient(token: tsToken)
+            let floor = await client.queryFloor(goodsId: hit.id, goodsType: hit.goodsType)
+            if let f = floor.floor {
+                appendLog("\(hit.name) 地板 ¥\(String(format: "%.2f", f))", mode: .ts_market)
+            } else {
+                appendLog("\(hit.name) \(floor.message)", mode: .ts_market)
+            }
+        }
     }
 
     private func parseStartToHms(_ raw: String) -> (Int, Int, Int)? {
@@ -1790,6 +1970,35 @@ final class AppViewModel: ObservableObject {
             Task { @MainActor in self?.appendLog(m, mode: .nb_snipe) }
         })
         runner.start(kind: .nbSnipe, stop: { engine.requestStop() }, keepAlive: true) { await engine.run() }
+    }
+
+    func startTsSnipe() {
+        guard requireVip(), tsLoggedIn else { return }
+        guard guardNotRunning(.tsSnipe, prepKey: "ts_snipe") else { return }
+        guard tsSnipeGid > 0 else { appendLog("请搜索并选择商品", type: "error", mode: .ts_snipe); return }
+        let price = Double(tsSnipePrice) ?? 0
+        let qty = Int(tsSnipeQty) ?? 0
+        guard price > 0 else { appendLog("请填写目标价", type: "error", mode: .ts_snipe); return }
+        guard qty >= 1 else { appendLog("请填写数量", type: "error", mode: .ts_snipe); return }
+        if tsSnipeAutoPay && tsSnipePayPwd.trimmingCharacters(in: .whitespaces).isEmpty {
+            appendLog("开启自动支付需填写支付密码", type: "error", mode: .ts_snipe); return
+        }
+        let engine = TsSnipeEngine(cfg: TsSnipeConfig(
+            token: tsToken,
+            goodsId: tsSnipeGid,
+            name: tsSnipeName,
+            goodsType: tsSnipeGoodsType,
+            maxPrice: price,
+            quantity: qty,
+            mode: tsSnipeMode,
+            preferBatch: tsSnipeBatchPay,
+            batchNum: tsSnipeBatchNum,
+            autoPay: tsSnipeAutoPay,
+            payPassword: tsSnipePayPwd
+        ), onLog: { [weak self] m in
+            Task { @MainActor in self?.appendLog(m, mode: .ts_snipe) }
+        })
+        runner.start(kind: .tsSnipe, stop: { engine.requestStop() }, keepAlive: true) { await engine.run() }
     }
 
     // MARK: - 全盘捡漏
