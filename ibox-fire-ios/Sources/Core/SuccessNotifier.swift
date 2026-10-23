@@ -7,7 +7,7 @@ enum SuccessNotifier {
     private static let prefsKey = "success_notify"
     private static let lock = NSLock()
     private static var lastKey = ""
-    private static var lastAt: CFTimeInterval = 0
+    private static var lastAt: TimeInterval = 0
 
     static var enabled: Bool {
         get {
@@ -23,7 +23,7 @@ enum SuccessNotifier {
         guard let title = matchTitle(kind: kind, raw: msg) else { return }
         let trimmed = msg.trimmingCharacters(in: .whitespacesAndNewlines)
         let key = "\(kind)|\(title)|\(String(trimmed.prefix(48)))"
-        let now = CACurrentMediaTime()
+        let now = Date().timeIntervalSince1970
         lock.lock()
         if key == lastKey && now - lastAt < 0.8 {
             lock.unlock()
