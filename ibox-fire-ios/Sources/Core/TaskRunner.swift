@@ -60,7 +60,7 @@ final class TaskRunner: ObservableObject {
             BackgroundKeepAlive.shared.begin()
             notify(title: "任务运行中", body: "音频保活已开 · 可锁屏/切后台（自签）")
         } else {
-            notify(title: "任务运行中", body: "云端任务已在服务器运行，可切后台")
+            notify(title: "任务运行中", body: "\(kind.rawValue) 已启动")
         }
         tasks[kind.rawValue] = Task {
             await work()
