@@ -26,7 +26,7 @@ if (-not (Test-Path $local)) {
 $GitHubRepo = if ($GitHubRepo) { $GitHubRepo } else { "caifaliang/ibox-fire-ios" }
 $ArtifactName = "ibox-fire-unsigned-ipa"
 $BundleIdOverride = "com.ibox.fire"
-$AppDisplayName = "IboxFire"
+$AppDisplayName = "iBox科技"
 $PhoneBundleId = "com.ibox.fire"
 
 if (-not $IpaCacheDir) {
