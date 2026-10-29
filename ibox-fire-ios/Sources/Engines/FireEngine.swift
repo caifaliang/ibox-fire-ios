@@ -20,6 +20,8 @@ struct FireConfig {
     var durationS: Double = 0.0
     var peakReadMs: Double = 1800
     var allowBatch: Bool = true
+    /// 0=满额一批 1=每次1 10=每次10；多路仍强制 1
+    var batchChunk: Int = 0
 }
 
 final class FireEngine: @unchecked Sendable {
@@ -125,17 +127,19 @@ final class FireEngine: @unchecked Sendable {
         }
         let nWorkers = max(1, min(lanes.count, max(1, cfg.workers)))
         let multi = nWorkers > 1
-        let batchOk = cfg.allowBatch && !multi
+        let chunk = cfg.batchChunk
 
         if cfg.proxies.isEmpty {
             await log("本机直连抢合 ID=\(cid) x\(target) · 提前\(fmt1(cfg.earlyS))s")
         } else {
             await log("本机+易代理抢合 ID=\(cid) x\(target) · 路数=\(nWorkers)(本机1+代理\(lanes.count - 1)) · 提前\(fmt1(cfg.earlyS))s")
         }
-        if batchOk {
-            await log("可批量：一次提交满额")
-        } else if multi {
+        if multi {
             await log("多路并发：每路每次提交 1 · 超时不弃路、硬挂才弃")
+        } else if chunk == 10 {
+            await log("每次提交 10（最后一笔按剩余）")
+        } else if chunk == 0 && cfg.allowBatch {
+            await log("可批量：一次提交满额")
         } else {
             await log("每次提交 1 · 业务错误/超时不停")
         }
@@ -206,7 +210,8 @@ final class FireEngine: @unchecked Sendable {
                         uid: uid,
                         cid: cid,
                         target: target,
-                        batchOk: batchOk,
+                        chunk: chunk,
+                        multi: multi,
                         deadlineMs: deadlineMs
                     )
                 }
@@ -229,7 +234,8 @@ final class FireEngine: @unchecked Sendable {
         uid: Int64,
         cid: Int64,
         target: Int,
-        batchOk: Bool,
+        chunk: Int,
+        multi: Bool,
         deadlineMs: Double
     ) async {
         var hardStreak = 0
@@ -239,7 +245,16 @@ final class FireEngine: @unchecked Sendable {
         {
             let remain = target - boughtGet()
             if remain <= 0 { break }
-            let shot = batchOk ? remain : 1
+            let shot: Int
+            if multi {
+                shot = 1
+            } else if chunk > 0 {
+                shot = min(chunk, remain)
+            } else if cfg.allowBatch {
+                shot = remain
+            } else {
+                shot = 1
+            }
             let n = attemptsInc()
             let body: [String: Any] = [
                 "syntheticId": NSNumber(value: cid),

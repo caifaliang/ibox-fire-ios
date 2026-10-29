@@ -73,6 +73,14 @@ func todayFireAtEpochSec(h: Int, m: Int, s: Int) -> Int64 {
     return Int64(d.timeIntervalSince1970)
 }
 
+func bjTimeHms(_ epochSec: Int64) -> String {
+    let f = DateFormatter()
+    f.locale = Locale(identifier: "en_US_POSIX")
+    f.timeZone = TimeZone(identifier: "Asia/Shanghai")
+    f.dateFormat = "HH:mm:ss"
+    return f.string(from: Date(timeIntervalSince1970: TimeInterval(epochSec)))
+}
+
 func bjTimeString() -> String {
     let f = DateFormatter()
     f.locale = Locale(identifier: "en_US_POSIX")

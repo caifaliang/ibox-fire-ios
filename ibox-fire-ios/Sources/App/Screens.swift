@@ -833,11 +833,14 @@ struct SynthPane: View {
                                     .foregroundStyle(Palette.textSecondary)
                             }
                             HStack(spacing: Space.s) {
-                                ModeChip(title: "可批量", selected: vm.synthAllowBatch) {
-                                    vm.setSynthAllowBatch(true)
+                                ModeChip(title: "可批量", selected: vm.synthBatchChunk == 0 && vm.synthAllowBatch) {
+                                    vm.setSynthBatchChunk(0)
                                 }
-                                ModeChip(title: "每次1次", selected: !vm.synthAllowBatch) {
-                                    vm.setSynthAllowBatch(false)
+                                ModeChip(title: "每次10", selected: vm.synthBatchChunk == 10) {
+                                    vm.setSynthBatchChunk(10)
+                                }
+                                ModeChip(title: "每次1次", selected: vm.synthBatchChunk == 1 || (!vm.synthAllowBatch && vm.synthBatchChunk != 10)) {
+                                    vm.setSynthBatchChunk(1)
                                 }
                             }
                             AppTextField(
@@ -858,7 +861,11 @@ struct SynthPane: View {
                     StopStartButton(
                         running: runner.isRunning(.synth),
                         startTitle: {
-                            let batch = vm.synthAllowBatch ? "批量" : "每次1"
+                            let batch: String = {
+                                if vm.synthBatchChunk == 10 { return "每次10" }
+                                if vm.synthAllowBatch && vm.synthBatchChunk == 0 { return "批量" }
+                                return "每次1"
+                            }()
                             let route = vm.synthRoute == "proxy" ? "本机+易代理" : "纯本地"
                             return "开始抢合（\(route) · 数量\(vm.synthQty) · \(batch)）"
                         }(),
@@ -980,6 +987,10 @@ struct SellPane: View {
                 TextField("最低接受价 ≥¥", text: $vm.sellPrice).keyboardType(.decimalPad).fieldStyle()
                 TextField("数量", text: $vm.sellQty).keyboardType(.numberPad).fieldStyle()
                 SecureField("寄售密码", text: $vm.consignPwd).fieldStyle()
+                Toggle("定时卖求购（到点立即执行）", isOn: $vm.sellTimed)
+                if vm.sellTimed {
+                    TimeFields(h: $vm.sellFireH, m: $vm.sellFireM, s: $vm.sellFireS)
+                }
                 StopStartButton(running: runner.isRunning(.sell), startTitle: "开始卖求购（本地）", stopTitle: "停止卖求购", enabled: vm.isVip, onStart: { vm.startSell() }, onStop: { runner.stop(.sell) })
             }
         }

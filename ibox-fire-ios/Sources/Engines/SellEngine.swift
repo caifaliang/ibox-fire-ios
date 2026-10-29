@@ -9,6 +9,8 @@ struct SellConfig {
     var consignPassword: String
     var proxy: String = ""
     var durationS: Double = 3600
+    /// >0 时等到该北京时刻再开火；0 表示立即卖
+    var fireAtEpochSec: Int64 = 0
 }
 
 final class SellEngine: @unchecked Sendable {
@@ -28,6 +30,21 @@ final class SellEngine: @unchecked Sendable {
         if cfg.consignPassword.isEmpty { throw NSError(domain: "sell", code: 2, userInfo: [NSLocalizedDescriptionKey: "请填写寄售密码"]) }
         let client = IboxClient(token: cfg.token, proxyLine: nil, connectMs: 10000, readMs: 15000, deviceIdMode: .stableMD5)
         let qty = max(1, cfg.quantity)
+        if cfg.fireAtEpochSec > 0 {
+            let late = Date().timeIntervalSince1970 - Double(cfg.fireAtEpochSec)
+            if late > 10 {
+                throw NSError(domain: "sell", code: 4, userInfo: [NSLocalizedDescriptionKey: "开火时间已过 \(Int(late))s，已放弃"])
+            }
+            onLog("定时 \(bjTimeHms(cfg.fireAtEpochSec)) 开卖")
+            while !stop {
+                let remain = Double(cfg.fireAtEpochSec) - Date().timeIntervalSince1970
+                if remain <= 0 { break }
+                let ns = UInt64(min(0.08, remain) * 1_000_000_000)
+                try? await Task.sleep(nanoseconds: max(1_000_000, ns))
+            }
+            if stop { return 0 }
+            onLog("到点开火，立即卖求购")
+        }
         onLog("⚡本地直连模式（私人节奏）")
         onLog("卖求购启动 \(cfg.collectionName.isEmpty ? "-" : cfg.collectionName) gid=\(cfg.groupId) ≥¥\(cfg.targetPrice) x\(qty)")
 

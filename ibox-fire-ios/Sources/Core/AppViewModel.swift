@@ -195,6 +195,10 @@ final class AppViewModel: ObservableObject {
     @Published var sellCname = ""
     @Published var sellPrice = ""
     @Published var sellQty = "1"
+    @Published var sellTimed = false
+    @Published var sellFireH = 0
+    @Published var sellFireM = 0
+    @Published var sellFireS = 0
 
     @Published var precisionGid: Int64 = 0
     @Published var precisionCname = ""
@@ -273,6 +277,8 @@ final class AppViewModel: ObservableObject {
     /// direct=纯本机 | proxy=本机+易代理（对齐 Android synthRoute）
     @Published var synthRoute = "direct"
     @Published var synthAllowBatch = true
+    /// 0=满额一批 1=每次1 10=每次10
+    @Published var synthBatchChunk = 0
     @Published var busyMsg = ""
 
     @Published var synthQuota = QuotaInfo(limit: 2, remaining: 2)
@@ -338,6 +344,7 @@ final class AppViewModel: ObservableObject {
     private let kWorkers = "ibox.workers"
     private let kSynthRoute = "ibox.synth_route"
     private let kSynthAllowBatch = "ibox.synth_allow_batch"
+    private let kSynthBatchChunk = "ibox.synth_batch_chunk"
     private var nbSnipeSearchTask: Task<Void, Never>?
     private var tsSearchTask: Task<Void, Never>?
     private var lastQuotaRefreshAt: TimeInterval = 0
@@ -350,6 +357,11 @@ final class AppViewModel: ObservableObject {
         synthRoute = (route == "proxy") ? "proxy" : "direct"
         if prefs.object(forKey: kSynthAllowBatch) != nil {
             synthAllowBatch = prefs.bool(forKey: kSynthAllowBatch)
+        }
+        if prefs.object(forKey: kSynthBatchChunk) != nil {
+            synthBatchChunk = prefs.integer(forKey: kSynthBatchChunk)
+        } else if !synthAllowBatch {
+            synthBatchChunk = 1
         }
         let savedProxy = prefs.string(forKey: kProxy)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         proxyExtractUrl = ProxyPool.effectiveExtractUrl(savedProxy)
@@ -549,6 +561,20 @@ final class AppViewModel: ObservableObject {
     func setSynthAllowBatch(_ on: Bool) {
         synthAllowBatch = on
         prefs.set(on, forKey: kSynthAllowBatch)
+        if !on {
+            synthBatchChunk = 1
+            prefs.set(1, forKey: kSynthBatchChunk)
+        } else if synthBatchChunk == 1 {
+            synthBatchChunk = 0
+            prefs.set(0, forKey: kSynthBatchChunk)
+        }
+    }
+
+    func setSynthBatchChunk(_ n: Int) {
+        synthBatchChunk = n
+        synthAllowBatch = n != 1
+        prefs.set(n, forKey: kSynthBatchChunk)
+        prefs.set(synthAllowBatch, forKey: kSynthAllowBatch)
     }
 
     private func syncUserProxyFromSite() async {
@@ -1378,7 +1404,16 @@ final class AppViewModel: ObservableObject {
         if consignPwd.trimmingCharacters(in: .whitespaces).isEmpty {
             appendLog("请填写寄售密码", type: "error", mode: .sell); return
         }
-        let engine = SellEngine(cfg: SellConfig(token: iboxToken, groupId: sellGid, collectionName: sellCname, targetPrice: price, quantity: qty, consignPassword: consignPwd), onLog: { [weak self] m in
+        var fireAt: Int64 = 0
+        if sellTimed {
+            fireAt = todayFireAtEpochSec(h: sellFireH, m: sellFireM, s: sellFireS)
+            let late = Int64(Date().timeIntervalSince1970) - fireAt
+            if late > 10 {
+                appendLog("开火时间已过 \(late)s，请改时间后再启动", type: "error", mode: .sell)
+                return
+            }
+        }
+        let engine = SellEngine(cfg: SellConfig(token: iboxToken, groupId: sellGid, collectionName: sellCname, targetPrice: price, quantity: qty, consignPassword: consignPwd, fireAtEpochSec: fireAt), onLog: { [weak self] m in
             Task { @MainActor in self?.appendLog(m, mode: .sell) }
         })
         runner.start(kind: .sell, stop: { engine.requestStop() }, keepAlive: true) { _ = try? await engine.run() }
@@ -1768,6 +1803,7 @@ final class AppViewModel: ObservableObject {
         guard prepBusy("synth", "扣次中…") else { return }
         let useProxy = synthRoute == "proxy"
         let allowBatch = synthAllowBatch
+        let batchChunk = synthBatchChunk
         Task { [weak self] in
             guard let self else { return }
             defer { if activePrep == "synth" { clearPrep() } }
@@ -1794,7 +1830,12 @@ final class AppViewModel: ObservableObject {
                 }
             }
             let fireAt = todayFireAtEpochSec(h: fireH, m: fireM, s: fireS)
-            let batchHint = (allowBatch && proxies.isEmpty) ? "可批量" : "每次1"
+            let batchHint: String = {
+                if !proxies.isEmpty { return "每次1" }
+                if batchChunk == 10 { return "每次10" }
+                if allowBatch && batchChunk == 0 { return "可批量" }
+                return "每次1"
+            }()
             let modeHint: String = {
                 if proxies.isEmpty {
                     return useProxy ? "代理0·降级纯本地" : "纯本地"
@@ -1813,7 +1854,8 @@ final class AppViewModel: ObservableObject {
                 proxies: proxies,
                 earlyS: 0.8,
                 durationS: 0.0,
-                allowBatch: allowBatch
+                allowBatch: allowBatch,
+                batchChunk: batchChunk
             )
             let engine = FireEngine(cfg: cfg, onLog: { [weak self] m in
                 Task { @MainActor in self?.appendLog(m, mode: .synth) }
