@@ -56,7 +56,10 @@ final class IbPresaleEngine: @unchecked Sendable {
         let target = max(1, cfg.quantity)
         let name = cfg.productName.isEmpty ? "ID \(cfg.goodsId)" : cfg.productName
         var lanes: [String?] = [nil]
-        lanes.append(contentsOf: cfg.proxies.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty })
+        for p in cfg.proxies {
+            let t = p.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !t.isEmpty { lanes.append(t) }
+        }
         // distinct
         var seen = Set<String>()
         lanes = lanes.filter { px in
@@ -215,7 +218,10 @@ final class IbSnipeEngine: @unchecked Sendable {
         if modeIn == "auto" { loopMode = batchPay ? "batch" : "fast" }
 
         var lanes: [String?] = [nil]
-        lanes.append(contentsOf: cfg.proxies.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty })
+        for p in cfg.proxies {
+            let t = p.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !t.isEmpty { lanes.append(t) }
+        }
 
         var rounds = 0
         var consecNet = 0
@@ -365,7 +371,10 @@ final class IbBatchEngine: @unchecked Sendable {
         onLog("key就绪\(batchPay ? " · 支持批量" : " · 未标batch_pay仍尝试")")
 
         var lanes: [String?] = [nil]
-        lanes.append(contentsOf: cfg.proxies.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty })
+        for p in cfg.proxies {
+            let t = p.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !t.isEmpty { lanes.append(t) }
+        }
         var rounds = 0
         var consecFail = 0
 
