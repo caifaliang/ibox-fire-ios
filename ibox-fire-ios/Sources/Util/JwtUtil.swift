@@ -37,6 +37,16 @@ enum JwtUtil {
         return n.int64Value
     }
 
+    /// 按候选 claim 名取字符串（对齐 Android JwtUtil.claimString）
+    static func claimString(_ token: String, _ keys: String...) -> String {
+        guard let obj = payload(token) else { return "" }
+        for k in keys {
+            if let s = obj[k] as? String, !s.isEmpty { return s }
+            if let n = obj[k] as? NSNumber { return n.stringValue }
+        }
+        return ""
+    }
+
     static func isExpired(_ token: String, skewSec: Int64 = 30) -> Bool {
         guard let e = exp(token) else { return false }
         return Int64(Date().timeIntervalSince1970) >= e - skewSec
