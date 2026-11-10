@@ -112,31 +112,6 @@ struct OfficialH5View: View {
                     }
                 }
 
-                // 可拖感弱化：固定左下「科技」浮钮（对齐 APK FAB）
-                if activeTool == nil {
-                    VStack {
-                        Spacer()
-                        HStack {
-                            Button {
-                                Haptics.tap()
-                                openTool("query_consignment")
-                            } label: {
-                                Text("科技")
-                                    .font(.system(size: 13, weight: .semibold))
-                                    .foregroundStyle(Color(red: 0.07, green: 0.09, blue: 0.15))
-                                    .padding(.horizontal, 16)
-                                    .padding(.vertical, 12)
-                                    .background(Palette.liveAmber, in: Capsule(style: .continuous))
-                                    .shadow(color: .black.opacity(0.25), radius: 8, y: 2)
-                            }
-                            .buttonStyle(.plain)
-                            .padding(.leading, 16)
-                            .padding(.bottom, 24)
-                            Spacer()
-                        }
-                    }
-                }
-
                 if let tool = activeTool {
                     OfficialH5ToolOverlay(tool: tool) {
                         activeTool = nil

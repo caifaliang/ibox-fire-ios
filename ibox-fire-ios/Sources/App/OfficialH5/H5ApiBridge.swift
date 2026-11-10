@@ -6,6 +6,9 @@ final class H5ApiBridge: NSObject, WKScriptMessageHandler {
     private weak var webView: WKWebView?
     private let session: URLSession
     private let queue = DispatchQueue(label: "ibox.fire.h5.bridge", qos: .userInitiated)
+    /// 桥接时若页面没带 Authorization，用注入票补上（首页骨架常见根因）
+    var accessToken: String = ""
+    var deviceId: String = ""
 
     init(webView: WKWebView, session: URLSession = .shared) {
         self.webView = webView
@@ -68,6 +71,30 @@ final class H5ApiBridge: NSObject, WKScriptMessageHandler {
         }
         if req.value(forHTTPHeaderField: "Referer") == nil {
             req.setValue(SharedPrefsPack.h5Boot, forHTTPHeaderField: "Referer")
+        }
+        // 补官方 H5 常用头（Flutter 偶发未带齐时骨架永不结束）
+        let tok = JwtUtil.normalize(accessToken)
+        if !tok.isEmpty, req.value(forHTTPHeaderField: "Authorization") == nil {
+            req.setValue(JwtUtil.bearer(tok), forHTTPHeaderField: "Authorization")
+        }
+        if req.value(forHTTPHeaderField: "platform-type") == nil {
+            req.setValue("1", forHTTPHeaderField: "platform-type")
+        }
+        if req.value(forHTTPHeaderField: "channel") == nil {
+            req.setValue("website", forHTTPHeaderField: "channel")
+        }
+        if req.value(forHTTPHeaderField: "device-id") == nil {
+            let did = deviceId.isEmpty ? IboxClient.makeDeviceId(tok) : deviceId
+            if !did.isEmpty { req.setValue(did, forHTTPHeaderField: "device-id") }
+        }
+        if req.value(forHTTPHeaderField: "app-version") == nil {
+            req.setValue("3.0.2", forHTTPHeaderField: "app-version")
+        }
+        if req.value(forHTTPHeaderField: "app-version-number") == nil {
+            req.setValue("30002", forHTTPHeaderField: "app-version-number")
+        }
+        if req.value(forHTTPHeaderField: "Accept") == nil {
+            req.setValue("application/json", forHTTPHeaderField: "Accept")
         }
         let hasBody = method != "GET" && method != "HEAD"
         if hasBody {

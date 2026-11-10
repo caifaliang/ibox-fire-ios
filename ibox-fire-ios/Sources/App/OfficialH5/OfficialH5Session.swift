@@ -83,6 +83,8 @@ final class OfficialH5Session: NSObject, ObservableObject {
         wv.navigationDelegate = self
         wv.uiDelegate = self
         let b = H5ApiBridge(webView: wv)
+        b.accessToken = t
+        b.deviceId = deviceId.isEmpty ? IboxClient.makeDeviceId(t) : deviceId
         // configuration 会拷贝：handler 必须挂到 webView 实际使用的 controller
         b.attach(to: wv.configuration.userContentController)
         bridge = b
@@ -299,10 +301,12 @@ final class OfficialH5Session: NSObject, ObservableObject {
     (function(){
       window.__iboxNet='pending';
       try{
+        var api='https://sail-api.ibox.art/public-service/markets?pageNo=1&pageSize=1&segmentId=-1&sortField=2&sortType=0&timeRange=0';
         fetch('https://h5.ibox.art/version.json',{method:'GET',credentials:'omit',cache:'no-store'})
           .then(function(r){
-            return fetch('https://sail-api.ibox.art/public-service/v1/app-version',{
-              method:'GET', credentials:'omit', cache:'no-store', mode:'cors'
+            return fetch(api,{
+              method:'GET', credentials:'omit', cache:'no-store', mode:'cors',
+              headers:{'Accept':'application/json'}
             }).then(function(r2){
               window.__iboxNet='net:h5='+r.status+',api='+r2.status+(window.IboxFireNet?'+bridge':'');
             }).catch(function(e2){
