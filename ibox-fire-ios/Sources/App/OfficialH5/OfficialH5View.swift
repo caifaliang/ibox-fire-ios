@@ -1,23 +1,18 @@
 import SwiftUI
-import WebKit
 
-/// 官方 H5 全屏：注入 + 禁 SW + API 桥 + 顶栏芯片浮层
+/// 官方 H5 全屏壳：保活 WebView +「科技」回主壳（不销毁缓存）
 struct OfficialH5View: View {
     @EnvironmentObject var vm: AppViewModel
-    @Environment(\.dismiss) private var dismiss
+    @ObservedObject private var session = OfficialH5Session.shared
+
+    var onBackToTech: () -> Void
 
     let token: String
     var refreshToken: String = ""
     var deviceId: String = ""
     var uid: Int64 = 0
 
-    @State private var html: String = ""
-    @State private var status = "加载中…"
-    @State private var progress: Double = 0
-    @State private var pageTitle = ""
-    @State private var pageURL = ""
     @State private var activeTool: String?
-    @State private var loadError: String?
 
     private let tools: [(String, String)] = [
         ("query_consignment", "查挂单"),
@@ -30,7 +25,8 @@ struct OfficialH5View: View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
                 Button {
-                    dismiss()
+                    Haptics.selection()
+                    if activeTool != nil { activeTool = nil } else { onBackToTech() }
                 } label: {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 16, weight: .semibold))
@@ -42,10 +38,18 @@ struct OfficialH5View: View {
                     .font(.system(size: 17, weight: .bold))
                     .foregroundStyle(Palette.textPrimary)
                 Spacer()
-                Text(status)
-                    .font(Typo.caption2)
-                    .foregroundStyle(Palette.textMuted)
-                    .lineLimit(1)
+                Button {
+                    Haptics.tap()
+                    onBackToTech()
+                } label: {
+                    Text("科技")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(Palette.brand)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(Palette.brandSubtle, in: Capsule(style: .continuous))
+                }
+                .buttonStyle(.plain)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
@@ -77,38 +81,60 @@ struct OfficialH5View: View {
             }
             .background(Palette.bg)
 
-            if progress > 0, progress < 1 {
-                ProgressView(value: progress)
+            Text(session.status)
+                .font(Typo.caption2)
+                .foregroundStyle(Palette.textMuted)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 12)
+                .padding(.bottom, 4)
+
+            if session.progress > 0, session.progress < 0.99 {
+                ProgressView(value: session.progress)
                     .tint(Palette.brand)
             }
 
             ZStack {
-                if let loadError {
-                    VStack(spacing: 12) {
-                        Text(loadError)
-                            .font(Typo.caption)
-                            .foregroundStyle(Palette.danger)
-                            .multilineTextAlignment(.center)
-                        Button("重试") { Task { await boot() } }
-                            .buttonStyle(PrimaryButtonStyle())
-                            .padding(.horizontal, 40)
-                    }
-                    .padding(24)
-                } else if html.isEmpty {
+                OfficialH5WebView(session: session)
+                    .background(Color.black)
+
+                if session.webView == nil {
                     VStack(spacing: 12) {
                         ProgressView()
-                        Text(status)
+                        Text(session.status)
                             .font(Typo.caption)
                             .foregroundStyle(Palette.textMuted)
+                        if let err = session.lastError {
+                            Text(err).font(Typo.caption2).foregroundStyle(Palette.danger)
+                            Button("重试") { start() }
+                                .buttonStyle(PrimaryButtonStyle())
+                                .padding(.horizontal, 40)
+                        }
                     }
-                } else {
-                    OfficialH5WebView(
-                        html: html,
-                        baseURL: URL(string: SharedPrefsPack.h5Boot)!,
-                        onTitle: { pageTitle = $0 },
-                        onURL: { pageURL = $0 },
-                        onProgress: { progress = $0 }
-                    )
+                }
+
+                // 可拖感弱化：固定左下「科技」浮钮（对齐 APK FAB）
+                if activeTool == nil {
+                    VStack {
+                        Spacer()
+                        HStack {
+                            Button {
+                                Haptics.tap()
+                                openTool("query_consignment")
+                            } label: {
+                                Text("科技")
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundStyle(Color(red: 0.07, green: 0.09, blue: 0.15))
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 12)
+                                    .background(Palette.liveAmber, in: Capsule(style: .continuous))
+                                    .shadow(color: .black.opacity(0.25), radius: 8, y: 2)
+                            }
+                            .buttonStyle(.plain)
+                            .padding(.leading, 16)
+                            .padding(.bottom, 24)
+                            Spacer()
+                        }
+                    }
                 }
 
                 if let tool = activeTool {
@@ -116,13 +142,21 @@ struct OfficialH5View: View {
                         activeTool = nil
                     }
                     .environmentObject(vm)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .background(Palette.bg)
-        .task { await boot() }
+        .onAppear { start() }
+    }
+
+    private func start() {
+        session.ensureStarted(
+            token: token,
+            refreshToken: refreshToken,
+            deviceId: deviceId,
+            uid: uid
+        )
     }
 
     private func openTool(_ key: String) {
@@ -130,8 +164,7 @@ struct OfficialH5View: View {
             activeTool = nil
             return
         }
-        // 尽量带入 GID（从 URL 解析）
-        if let gid = parseGroupId(pageURL), gid > 0 {
+        if let gid = parseGroupId(session.pageURL), gid > 0 {
             switch key {
             case "buy": vm.buyGid = gid
             case "sell": vm.sellGid = gid
@@ -149,106 +182,15 @@ struct OfficialH5View: View {
     }
 
     private func parseGroupId(_ url: String) -> Int64? {
-        // .../digital-collection-groups/123 或 hash 内 groupId=
         if let r = url.range(of: #"digital-collection-groups/(\d+)"#, options: .regularExpression) {
             let s = String(url[r]).components(separatedBy: "/").last ?? ""
             return Int64(s)
         }
-        if let r = url.range(of: #"groupId[=:](\d+)"#, options: [.regularExpression, .caseInsensitive]) {
+        if let r = url.range(of: #"/market/collectible/(\d+)"#, options: [.regularExpression, .caseInsensitive]) {
             let digits = url[r].filter(\.isNumber)
             return Int64(digits)
         }
         return nil
-    }
-
-    @MainActor
-    private func boot() async {
-        loadError = nil
-        status = "拉取官方页…"
-        let t = JwtUtil.normalize(token)
-        guard !t.isEmpty else {
-            loadError = "缺少 iBox Token"
-            return
-        }
-        let expSec = JwtUtil.exp(t) ?? 0
-        let expMs = expSec > 0 ? expSec * 1000 : 0
-        let pack = SharedPrefsPack.build(
-            accessToken: t,
-            refreshToken: refreshToken,
-            deviceId: deviceId.isEmpty ? IboxClient.makeDeviceId(t) : deviceId,
-            uid: uid > 0 ? uid : (JwtUtil.uid(t) ?? 0),
-            expMs: expMs
-        )
-        warmCookies(pack)
-        do {
-            let raw = try await fetchBootHTML()
-            let inject = H5ApiBridge.bootScript() + pack.toBootHeadScript()
-            var patched: String
-            if let range = raw.range(of: "</head>", options: .caseInsensitive) {
-                patched = raw.replacingCharacters(in: range, with: inject + "</head>")
-            } else {
-                patched = inject + raw
-            }
-            patched = patched.replacingOccurrences(
-                of: #"serviceWorkerSettings\s*:\s*\{[^}]*\}"#,
-                with: "serviceWorkerSettings: undefined",
-                options: .regularExpression
-            )
-            html = patched
-            status = "已注入 · 进入中"
-        } catch {
-            loadError = error.localizedDescription
-            status = "失败"
-        }
-    }
-
-    private func warmCookies(_ pack: SharedPrefsPack) {
-        let store = HTTPCookieStorage.shared
-        let tok = pack.cookieToken.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? pack.cookieToken
-        let hosts = [
-            "https://h5.ibox.art/",
-            "https://sail-api.ibox.art/",
-            "https://personal-center.ibox.art/",
-        ]
-        for host in hosts {
-            guard let url = URL(string: host) else { continue }
-            if let c = HTTPCookie(properties: [
-                .domain: ".ibox.art",
-                .path: "/",
-                .name: "token",
-                .value: tok,
-                .secure: "TRUE",
-            ]) {
-                store.setCookie(c)
-                WKCookieSync.setCookie(c, for: url)
-            }
-            if !pack.cookieExpiredAt.isEmpty,
-               let c2 = HTTPCookie(properties: [
-                   .domain: ".ibox.art",
-                   .path: "/",
-                   .name: "expiredAt",
-                   .value: pack.cookieExpiredAt,
-                   .secure: "TRUE",
-               ]) {
-                store.setCookie(c2)
-                WKCookieSync.setCookie(c2, for: url)
-            }
-        }
-    }
-
-    private func fetchBootHTML() async throws -> String {
-        var req = URLRequest(url: URL(string: SharedPrefsPack.h5Boot)!)
-        req.setValue(
-            "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
-            forHTTPHeaderField: "User-Agent"
-        )
-        req.setValue("text/html", forHTTPHeaderField: "Accept")
-        req.timeoutInterval = 20
-        let (data, resp) = try await URLSession.shared.data(for: req)
-        guard let http = resp as? HTTPURLResponse, (200..<400).contains(http.statusCode) else {
-            throw NSError(domain: "h5", code: -2, userInfo: [NSLocalizedDescriptionKey: "拉取 H5 失败"])
-        }
-        return String(data: data, encoding: .utf8) ?? ""
     }
 }
 
@@ -273,15 +215,13 @@ struct OfficialH5ToolOverlay: View {
                 Divider()
                 Group {
                     switch tool {
-                    case "buy": ModePane() // 依赖 techMode
-                    case "sell": ModePane()
-                    case "query_consignment": ModePane()
                     case "records":
-                        Text("成交记录请在查挂单/捡漏中查看藏品后使用网站侧记录；完整 TradeRecords 对齐后续补齐。")
+                        Text("成交记录浮层后续对齐 APK TradeRecords；可先用查挂单/捡漏。")
                             .font(Typo.caption)
                             .foregroundStyle(Palette.textMuted)
                             .padding()
-                    default: ModePane()
+                    default:
+                        ModePane()
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -301,12 +241,5 @@ struct OfficialH5ToolOverlay: View {
         case "records": return "成交记录"
         default: return "查挂单"
         }
-    }
-}
-
-/// WKWebView cookie 同步辅助
-enum WKCookieSync {
-    static func setCookie(_ cookie: HTTPCookie, for url: URL) {
-        WKWebsiteDataStore.default().httpCookieStore.setCookie(cookie)
     }
 }

@@ -106,10 +106,14 @@ final class H5ApiBridge: NSObject, WKScriptMessageHandler {
         return String(data: data ?? Data("\"\"".utf8), encoding: .utf8) ?? "\"\""
     }
 
-    /// WK：用 messageHandlers 代替 Android JavascriptInterface
+    /// HTML &lt;head&gt; 包裹（旧 loadHTMLString 路径）
     static func bootScript() -> String {
+        "<script>\n\(bootScriptSource)\n</script>"
+    }
+
+    /// WKUserScript / evaluate 用（无 script 标签）
+    static var bootScriptSource: String {
         """
-        <script>
         (function(){
           if (window.__iboxFireNetPatched) return;
           window.__iboxFireNetPatched = true;
@@ -238,7 +242,6 @@ final class H5ApiBridge: NSObject, WKScriptMessageHandler {
             };
           }
         })();
-        </script>
         """
     }
 }
