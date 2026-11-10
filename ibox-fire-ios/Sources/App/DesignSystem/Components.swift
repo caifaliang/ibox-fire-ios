@@ -12,11 +12,7 @@ struct Card<Content: View>: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 Palette.surface,
-                in: RoundedRectangle(cornerRadius: Radius.m, style: .continuous)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: Radius.m, style: .continuous)
-                    .strokeBorder(Palette.hairline, lineWidth: 0.5)
+                in: RoundedRectangle(cornerRadius: Radius.l, style: .continuous)
             )
     }
 }
@@ -35,11 +31,11 @@ struct PrimaryButtonStyle: ButtonStyle {
                 Palette.brand.opacity(isEnabled ? 1 : 0.4),
                 in: RoundedRectangle(cornerRadius: Radius.btn, style: .continuous)
             )
-            .scaleEffect(configuration.isPressed ? 0.98 : 1)
-            .opacity(configuration.isPressed ? 0.9 : 1)
-            .animation(.easeOut(duration: Motion.feedback), value: configuration.isPressed)
+            .scaleEffect(configuration.isPressed ? 0.93 : 1)
+            .opacity(configuration.isPressed ? 0.92 : 1)
+            .animation(.spring(response: 0.22, dampingFraction: 0.62), value: configuration.isPressed)
             .onChange(of: configuration.isPressed) { pressed in
-                if pressed, isEnabled { Haptics.tap() }
+                if pressed, isEnabled { Haptics.commit() }
             }
     }
 }
@@ -58,12 +54,12 @@ struct SecondaryButtonStyle: ButtonStyle {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: Radius.btn, style: .continuous)
-                    .strokeBorder(Palette.hairline, lineWidth: 0.5)
+                    .strokeBorder(Palette.hairline.opacity(0.6), lineWidth: 0.5)
             )
-            .scaleEffect(configuration.isPressed ? 0.98 : 1)
-            .animation(.easeOut(duration: Motion.feedback), value: configuration.isPressed)
+            .scaleEffect(configuration.isPressed ? 0.93 : 1)
+            .animation(.spring(response: 0.22, dampingFraction: 0.62), value: configuration.isPressed)
             .onChange(of: configuration.isPressed) { pressed in
-                if pressed, isEnabled { Haptics.softTap() }
+                if pressed, isEnabled { Haptics.selection() }
             }
     }
 }
@@ -80,8 +76,8 @@ struct DangerButtonStyle: ButtonStyle {
                 Palette.danger.opacity(isEnabled ? 1 : 0.4),
                 in: RoundedRectangle(cornerRadius: Radius.btn, style: .continuous)
             )
-            .scaleEffect(configuration.isPressed ? 0.98 : 1)
-            .animation(.easeOut(duration: Motion.feedback), value: configuration.isPressed)
+            .scaleEffect(configuration.isPressed ? 0.93 : 1)
+            .animation(.spring(response: 0.22, dampingFraction: 0.62), value: configuration.isPressed)
             .onChange(of: configuration.isPressed) { pressed in
                 if pressed, isEnabled { Haptics.warn() }
             }

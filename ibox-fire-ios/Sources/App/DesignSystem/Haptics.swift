@@ -16,24 +16,28 @@ enum Haptics {
         select.prepare()
     }
 
-    /// 主按钮按下
+    /// 主按钮按下 — 对齐 Android KEYBOARD_TAP / CONTEXT_CLICK 力度
     static func tap() {
-        light.impactOccurred(intensity: 0.85)
+        light.prepare()
+        light.impactOccurred(intensity: 1.0)
     }
 
     /// 危险/停止
     static func warn() {
-        medium.impactOccurred(intensity: 1.0)
+        heavy.prepare()
+        heavy.impactOccurred(intensity: 1.0)
     }
 
     /// Chip / Tab 切换
     static func selection() {
+        select.prepare()
         select.selectionChanged()
     }
 
     /// 任务启动、关键确认
     static func commit() {
-        medium.impactOccurred(intensity: 0.9)
+        medium.prepare()
+        medium.impactOccurred(intensity: 1.0)
     }
 
     /// 业务成功（锁单/抢合成功等）

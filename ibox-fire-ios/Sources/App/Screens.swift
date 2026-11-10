@@ -17,24 +17,32 @@ struct SiteLoginScreen: View {
         VStack(spacing: Space.l) {
             Spacer(minLength: Space.xl)
             VStack(spacing: Space.s) {
-                Text("iBox Fire")
+                Text("iBox科技")
+                    .font(.system(size: 28, weight: .heavy))
+                    .foregroundStyle(Palette.textPrimary)
+                Text("登录网站会员 · 额度与网页共用")
+                    .font(Typo.caption)
+                    .foregroundStyle(Palette.textMuted)
+            }
+            VStack(alignment: .leading, spacing: Space.m) {
+                Text("网站会员")
                     .font(Typo.title)
                     .foregroundStyle(Palette.textPrimary)
-                Text("网站会员登录")
-                    .font(Typo.caption)
-                    .foregroundStyle(Palette.textSecondary)
-            }
-            Card {
-                VStack(spacing: Space.m) {
-                    AppTextField(label: "用户名", text: $vm.siteUserName)
-                    AppTextField(label: "密码", text: $vm.sitePassword, isSecure: true, error: vm.siteError)
-                    Button(vm.loginLoading ? "登录中…" : "登录") {
-                        Task { await vm.siteLogin() }
-                    }
-                    .buttonStyle(PrimaryButtonStyle())
-                    .disabled(vm.loginLoading)
+                Text("开火在本机发起，登录仅同步会员与额度")
+                    .font(Typo.caption2)
+                    .foregroundStyle(Palette.textMuted)
+                AppTextField(label: "网站用户名", text: $vm.siteUserName)
+                AppTextField(label: "密码", text: $vm.sitePassword, isSecure: true, error: vm.siteError)
+                Button(vm.loginLoading ? "登录中…" : "登录网站会员") {
+                    Haptics.commit()
+                    Task { await vm.siteLogin() }
                 }
+                .buttonStyle(PrimaryButtonStyle())
+                .disabled(vm.loginLoading)
             }
+            .padding(Space.l)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Palette.surface, in: RoundedRectangle(cornerRadius: Radius.l, style: .continuous))
             Spacer()
         }
         .padding(.horizontal, Space.l)
@@ -55,6 +63,7 @@ struct MainShell: View {
                 platformBtn(.ibox, "iBox")
                 platformBtn(.newbee, "NewBee")
                 platformBtn(.topstar, "矩星")
+                platformBtn(.ibpro, "ibPro")
                 Spacer()
                 Button { vm.techMode = .profile } label: {
                     Image(systemName: "person.circle")
@@ -155,6 +164,7 @@ struct MainShell: View {
                 if vm.techMode == .profile { ProfileScreen() }
                 else if vm.appPlatform == .newbee && !vm.nbLoggedIn { NbLoginScreen() }
                 else if vm.appPlatform == .topstar && !vm.tsLoggedIn { TsLoginScreen() }
+                else if vm.appPlatform == .ibpro && !vm.ibLoggedIn { IbLoginScreen() }
                 else { ModePane() }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -178,6 +188,7 @@ struct MainShell: View {
         case .ibox: return vm.iboxTabs
         case .newbee: return vm.nbTabs
         case .topstar: return vm.tsTabs
+        case .ibpro: return vm.ibTabs
         }
     }
 
@@ -193,6 +204,8 @@ struct MainShell: View {
                 vm.techMode = .nb_presale
             case .topstar:
                 vm.techMode = .ts_market
+            case .ibpro:
+                vm.techMode = .ib_presale
             }
         } label: {
             Text(title)
@@ -450,7 +463,7 @@ struct ModeLogPanel: View {
                     .onTapGesture { withAnimation { vm.logExpanded = true } }
             }
         }
-        .background(Color(.systemGray6))
+        .background(Palette.surfaceMuted.opacity(0.85))
     }
 }
 
@@ -538,6 +551,29 @@ struct TsLoginScreen: View {
     }
 }
 
+struct IbLoginScreen: View {
+    @EnvironmentObject var vm: AppViewModel
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("ibPro 登录").font(.title2.bold())
+                Text("直连 api.iboxart.cn · 账号密码 / Token").font(.caption).foregroundStyle(.secondary)
+                TextField("账号/手机号", text: $vm.ibAccount).keyboardType(.default).fieldStyle()
+                SecureField("密码", text: $vm.ibPassword).fieldStyle()
+                Button(vm.ibLoginLoading ? "登录中…" : "登录") { vm.ibPasswordLogin() }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(vm.ibLoginLoading)
+                Text("或粘贴 Token").font(.caption)
+                TextEditor(text: $vm.ibTokenInput).frame(minHeight: 80)
+                    .padding(8).background(Color(.systemGray6)).clipShape(RoundedRectangle(cornerRadius: 10))
+                Button("保存 Token") { vm.saveIbToken() }
+                if !vm.ibError.isEmpty { Text(vm.ibError).foregroundStyle(.red).font(.caption) }
+            }.padding()
+        }
+        .dismissKeyboardOnTap()
+    }
+}
+
 private struct KeepAliveStatusBlock: View {
     @ObservedObject private var ka = BackgroundKeepAlive.shared
     var body: some View {
@@ -553,12 +589,33 @@ struct ProfileScreen: View {
     @EnvironmentObject var vm: AppViewModel
     var body: some View {
         List {
-            Section("网站会员") {
-                Text(vm.siteUser?.username ?? "-")
-                Text(vipLabel)
-                if let e = vm.siteUser?.vipExpiresAt, !e.isEmpty { Text("到期 \(e)").font(.caption) }
-                Button("刷新额度") { Task { await vm.refreshAllQuotas(force: true) } }
-                Button("退出网站", role: .destructive) { vm.siteLogout() }
+            Section {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(vm.siteUser?.username ?? "未登录")
+                        .font(.system(size: 20, weight: .bold))
+                        .foregroundStyle(Palette.onBrand)
+                    Text(vipLabel)
+                        .font(Typo.caption)
+                        .foregroundStyle(Palette.onBrand.opacity(0.7))
+                    if let e = vm.siteUser?.vipExpiresAt, !e.isEmpty {
+                        Text("到期 \(e.prefix(10))").font(Typo.caption2).foregroundStyle(Palette.onBrand.opacity(0.55))
+                    }
+                    HStack(spacing: 12) {
+                        Button("刷新额度") {
+                            Haptics.selection()
+                            Task { await vm.refreshAllQuotas(force: true) }
+                        }
+                        .foregroundStyle(Palette.onBrand)
+                        Button("退出网站", role: .destructive) {
+                            Haptics.warn()
+                            vm.siteLogout()
+                        }
+                        .foregroundStyle(Palette.onBrand.opacity(0.85))
+                    }
+                    .padding(.top, 4)
+                }
+                .padding(.vertical, 6)
+                .listRowBackground(Palette.brand)
             }
             Section("额度") {
                 Text("抢合 \(vm.synthQuota.unlimited ? "不限" : "\(vm.synthQuota.remaining)/\(vm.synthQuota.limit)")")
@@ -586,6 +643,15 @@ struct ProfileScreen: View {
                 if vm.tsLoggedIn {
                     Button("复制 Token") { UIPasteboard.general.string = vm.tsToken }
                     Button("退出矩星", role: .destructive) { vm.clearTs() }
+                }
+            }
+            Section("ibPro") {
+                Text(vm.ibLoggedIn
+                     ? (vm.ibNickname.isEmpty ? "已登录" : vm.ibNickname)
+                     : "未登录")
+                if vm.ibLoggedIn {
+                    Button("复制 Token") { UIPasteboard.general.string = vm.ibToken }
+                    Button("退出 ibPro", role: .destructive) { vm.clearIb() }
                 }
             }
             Section("易代理 API") {
@@ -653,6 +719,10 @@ struct ModePane: View {
                     case .nb_snipe: NbSnipePane()
                     case .ts_market: TsMarketPane()
                     case .ts_snipe: TsSnipePane()
+                    case .ib_presale: IbPresalePane()
+                    case .ib_snipe: IbSnipePane()
+                    case .ib_sell: IbSellPane()
+                    case .ib_query: IbQueryPane()
                     default: EmptyView()
                     }
                 }
@@ -1584,6 +1654,184 @@ struct TsSnipePane: View {
         case "fast": return "快捷：fastOrderNew，间隔 1s"
         case "batch": return "批量：batchBuy，未开启则回落快捷，间隔 2s"
         default: return "自动：商品开批量则 batch，否则 fast；批量失败回落快捷"
+        }
+    }
+}
+
+struct IbPresalePane: View {
+    @EnvironmentObject var vm: AppViewModel
+    @EnvironmentObject var runner: TaskRunner
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("提前0.8s · CreateOrder · \(vm.ibRoute == "proxy" ? "本机+易代理" : "纯本机")\(vm.ibPresaleAutoPay ? " · 自动支付" : "")")
+                .font(.caption).foregroundStyle(Palette.textMuted)
+            HStack {
+                ModeChip(title: "纯本机", selected: vm.ibRoute == "direct") { vm.setIbRoute("direct") }
+                ModeChip(title: "本机+易代理", selected: vm.ibRoute == "proxy") { vm.setIbRoute("proxy") }
+            }
+            if let item = vm.ibPresaleSelected {
+                PickedBar(
+                    title: item.name,
+                    subtitle: "¥\(item.price) · id \(item.id)" + (item.batchId > 0 ? " · batch \(item.batchId)" : " · 无batch"),
+                    onClear: { vm.clearIbPresaleSelection() }
+                )
+                TimeFields(h: $vm.fireH, m: $vm.fireM, s: $vm.fireS)
+                TextField("数量", text: $vm.ibPresaleQty).keyboardType(.numberPad).fieldStyle()
+                Toggle("自动支付（汇付）", isOn: $vm.ibPresaleAutoPay)
+                if vm.ibPresaleAutoPay { SecureField("支付密码", text: $vm.ibPresalePayPwd).fieldStyle() }
+                StopStartButton(
+                    running: runner.isRunning(.ibPresale),
+                    startTitle: vm.ibRoute == "proxy" ? "开始抢购（本机+易代理）" : "开始抢购（纯本机）",
+                    stopTitle: "停止 ibPro 抢购",
+                    enabled: vm.isVip,
+                    onStart: { vm.startIbPresale() },
+                    onStop: { runner.stop(.ibPresale) }
+                )
+            } else {
+                HStack {
+                    Text("\(vm.ibPresaleItems.count) 条发售").font(.caption)
+                    Spacer()
+                    Button { Task { await vm.refreshIbPresaleList() } } label: { Image(systemName: "arrow.clockwise") }
+                }
+                ForEach(vm.ibPresaleItems) { p in
+                    Button { vm.selectIbPresale(p) } label: {
+                        HStack {
+                            VStack(alignment: .leading) {
+                                Text(p.name).font(.subheadline)
+                                Text("id \(p.id)" + (p.batchId > 0 ? " · b\(p.batchId)" : " · 无batch") + " · \(p.startTime)")
+                                    .font(.caption2).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Text(p.price.isEmpty ? "" : "¥\(p.price)").font(.caption.bold())
+                        }
+                    }
+                    Divider()
+                }
+            }
+        }
+        .onAppear { if vm.ibPresaleItems.isEmpty { Task { await vm.refreshIbPresaleList(silent: true) } } }
+    }
+}
+
+struct IbSnipePane: View {
+    @EnvironmentObject var vm: AppViewModel
+    @EnvironmentObject var runner: TaskRunner
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("本机批量 batchBuy · 跳过盯盘 · 间隔可调")
+                .font(.caption).foregroundStyle(Palette.textMuted)
+            if vm.ibSnipeGid <= 0 {
+                TextField("搜索商品 / ID", text: Binding(
+                    get: { vm.ibSnipeSearch },
+                    set: { vm.searchIbSnipe($0) }
+                )).fieldStyle()
+                if vm.ibSnipeHits.isEmpty {
+                    Text(vm.ibSnipeSearch.isEmpty ? "输入关键词搜索" : "无匹配").font(.caption).foregroundStyle(.secondary)
+                } else {
+                    ForEach(vm.ibSnipeHits) { h in
+                        Button { vm.pickIbSnipe(h) } label: {
+                            VStack(alignment: .leading) {
+                                Text(h.name).font(.subheadline)
+                                Text("ID \(h.id)" + (h.floor.isEmpty ? "" : " · 地板 \(h.floor)")).font(.caption2).foregroundStyle(.secondary)
+                            }.frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        Divider()
+                    }
+                }
+            } else {
+                PickedBar(title: vm.ibSnipeName, subtitle: "ID \(vm.ibSnipeGid)", onClear: { vm.clearIbSnipeSelection() })
+                HStack {
+                    TextField("目标价 ≤¥", text: $vm.ibSnipePrice).keyboardType(.decimalPad).fieldStyle()
+                    TextField("数量", text: $vm.ibSnipeQty).keyboardType(.numberPad).frame(width: 88).fieldStyle()
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("间隔 \(Int(vm.ibSnipeIntervalMs)) ms").font(.caption).foregroundStyle(Palette.textMuted)
+                    Slider(value: $vm.ibSnipeIntervalMs, in: 120...2000, step: 10)
+                }
+                Toggle("自动支付（汇付）", isOn: $vm.ibSnipeAutoPay)
+                if vm.ibSnipeAutoPay { SecureField("支付密码", text: $vm.ibSnipePayPwd).fieldStyle() }
+                StopStartButton(
+                    running: runner.isRunning(.ibSnipe),
+                    startTitle: "开始批量捡漏（本机）",
+                    stopTitle: "停止 ibPro 捡漏",
+                    enabled: vm.isVip,
+                    onStart: { vm.startIbSnipe() },
+                    onStop: { runner.stop(.ibSnipe) }
+                )
+            }
+        }
+    }
+}
+
+struct IbSellPane: View {
+    @EnvironmentObject var vm: AppViewModel
+    @EnvironmentObject var runner: TaskRunner
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("卖求购 · begBuyList → 锁仓 → sell · 需支付密码")
+                .font(.caption).foregroundStyle(Palette.textMuted)
+            if vm.ibSnipeGid <= 0 {
+                Text("请先到「捡漏」搜索并选择藏品，再回本页开卖").font(.caption).foregroundStyle(.secondary)
+                TextField("搜索商品 / ID", text: Binding(
+                    get: { vm.ibSnipeSearch },
+                    set: { vm.searchIbSnipe($0) }
+                )).fieldStyle()
+                ForEach(vm.ibSnipeHits) { h in
+                    Button { vm.pickIbSnipe(h) } label: {
+                        Text("\(h.name) · ID \(h.id)").font(.subheadline)
+                    }
+                    Divider()
+                }
+            } else {
+                PickedBar(title: vm.ibSnipeName, subtitle: "ID \(vm.ibSnipeGid)", onClear: { vm.clearIbSnipeSelection() })
+                HStack {
+                    TextField("最低价 ≥¥", text: $vm.ibSellMinPrice).keyboardType(.decimalPad).fieldStyle()
+                    TextField("数量", text: $vm.ibSellQty).keyboardType(.numberPad).frame(width: 88).fieldStyle()
+                }
+                SecureField("支付密码", text: $vm.ibSellPayPwd).fieldStyle()
+                StopStartButton(
+                    running: runner.isRunning(.ibSell),
+                    startTitle: "开始卖求购",
+                    stopTitle: "停止卖求购",
+                    enabled: vm.isVip,
+                    onStart: { vm.startIbSell() },
+                    onStop: { runner.stop(.ibSell) }
+                )
+            }
+        }
+    }
+}
+
+struct IbQueryPane: View {
+    @EnvironmentObject var vm: AppViewModel
+    @EnvironmentObject var runner: TaskRunner
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("查挂单 · 翻页汇总价位分布")
+                .font(.caption).foregroundStyle(Palette.textMuted)
+            if vm.ibSnipeGid <= 0 {
+                TextField("搜索商品 / ID", text: Binding(
+                    get: { vm.ibSnipeSearch },
+                    set: { vm.searchIbSnipe($0) }
+                )).fieldStyle()
+                ForEach(vm.ibSnipeHits) { h in
+                    Button { vm.pickIbSnipe(h) } label: {
+                        Text("\(h.name) · ID \(h.id)").font(.subheadline)
+                    }
+                    Divider()
+                }
+            } else {
+                PickedBar(title: vm.ibSnipeName, subtitle: "ID \(vm.ibSnipeGid)", onClear: { vm.clearIbSnipeSelection() })
+                Stepper("扫描深度 \(vm.ibQueryDepth)", value: $vm.ibQueryDepth, in: 20...2000, step: 20)
+                StopStartButton(
+                    running: runner.isRunning(.ibQuery),
+                    startTitle: "开始查挂单",
+                    stopTitle: "停止查询",
+                    enabled: vm.isVip,
+                    onStart: { vm.startIbQuery() },
+                    onStop: { runner.stop(.ibQuery) }
+                )
+            }
         }
     }
 }

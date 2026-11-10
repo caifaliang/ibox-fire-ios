@@ -77,18 +77,19 @@ enum SuccessNotifier {
         }
         if msg.contains("下单成功") {
             switch kind {
-            case "buy", "nb_snipe", "ts_snipe": return "捡漏下单成功"
+            case "buy", "nb_snipe", "ts_snipe", "ib_snipe": return "捡漏下单成功"
+            case "ib_sell": return "卖求购成功"
             case "seg_snipe": return "板块盯盘下单成功"
-            case "presale", "nb_presale": return "抢购下单成功"
+            case "presale", "nb_presale", "ib_presale": return "抢购下单成功"
             case "sweep": return "点对点下单成功"
             default: return "下单成功"
             }
         }
         if msg.contains("自动支付成功") || msg.contains("支付成功") {
             switch kind {
-            case "buy", "nb_snipe", "ts_snipe": return "捡漏支付成功"
+            case "buy", "nb_snipe", "ts_snipe", "ib_snipe": return "捡漏支付成功"
             case "seg_snipe": return "板块盯盘支付成功"
-            case "presale", "nb_presale": return "抢购支付成功"
+            case "presale", "nb_presale", "ib_presale": return "抢购支付成功"
             case "sweep": return "点对点支付成功"
             default: return "支付成功"
             }
@@ -119,6 +120,10 @@ enum SuccessNotifier {
         case "nb_presale": return "NB抢购"
         case "nb_snipe": return "NB捡漏"
         case "ts_snipe": return "矩星捡漏"
+        case "ib_presale": return "ibPro抢购"
+        case "ib_snipe": return "ibPro捡漏"
+        case "ib_sell": return "ibPro卖求购"
+        case "ib_query": return "ibPro查挂单"
         case "announce": return "公告锁"
         case "recommend_lock": return "推荐锁定"
         case "buy": return "捡漏"

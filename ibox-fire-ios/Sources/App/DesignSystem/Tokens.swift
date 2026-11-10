@@ -25,16 +25,19 @@ extension Color {
 // MARK: - Design tokens（对齐 Android FireDesign）
 
 enum Palette {
-    static let bg = Color(light: 0xF4F6F9, dark: 0x0B0D10)
-    static let surface = Color(light: 0xFFFFFF, dark: 0x15181D)
-    static let surfaceMuted = Color(light: 0xF8FAFC, dark: 0x1C2026)
-    static let hairline = Color(light: 0xE2E8F0, dark: 0x262A31)
-    static let textPrimary = Color(light: 0x0F172A, dark: 0xF2F4F7)
-    static let textSecondary = Color(light: 0x475569, dark: 0x9AA3B0)
-    static let textMuted = Color(light: 0x94A3B8, dark: 0x6B7280)
-    /// 主按钮 / 选中态 — 近黑品牌色（Android Brand）
+    /// 象牙墨色 — 对齐 Android FireDesign 0.2.75+
+    static let bg = Color(light: 0xF7F4EE, dark: 0x0B0F14)
+    static let surface = Color(light: 0xFFFCF7, dark: 0x111827)
+    static let surfaceMuted = Color(light: 0xEBE6DC, dark: 0x1F2937)
+    static let hairline = Color(light: 0xE7E0D4, dark: 0x374151)
+    static let textPrimary = Color(light: 0x111827, dark: 0xE5E7EB)
+    static let textSecondary = Color(light: 0x6B7280, dark: 0x9CA3AF)
+    static let textMuted = Color(light: 0x9CA3AF, dark: 0x6B7280)
+    /// 主按钮 / 选中态 — 墨色品牌
     static let brand = Color(light: 0x111827, dark: 0xE5E7EB)
-    static let onBrand = Color(light: 0xFFFFFF, dark: 0x0F172A)
+    static let onBrand = Color(light: 0xF7F4EE, dark: 0x0F172A)
+    static let brandSubtle = Color(light: 0xEBE6DC, dark: 0x1F2937)
+    static let liveAmber = Color(light: 0xC4A574, dark: 0xC4A574)
     /// 唯一强调色 — 链接/选中辅色（Android Accent）
     static let accent = Color(light: 0x2563EB, dark: 0x60A5FA)
     static let accentSoft = Color(light: 0xEFF6FF, dark: 0x1E293B)

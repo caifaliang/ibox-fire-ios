@@ -3,7 +3,7 @@ import Combine
 import SwiftUI
 
 enum AppPlatform: String {
-    case ibox, newbee, topstar
+    case ibox, newbee, topstar, ibpro
 }
 
 enum FeatureCat: String, CaseIterable, Identifiable {
@@ -24,6 +24,7 @@ enum TechMode: String, CaseIterable, Identifiable {
     case price_alert, market_push, announce_push, discover_push
     case nb_presale, nb_snipe
     case ts_market, ts_snipe
+    case ib_presale, ib_snipe, ib_sell, ib_query
     case profile
     var id: String { rawValue }
     var label: String {
@@ -50,6 +51,10 @@ enum TechMode: String, CaseIterable, Identifiable {
         case .nb_snipe: return "捡漏"
         case .ts_market: return "市场"
         case .ts_snipe: return "捡漏"
+        case .ib_presale: return "抢购"
+        case .ib_snipe: return "捡漏"
+        case .ib_sell: return "卖求购"
+        case .ib_query: return "查挂单"
         case .profile: return "我的"
         }
     }
@@ -79,6 +84,10 @@ enum TechMode: String, CaseIterable, Identifiable {
         case .nb_presale: return .nbPresale
         case .nb_snipe: return .nbSnipe
         case .ts_snipe: return .tsSnipe
+        case .ib_presale: return .ibPresale
+        case .ib_snipe: return .ibSnipe
+        case .ib_sell: return .ibSell
+        case .ib_query: return .ibQuery
         case .sweep: return .sweep
         case .seg_snipe: return .segSnipe
         case .recommend_lock: return .recommendLock
@@ -133,6 +142,37 @@ final class AppViewModel: ObservableObject {
     @Published var tsNickname = ""
     @Published var tsError = ""
     @Published var tsLoginLoading = false
+
+    @Published var ibLoggedIn = false
+    @Published var ibToken = ""
+    @Published var ibTokenInput = ""
+    @Published var ibDeviceId = ""
+    @Published var ibAccount = ""
+    @Published var ibPassword = ""
+    @Published var ibNickname = ""
+    @Published var ibError = ""
+    @Published var ibLoginLoading = false
+    @Published var ibRoute = "direct" // direct | proxy
+    @Published var ibPresaleItems: [IbSaleItem] = []
+    @Published var ibPresaleSelected: IbSaleItem?
+    @Published var ibPresaleQty = "1"
+    @Published var ibPresaleAutoPay = true
+    @Published var ibPresalePayPwd = ""
+    @Published var ibSnipeSearch = ""
+    @Published var ibSnipeHits: [IbMarketItem] = []
+    @Published var ibSnipeGid: Int64 = 0
+    @Published var ibSnipeName = ""
+    @Published var ibSnipeGoodsType = 2
+    @Published var ibSnipePrice = ""
+    @Published var ibSnipeQty = "1"
+    @Published var ibSnipeMode = "batch"
+    @Published var ibSnipeIntervalMs: Double = 250
+    @Published var ibSnipeAutoPay = true
+    @Published var ibSnipePayPwd = ""
+    @Published var ibSellMinPrice = ""
+    @Published var ibSellQty = "1"
+    @Published var ibSellPayPwd = ""
+    @Published var ibQueryDepth = 100
 
     @Published var appPlatform: AppPlatform = .ibox
     @Published var featureCat: FeatureCat = .tech
@@ -339,6 +379,9 @@ final class AppViewModel: ObservableObject {
     private let kNb = "ibox.nb.token"
     private let kTs = "ibox.ts.token"
     private let kTsAccount = "ibox.ts.account"
+    private let kIb = "ibox.ibpro.token"
+    private let kIbDevice = "ibox.ibpro.device"
+    private let kIbRoute = "ibox.ibpro.route"
     private let kPhone = "ibox.phone"
     private let kProxy = "ibox.proxy_api"
     private let kWorkers = "ibox.workers"
@@ -347,6 +390,7 @@ final class AppViewModel: ObservableObject {
     private let kSynthBatchChunk = "ibox.synth_batch_chunk"
     private var nbSnipeSearchTask: Task<Void, Never>?
     private var tsSearchTask: Task<Void, Never>?
+    private var ibSnipeSearchTask: Task<Void, Never>?
     private var lastQuotaRefreshAt: TimeInterval = 0
     private var activePrep: String?
 
@@ -386,6 +430,18 @@ final class AppViewModel: ObservableObject {
         if let t = prefs.string(forKey: kTs), !t.isEmpty {
             tsToken = t
             tsLoggedIn = true
+        }
+        ibDeviceId = prefs.string(forKey: kIbDevice) ?? ""
+        if ibDeviceId.isEmpty {
+            ibDeviceId = IbproClient.stableDeviceId(seed: "ibpro-ios")
+            prefs.set(ibDeviceId, forKey: kIbDevice)
+        }
+        let ibR = prefs.string(forKey: kIbRoute)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        ibRoute = (ibR == "proxy") ? "proxy" : "direct"
+        if let t = prefs.string(forKey: kIb), !t.isEmpty {
+            ibToken = t
+            ibLoggedIn = true
+            Task { await refreshIbPresaleList(silent: true) }
         }
         let s = AlertWatchStore.shared
         pushMarketEnabled = s.marketWatchEnabled
@@ -450,6 +506,7 @@ final class AppViewModel: ObservableObject {
     }
     var nbTabs: [TechMode] { [.nb_presale, .nb_snipe] }
     var tsTabs: [TechMode] { [.ts_market, .ts_snipe] }
+    var ibTabs: [TechMode] { [.ib_presale, .ib_snipe, .ib_sell, .ib_query] }
 
     var currentLogs: [LogLine] {
         modeLogs[techMode.logKey] ?? []
@@ -810,6 +867,150 @@ final class AppViewModel: ObservableObject {
         tsMarketHits = []
         tsSnipeHits = []
         prefs.removeObject(forKey: kTs)
+    }
+
+    func ensureIbDeviceId() -> String {
+        if !ibDeviceId.isEmpty { return ibDeviceId }
+        let id = IbproClient.stableDeviceId(seed: ibToken.isEmpty ? "ibpro-ios" : ibToken)
+        ibDeviceId = id
+        prefs.set(id, forKey: kIbDevice)
+        return id
+    }
+
+    func saveIbToken() {
+        let t = ibTokenInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard t.count >= 8 else { ibError = "请粘贴有效 ibPro Token"; return }
+        ibToken = t
+        ibTokenInput = ""
+        ibLoggedIn = true
+        ibError = ""
+        prefs.set(t, forKey: kIb)
+        _ = ensureIbDeviceId()
+        appendLog("ibPro Token 已保存", mode: .ib_presale)
+        Task { await refreshIbPresaleList(silent: true) }
+    }
+
+    func clearIb() {
+        ibLoggedIn = false
+        ibToken = ""
+        ibNickname = ""
+        ibPresaleSelected = nil
+        ibPresaleItems = []
+        ibSnipeGid = 0
+        ibSnipeName = ""
+        ibSnipeHits = []
+        prefs.removeObject(forKey: kIb)
+    }
+
+    func ibPasswordLogin() {
+        let account = ibAccount.trimmingCharacters(in: .whitespacesAndNewlines)
+        if account.isEmpty { ibError = "请输入账号/手机号"; return }
+        if ibPassword.count < 4 { ibError = "密码至少4位"; return }
+        ibLoginLoading = true
+        ibError = ""
+        let deviceId = ensureIbDeviceId()
+        Task {
+            let r = await IbproClient(token: "", deviceId: deviceId).loginAccount(account: account, password: ibPassword)
+            let token = IbproClient.extractTokenFromLogin(r)
+            if token.isEmpty {
+                ibError = r.msg.isEmpty ? "登录失败 code=\(r.code)" : r.msg
+                ibLoginLoading = false
+                return
+            }
+            let info = (r.data["userinfo"] as? [String: Any]) ?? r.data
+            ibToken = token
+            ibNickname = JSONX.stringVal(info["nickname"]).isEmpty
+                ? JSONX.stringVal(info["username"])
+                : JSONX.stringVal(info["nickname"])
+            if ibNickname.isEmpty { ibNickname = account }
+            ibLoggedIn = true
+            ibLoginLoading = false
+            ibPassword = ""
+            prefs.set(token, forKey: kIb)
+            prefs.set(deviceId, forKey: kIbDevice)
+            appendLog("ibPro 登录成功 \(ibNickname)", type: "buy", mode: .ib_presale)
+            await refreshIbPresaleList(silent: true)
+        }
+    }
+
+    func setIbRoute(_ route: String) {
+        ibRoute = route == "proxy" ? "proxy" : "direct"
+        prefs.set(ibRoute, forKey: kIbRoute)
+    }
+
+    func refreshIbPresaleList(silent: Bool = false) async {
+        guard ibLoggedIn, !ibToken.isEmpty else {
+            if !silent { appendLog("请先登录 ibPro", type: "error", mode: .ib_presale) }
+            return
+        }
+        do {
+            let list = try await IbproClient(token: ibToken, deviceId: ensureIbDeviceId()).saleList()
+            ibPresaleItems = list
+            if !silent { appendLog("发售列表 \(list.count) 条", mode: .ib_presale) }
+        } catch {
+            if !silent { appendLog("发售列表失败: \(error.localizedDescription)", type: "error", mode: .ib_presale) }
+        }
+    }
+
+    func selectIbPresale(_ item: IbSaleItem) {
+        ibPresaleSelected = item
+        if let (h, m, s) = parseStartToHms(item.startTime) {
+            fireH = h; fireM = m; fireS = s
+            appendLog(String(format: "已自动填入开火时间 %02d:%02d:%02d", h, m, s), mode: .ib_presale)
+        }
+    }
+
+    func clearIbPresaleSelection() {
+        guard !runner.isRunning(.ibPresale), activePrep != "ib_presale" else { return }
+        ibPresaleSelected = nil
+    }
+
+    func searchIbSnipe(_ qRaw: String) {
+        ibSnipeSearch = qRaw
+        guard ibLoggedIn, !ibToken.isEmpty else { return }
+        let q = qRaw.trimmingCharacters(in: .whitespacesAndNewlines)
+        ibSnipeSearchTask?.cancel()
+        if q.isEmpty { ibSnipeHits = []; return }
+        if let gid = Int64(q), gid > 0 {
+            ibSnipeHits = [IbMarketItem(id: gid, name: "ID \(gid)")]
+            return
+        }
+        ibSnipeSearchTask = Task {
+            try? await Task.sleep(nanoseconds: 350_000_000)
+            guard !Task.isCancelled, ibSnipeSearch.trimmingCharacters(in: .whitespacesAndNewlines) == q else { return }
+            do {
+                let client = IbproClient(token: ibToken, deviceId: ensureIbDeviceId())
+                let hot = try await client.marketList(tab: "hot", page: 1, listRows: 40)
+                let latest = try await client.marketList(tab: "latest", page: 1, listRows: 40)
+                var seen = Set<Int64>()
+                let hits = (hot + latest).filter {
+                    guard seen.insert($0.id).inserted else { return false }
+                    return $0.name.localizedCaseInsensitiveContains(q) || "\($0.id)".contains(q)
+                }
+                ibSnipeHits = Array(hits.prefix(40))
+                if hits.isEmpty { appendLog("未找到「\(q)」", mode: .ib_snipe) }
+            } catch {
+                appendLog("搜藏品失败: \(error.localizedDescription)", type: "error", mode: .ib_snipe)
+                ibSnipeHits = []
+            }
+        }
+    }
+
+    func pickIbSnipe(_ hit: IbMarketItem) {
+        ibSnipeGid = hit.id
+        ibSnipeName = hit.name
+        ibSnipeGoodsType = hit.goodsType
+        ibSnipeHits = []
+        ibSnipeSearch = ""
+        let floorDigits = hit.floor.filter { $0.isNumber || $0 == "." }
+        if !floorDigits.isEmpty { ibSnipePrice = floorDigits }
+    }
+
+    func clearIbSnipeSelection() {
+        guard !runner.isRunning(.ibSnipe) else { return }
+        ibSnipeGid = 0
+        ibSnipeName = ""
+        ibSnipeHits = []
     }
 
     func tsPasswordLogin() {
@@ -2041,6 +2242,156 @@ final class AppViewModel: ObservableObject {
             Task { @MainActor in self?.appendLog(m, mode: .ts_snipe) }
         })
         runner.start(kind: .tsSnipe, stop: { engine.requestStop() }, keepAlive: true) { await engine.run() }
+    }
+
+    func startIbPresale() {
+        guard requireVip(), ibLoggedIn else { return }
+        guard let item = ibPresaleSelected else { appendLog("请选择发售", type: "error", mode: .ib_presale); return }
+        guard guardNotRunning(.ibPresale, prepKey: "ib_presale") else { return }
+        if ibPresaleAutoPay && ibPresalePayPwd.trimmingCharacters(in: .whitespaces).isEmpty {
+            appendLog("开启自动支付需填写支付密码", type: "error", mode: .ib_presale); return
+        }
+        let fireAt = todayFireAtEpochSec(h: fireH, m: fireM, s: fireS)
+        let late = Int64(Date().timeIntervalSince1970) - fireAt
+        if late > 30 {
+            appendLog("开火时间已过 \(late)s，请改时间后再启动", type: "error", mode: .ib_presale); return
+        }
+        let useProxy = ibRoute == "proxy"
+        guard prepBusy("ib_presale", useProxy ? "提取易代理…" : "本机直连准备…") else { return }
+        let deviceId = ensureIbDeviceId()
+        let qty = Int(ibPresaleQty) ?? 1
+        Task { [weak self] in
+            guard let self else { return }
+            defer { if activePrep == "ib_presale" { clearPrep() } }
+            var proxies: [String] = []
+            if useProxy {
+                appendLog("易代理抽取中…", mode: .ib_presale)
+                let pool = await ProxyPool.extractAliveForSynth(resolveProxyUrl())
+                proxies = pool.proxies
+                appendLog("代理就绪 \(proxies.count) | \(pool.detail)", mode: .ib_presale)
+            }
+            let modeHint = proxies.isEmpty ? "纯本机" : "本机+易代理×\(proxies.count)"
+            if item.batchId <= 0 {
+                appendLog("警告：列表未解析到 batch_id，开火前会再拉列表补齐；仍缺则中止", mode: .ib_presale)
+            }
+            appendLog("启动\(modeHint)抢购 \(item.name) id=\(item.id) batch=\(item.batchId) x\(max(1, qty))\(ibPresaleAutoPay ? " · 自动支付" : "")", mode: .ib_presale)
+            let engine = IbPresaleEngine(cfg: IbPresaleConfig(
+                token: ibToken,
+                deviceId: deviceId,
+                goodsId: item.id,
+                goodsType: item.goodsType,
+                batchId: item.batchId,
+                productName: item.name,
+                quantity: max(1, qty),
+                fireAtEpochSec: fireAt,
+                proxies: proxies,
+                autoPay: ibPresaleAutoPay,
+                payPassword: ibPresaleAutoPay ? ibPresalePayPwd : ""
+            ), onLog: { [weak self] m in
+                Task { @MainActor in self?.appendLog(m, mode: .ib_presale) }
+            })
+            runner.start(kind: .ibPresale, stop: { engine.requestStop() }, keepAlive: true) {
+                _ = await engine.run()
+            }
+        }
+    }
+
+    func startIbSnipe() {
+        guard requireVip(), ibLoggedIn else { return }
+        guard guardNotRunning(.ibSnipe, prepKey: "ib_snipe") else { return }
+        guard ibSnipeGid > 0 else { appendLog("请搜索并选择商品", type: "error", mode: .ib_snipe); return }
+        let price = Double(ibSnipePrice) ?? 0
+        let qty = Int(ibSnipeQty) ?? 0
+        guard price > 0 else { appendLog("请填写目标价", type: "error", mode: .ib_snipe); return }
+        guard qty >= 1 else { appendLog("请填写数量", type: "error", mode: .ib_snipe); return }
+        if ibSnipeAutoPay && ibSnipePayPwd.trimmingCharacters(in: .whitespaces).isEmpty {
+            appendLog("开启自动支付需填写支付密码", type: "error", mode: .ib_snipe); return
+        }
+        // 对齐 Android：捡漏 = 本机批量 batchBuy；间隔由滑条控制
+        let interval = UInt64(min(2000, max(120, ibSnipeIntervalMs)))
+        let deviceId = ensureIbDeviceId()
+        guard prepBusy("ib_snipe", "本机批量捡漏…") else { return }
+        Task { [weak self] in
+            guard let self else { return }
+            defer { if activePrep == "ib_snipe" { clearPrep() } }
+            let engine = IbBatchEngine(cfg: IbSnipeConfig(
+                token: ibToken,
+                deviceId: deviceId,
+                goodsId: ibSnipeGid,
+                goodsType: ibSnipeGoodsType,
+                goodsName: ibSnipeName,
+                maxPrice: price,
+                quantity: qty,
+                buyMode: "batch",
+                intervalMs: interval,
+                proxies: [],
+                autoPay: ibSnipeAutoPay,
+                payPassword: ibSnipeAutoPay ? ibSnipePayPwd : ""
+            ), onLog: { [weak self] m in
+                Task { @MainActor in self?.appendLog(m, mode: .ib_snipe) }
+            })
+            appendLog(
+                "启动本机批量捡漏 id=\(ibSnipeGid) ≤¥\(price) x\(qty) · 间隔\(interval)ms\(ibSnipeAutoPay ? " · 自动支付" : "")",
+                mode: .ib_snipe
+            )
+            runner.start(kind: .ibSnipe, stop: { engine.requestStop() }, keepAlive: true) {
+                _ = await engine.run()
+            }
+        }
+    }
+
+    func startIbSell() {
+        guard requireVip(), ibLoggedIn else { return }
+        guard guardNotRunning(.ibSell, prepKey: "ib_sell") else { return }
+        guard ibSnipeGid > 0 else { appendLog("请先在捡漏搜索并选择藏品", type: "error", mode: .ib_sell); return }
+        let minP = Double(ibSellMinPrice) ?? 0
+        let qty = Int(ibSellQty) ?? 0
+        guard minP > 0 else { appendLog("请填写最低卖价", type: "error", mode: .ib_sell); return }
+        guard qty >= 1 else { appendLog("请填写数量", type: "error", mode: .ib_sell); return }
+        if ibSellPayPwd.trimmingCharacters(in: .whitespaces).isEmpty {
+            appendLog("卖求购需填写支付密码", type: "error", mode: .ib_sell); return
+        }
+        let deviceId = ensureIbDeviceId()
+        guard prepBusy("ib_sell", "卖求购进行中") else { return }
+        let engine = IbSellEngine(cfg: IbSellConfig(
+            token: ibToken,
+            deviceId: deviceId,
+            goodsId: ibSnipeGid,
+            goodsType: ibSnipeGoodsType,
+            goodsName: ibSnipeName,
+            minPrice: minP,
+            quantity: qty,
+            payPassword: ibSellPayPwd
+        ), onLog: { [weak self] m in
+            Task { @MainActor in self?.appendLog(m, mode: .ib_sell) }
+        })
+        clearPrep()
+        appendLog("启动卖求购 \(ibSnipeName) id=\(ibSnipeGid) ≥¥\(minP) x\(qty)", mode: .ib_sell)
+        runner.start(kind: .ibSell, stop: { engine.requestStop() }, keepAlive: true) {
+            _ = await engine.run()
+        }
+    }
+
+    func startIbQuery() {
+        guard requireVip(), ibLoggedIn else { return }
+        guard guardNotRunning(.ibQuery, prepKey: "ib_query") else { return }
+        guard ibSnipeGid > 0 else { appendLog("请先搜索并选择藏品", type: "error", mode: .ib_query); return }
+        let deviceId = ensureIbDeviceId()
+        guard prepBusy("ib_query", "查挂单…") else { return }
+        let engine = IbQueryEngine(cfg: IbQueryConfig(
+            token: ibToken,
+            deviceId: deviceId,
+            goodsId: ibSnipeGid,
+            goodsType: ibSnipeGoodsType,
+            goodsName: ibSnipeName,
+            depth: ibQueryDepth
+        ), onLog: { [weak self] m in
+            Task { @MainActor in self?.appendLog(m, mode: .ib_query) }
+        })
+        clearPrep()
+        runner.start(kind: .ibQuery, stop: { engine.requestStop() }, keepAlive: false) {
+            _ = await engine.run()
+        }
     }
 
     // MARK: - 全盘捡漏
