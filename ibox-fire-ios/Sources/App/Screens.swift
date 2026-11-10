@@ -424,6 +424,7 @@ private struct KeepAliveStatusBlock: View {
 struct ProfileScreen: View {
     @EnvironmentObject var vm: AppViewModel
     var body: some View {
+        NavigationStack {
         List {
             Section {
                 VStack(alignment: .leading, spacing: 6) {
@@ -458,36 +459,43 @@ struct ProfileScreen: View {
                 Text("抢购 \(vm.presaleQuota.unlimited ? "不限" : "\(vm.presaleQuota.remaining)/\(vm.presaleQuota.limit)")")
                 Text("公告 \(vm.announceQuota.unlimited ? "不限" : "\(vm.announceQuota.remaining)/\(vm.announceQuota.limit)")")
             }
-            Section("iBox") {
-                Text(vm.iboxLoggedIn ? "已登录 uid=\(JwtUtil.uid(vm.iboxToken) ?? 0)" : "未登录")
+            Section("iBox 账号") {
                 if vm.iboxLoggedIn {
+                    Text("已登录 uid=\(JwtUtil.uid(vm.iboxToken) ?? 0)")
                     Button("复制 Token") { UIPasteboard.general.string = vm.iboxToken }
                     Button("清除 iBox", role: .destructive) { vm.clearIbox() }
+                } else {
+                    // 对齐 APK ProfilePane：未登录直接露出短信/Token 登录卡
+                    IboxLoginCard()
+                        .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
+                        .listRowBackground(Color.clear)
                 }
             }
-            Section("NewBee") {
-                Text(vm.nbLoggedIn ? (vm.nbMobile.isEmpty ? "已登录" : vm.nbMobile) : "未登录")
+            Section("NewBee 账号") {
                 if vm.nbLoggedIn {
+                    Text(vm.nbMobile.isEmpty ? "已登录" : vm.nbMobile)
                     Button("复制 Token") { UIPasteboard.general.string = vm.nbToken }
                     Button("退出 NewBee", role: .destructive) { vm.clearNb() }
+                } else {
+                    NavigationLink("登录 NewBee") { NbLoginScreen() }
                 }
             }
-            Section("矩星") {
-                Text(vm.tsLoggedIn
-                     ? (vm.tsNickname.isEmpty ? (vm.tsAccount.isEmpty ? "已登录" : vm.tsAccount) : vm.tsNickname)
-                     : "未登录")
-                if vm.tsLoggedIn {
-                    Button("复制 Token") { UIPasteboard.general.string = vm.tsToken }
-                    Button("退出矩星", role: .destructive) { vm.clearTs() }
-                }
-            }
-            Section("ibPro") {
-                Text(vm.ibLoggedIn
-                     ? (vm.ibNickname.isEmpty ? "已登录" : vm.ibNickname)
-                     : "未登录")
+            Section("ibPro 账号") {
                 if vm.ibLoggedIn {
+                    Text(vm.ibNickname.isEmpty ? "已登录" : vm.ibNickname)
                     Button("复制 Token") { UIPasteboard.general.string = vm.ibToken }
                     Button("退出 ibPro", role: .destructive) { vm.clearIb() }
+                } else {
+                    NavigationLink("登录 ibPro") { IbLoginScreen() }
+                }
+            }
+            Section("矩星（隐藏平台）") {
+                if vm.tsLoggedIn {
+                    Text(vm.tsNickname.isEmpty ? (vm.tsAccount.isEmpty ? "已登录" : vm.tsAccount) : vm.tsNickname)
+                    Button("复制 Token") { UIPasteboard.general.string = vm.tsToken }
+                    Button("退出矩星", role: .destructive) { vm.clearTs() }
+                } else {
+                    NavigationLink("登录矩星") { TsLoginScreen() }
                 }
             }
             Section("易代理 API") {
@@ -515,6 +523,9 @@ struct ProfileScreen: View {
             Section("后台保活（自签）") {
                 KeepAliveStatusBlock()
             }
+        }
+        .navigationTitle("我的")
+        .navigationBarTitleDisplayMode(.inline)
         }
     }
     private var vipLabel: String {
