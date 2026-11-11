@@ -1615,10 +1615,13 @@ struct IbSellPane: View {
     @EnvironmentObject var runner: TaskRunner
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("卖求购 · begBuyList → 锁仓 → sell · 需支付密码")
+            Text("求购列表 → 锁仓 getSellCollectionInfo → sell · 对齐官方「以求购价售出」")
                 .font(.caption).foregroundStyle(Palette.textMuted)
-            if vm.ibSnipeGid <= 0 {
-                Text("请先到「捡漏」搜索并选择藏品，再回本页开卖").font(.caption).foregroundStyle(.secondary)
+            if !vm.ibLoggedIn {
+                Text("请先登录 ibPro").font(.caption).foregroundStyle(.secondary)
+                NavigationLink("登录 ibPro") { IbLoginScreen() }
+            } else if vm.ibSnipeGid <= 0 {
+                Text("请先搜索并选择藏品，再回本页开卖").font(.caption).foregroundStyle(.secondary)
                 TextField("搜索商品 / ID", text: Binding(
                     get: { vm.ibSnipeSearch },
                     set: { vm.searchIbSnipe($0) }
@@ -1635,10 +1638,14 @@ struct IbSellPane: View {
                     TextField("最低价 ≥¥", text: $vm.ibSellMinPrice).keyboardType(.decimalPad).fieldStyle()
                     TextField("数量", text: $vm.ibSellQty).keyboardType(.numberPad).frame(width: 88).fieldStyle()
                 }
-                SecureField("支付密码", text: $vm.ibSellPayPwd).fieldStyle()
+                SecureField("支付密码（必填）", text: $vm.ibSellPayPwd).fieldStyle()
+                Toggle("定时卖求购", isOn: $vm.ibSellTimed)
+                if vm.ibSellTimed {
+                    TimeFields(h: $vm.ibSellFireH, m: $vm.ibSellFireM, s: $vm.ibSellFireS)
+                }
                 StopStartButton(
                     running: runner.isRunning(.ibSell),
-                    startTitle: "开始卖求购",
+                    startTitle: "开始卖求购（本地）",
                     stopTitle: "停止卖求购",
                     enabled: vm.isVip,
                     onStart: { vm.startIbSell() },

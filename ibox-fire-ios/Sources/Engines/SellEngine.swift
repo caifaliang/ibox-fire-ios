@@ -100,7 +100,10 @@ final class SellEngine: @unchecked Sendable {
 
             if candidates.isEmpty {
                 let best = poItems.compactMap { JSONX.doubleVal($0["price"]) }.max() ?? 0
-                if best != lastBest {
+                // 对齐 APK：价已达标但候选被跳过集合吃光时清空，允许重试
+                if best >= cfg.targetPrice {
+                    soldOrderIds.removeAll()
+                } else if best != lastBest {
                     onLog("求购最高¥\(best) 未达目标¥\(cfg.targetPrice)")
                     lastBest = best
                 }

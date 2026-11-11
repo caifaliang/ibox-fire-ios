@@ -446,6 +446,8 @@ struct IbSellConfig {
     var payWay: String = "huifu"
     var intervalMs: UInt64 = 400
     var durationS: Double = 3600
+    /// >0 等到该北京时刻再开火；0 立即卖（对齐 APK）
+    var fireAtEpochSec: Int64 = 0
 }
 
 /// ibPro 卖求购：begBuyList → getSellCollectionInfo → sell
@@ -467,6 +469,24 @@ final class IbSellEngine: @unchecked Sendable {
         let name = cfg.goodsName.isEmpty ? "ID \(cfg.goodsId)" : cfg.goodsName
         let gap = max(UInt64(250), cfg.intervalMs)
         let client = IbproClient(token: cfg.token, deviceId: cfg.deviceId, readMs: 12)
+
+        if cfg.fireAtEpochSec > 0 {
+            let late = Date().timeIntervalSince1970 - Double(cfg.fireAtEpochSec)
+            if late > 10 {
+                onLog("开火时间已过 \(Int(late))s，已放弃")
+                return 0
+            }
+            onLog("定时 \(bjTimeHms(cfg.fireAtEpochSec)) 开卖")
+            while !stop {
+                let remain = Double(cfg.fireAtEpochSec) - Date().timeIntervalSince1970
+                if remain <= 0 { break }
+                let ns = UInt64(min(0.08, remain) * 1_000_000_000)
+                try? await Task.sleep(nanoseconds: max(1_000_000, ns))
+            }
+            if stop { return 0 }
+            onLog("到点开火，立即卖求购")
+        }
+
         onLog("卖求购启动 \(name) id=\(cfg.goodsId) ≥¥\(cfg.minPrice) x\(qty)")
         var sold = 0
         var round = 0
@@ -554,13 +574,12 @@ final class IbSellEngine: @unchecked Sendable {
     }
 
     private static func extractBegItems(_ data: [String: Any]) -> [BegItem] {
-        let list = (data["data"] as? [Any])
-            ?? ((data["data"] as? [String: Any])?["data"] as? [Any])
-            ?? (data["list"] as? [Any])
+        let list = asDictArray(data["data"])
+            ?? asDictArray((data["data"] as? [String: Any])?["data"])
+            ?? asDictArray(data["list"])
             ?? []
         var out: [BegItem] = []
-        for raw in list {
-            guard let it = raw as? [String: Any] else { continue }
+        for it in list {
             let buyId = JSONX.int64Val(it["id"]) ?? 0
             guard buyId > 0, let price = JSONX.doubleVal(it["price"]), price > 0 else { continue }
             out.append(BegItem(
@@ -577,19 +596,18 @@ final class IbSellEngine: @unchecked Sendable {
     }
 
     private static func autoPair(_ data: [String: Any]) -> [(buyId: Int64, userCollectionId: Int64)] {
-        let selected = data["selected"] as? [Any] ?? []
-        let holdings = data["user_collection_list"] as? [Any] ?? []
+        let selected = asDictArray(data["selected"]) ?? []
+        let holdings = asDictArray(data["user_collection_list"]) ?? []
         var available: [Int64] = []
-        for raw in holdings {
-            guard let h = raw as? [String: Any], let id = JSONX.int64Val(h["id"]), id > 0 else { continue }
+        for h in holdings {
+            guard let id = JSONX.int64Val(h["id"]), id > 0 else { continue }
             available.append(id)
         }
         guard !available.isEmpty else { return [] }
         var pairs: [(buyId: Int64, userCollectionId: Int64)] = []
         var hi = 0
-        for raw in selected {
+        for slot in selected {
             if hi >= available.count { break }
-            guard let slot = raw as? [String: Any] else { continue }
             let idVal = JSONX.int64Val(slot["id"]) ?? 0
             let buyId = idVal > 0 ? idVal : (JSONX.int64Val(slot["buy_id"]) ?? 0)
             let already = JSONX.int64Val(slot["user_collection_id"]) ?? 0
@@ -603,6 +621,15 @@ final class IbSellEngine: @unchecked Sendable {
             if buyId > 0 && uc > 0 { pairs.append((buyId, uc)) }
         }
         return pairs
+    }
+
+    private static func asDictArray(_ any: Any?) -> [[String: Any]]? {
+        if let a = any as? [[String: Any]] { return a }
+        if let a = any as? [Any] {
+            let mapped = a.compactMap { $0 as? [String: Any] }
+            return mapped.isEmpty && !a.isEmpty ? nil : mapped
+        }
+        return nil
     }
 }
 

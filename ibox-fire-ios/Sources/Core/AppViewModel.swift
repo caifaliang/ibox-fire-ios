@@ -172,6 +172,10 @@ final class AppViewModel: ObservableObject {
     @Published var ibSellMinPrice = ""
     @Published var ibSellQty = "1"
     @Published var ibSellPayPwd = ""
+    @Published var ibSellTimed = false
+    @Published var ibSellFireH = 0
+    @Published var ibSellFireM = 0
+    @Published var ibSellFireS = 0
     @Published var ibQueryDepth = 100
 
     @Published var appPlatform: AppPlatform = .ibox
@@ -1608,16 +1612,22 @@ final class AppViewModel: ObservableObject {
         var fireAt: Int64 = 0
         if sellTimed {
             fireAt = todayFireAtEpochSec(h: sellFireH, m: sellFireM, s: sellFireS)
-            let late = Int64(Date().timeIntervalSince1970) - fireAt
-            if late > 10 {
-                appendLog("开火时间已过 \(late)s，请改时间后再启动", type: "error", mode: .sell)
-                return
-            }
+            let now = Int64(Date().timeIntervalSince1970)
+            // 对齐 APK：已过点则滚到次日
+            if fireAt < now - 5 { fireAt += 86_400 }
         }
         let engine = SellEngine(cfg: SellConfig(token: iboxToken, groupId: sellGid, collectionName: sellCname, targetPrice: price, quantity: qty, consignPassword: consignPwd, fireAtEpochSec: fireAt), onLog: { [weak self] m in
             Task { @MainActor in self?.appendLog(m, mode: .sell) }
         })
-        runner.start(kind: .sell, stop: { engine.requestStop() }, keepAlive: true) { _ = try? await engine.run() }
+        runner.start(kind: .sell, stop: { engine.requestStop() }, keepAlive: true) {
+            do {
+                _ = try await engine.run()
+            } catch {
+                await MainActor.run { [weak self] in
+                    self?.appendLog(error.localizedDescription, type: "error", mode: .sell)
+                }
+            }
+        }
     }
 
     func searchMarkerColl(_ q: String) {
@@ -2341,7 +2351,11 @@ final class AppViewModel: ObservableObject {
     }
 
     func startIbSell() {
-        guard requireVip(), ibLoggedIn else { return }
+        guard requireVip() else { return }
+        guard ibLoggedIn else {
+            appendLog("请先登录 ibPro", type: "error", mode: .ib_sell)
+            return
+        }
         guard guardNotRunning(.ibSell, prepKey: "ib_sell") else { return }
         guard ibSnipeGid > 0 else { appendLog("请先在捡漏搜索并选择藏品", type: "error", mode: .ib_sell); return }
         let minP = Double(ibSellMinPrice) ?? 0
@@ -2351,8 +2365,15 @@ final class AppViewModel: ObservableObject {
         if ibSellPayPwd.trimmingCharacters(in: .whitespaces).isEmpty {
             appendLog("卖求购需填写支付密码", type: "error", mode: .ib_sell); return
         }
+        var fireAt: Int64 = 0
+        if ibSellTimed {
+            fireAt = todayFireAtEpochSec(h: ibSellFireH, m: ibSellFireM, s: ibSellFireS)
+            let now = Int64(Date().timeIntervalSince1970)
+            // 对齐 APK：已过点则滚到次日
+            if fireAt < now - 5 { fireAt += 86_400 }
+        }
         let deviceId = ensureIbDeviceId()
-        guard prepBusy("ib_sell", "卖求购进行中") else { return }
+        guard prepBusy("ib_sell", fireAt > 0 ? "定时卖求购等待中" : "卖求购进行中") else { return }
         let engine = IbSellEngine(cfg: IbSellConfig(
             token: ibToken,
             deviceId: deviceId,
@@ -2361,7 +2382,8 @@ final class AppViewModel: ObservableObject {
             goodsName: ibSnipeName,
             minPrice: minP,
             quantity: qty,
-            payPassword: ibSellPayPwd
+            payPassword: ibSellPayPwd,
+            fireAtEpochSec: fireAt
         ), onLog: { [weak self] m in
             Task { @MainActor in self?.appendLog(m, mode: .ib_sell) }
         })

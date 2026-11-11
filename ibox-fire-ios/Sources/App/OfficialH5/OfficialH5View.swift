@@ -141,8 +141,12 @@ struct OfficialH5View: View {
         }
         if let gid = parseGroupId(session.pageURL), gid > 0 {
             switch key {
-            case "buy": vm.buyGid = gid
-            case "sell": vm.sellGid = gid
+            case "buy":
+                vm.buyGid = gid
+                if vm.buyCname.isEmpty { vm.buyCname = "GID \(gid)" }
+            case "sell":
+                vm.sellGid = gid
+                if vm.sellCname.isEmpty { vm.sellCname = "GID \(gid)" }
             case "query_consignment":
                 vm.queryGid = gid
                 vm.queryKind = "consignment"

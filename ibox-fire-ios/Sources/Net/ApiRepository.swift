@@ -866,7 +866,12 @@ enum JSONX {
     static func message(_ o: [String: Any]) -> String { o["message"] as? String ?? o["msg"] as? String ?? "" }
     static func dataDict(_ o: [String: Any]) -> [String: Any] { o["data"] as? [String: Any] ?? [:] }
     static func dataList(_ o: [String: Any]) -> [[String: Any]] {
-        if let a = dataDict(o)["list"] as? [[String: Any]] { return a }
+        let raw = dataDict(o)["list"]
+        if let a = raw as? [[String: Any]] { return a }
+        // JSONSerialization 常给出 [Any]，强转 [[String:Any]] 会静默空列表 → 卖求购/持仓假失败
+        if let a = raw as? [Any] {
+            return a.compactMap { $0 as? [String: Any] }
+        }
         return []
     }
     static func doubleVal(_ v: Any?) -> Double? {
