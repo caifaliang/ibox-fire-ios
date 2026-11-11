@@ -91,13 +91,66 @@ final class OfficialH5Session: NSObject, ObservableObject {
         webView = wv
         bindObservers(wv)
 
-        status = "进入官方…"
-        var req = URLRequest(url: URL(string: SharedPrefsPack.h5Launcher)!)
-        req.cachePolicy = .reloadIgnoringLocalCacheData
-        wv.load(req)
-
         // 保存 pack 供 onFinish 补注（struct 需装箱）
         objc_setAssociatedObject(wv, &Associated.packKey, PackBox(pack), .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+
+        // 对齐 APK：先拉首页 HTML，头内预注桥+票并去掉 SW，再 loadHTMLString
+        status = "拉取官方壳…"
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let html = try await Self.fetchPatchedBootHtml(pack: pack)
+                await MainActor.run {
+                    guard self.webView === wv else { return }
+                    self.status = "进入官方…"
+                    wv.loadHTMLString(html, baseURL: URL(string: SharedPrefsPack.h5Boot)!)
+                }
+            } catch {
+                await MainActor.run {
+                    guard self.webView === wv else { return }
+                    self.status = "壳拉取失败，直连…"
+                    var req = URLRequest(url: URL(string: SharedPrefsPack.h5Launcher)!)
+                    req.cachePolicy = .reloadIgnoringLocalCacheData
+                    wv.load(req)
+                }
+            }
+        }
+    }
+
+    /// 对齐 Android OfficialH5Activity.fetchPatchedBootHtml
+    private static func fetchPatchedBootHtml(pack: SharedPrefsPack) async throws -> String {
+        var req = URLRequest(url: URL(string: SharedPrefsPack.h5Boot)!)
+        req.timeoutInterval = 20
+        req.cachePolicy = .reloadIgnoringLocalCacheData
+        req.setValue(
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
+            forHTTPHeaderField: "User-Agent"
+        )
+        req.setValue("text/html", forHTTPHeaderField: "Accept")
+        let (data, resp) = try await URLSession.shared.data(for: req)
+        let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+        guard (200..<300).contains(code),
+              var raw = String(data: data, encoding: .utf8),
+              !raw.isEmpty else {
+            throw NSError(domain: "oh5", code: code, userInfo: [NSLocalizedDescriptionKey: "boot html http \(code)"])
+        }
+        let inject = H5ApiBridge.bootScript() + pack.toBootHeadScript()
+        if let r = raw.range(of: "</head>", options: .caseInsensitive) {
+            raw.replaceSubrange(r, with: inject + "</head>")
+        } else {
+            raw = inject + raw
+        }
+        raw = raw.replacingOccurrences(
+            of: #"serviceWorkerSettings\s*:\s*\{[^}]*\}"#,
+            with: "serviceWorkerSettings: undefined",
+            options: .regularExpression
+        )
+        raw = raw.replacingOccurrences(
+            of: #"serviceWorkerVersion\s*:\s*[\"'][^\"']*[\"']\s*/\*[^*]*\*/"#,
+            with: "",
+            options: .regularExpression
+        )
+        return raw
     }
 
     func tearDown() {
@@ -301,7 +354,7 @@ final class OfficialH5Session: NSObject, ObservableObject {
     (function(){
       window.__iboxNet='pending';
       try{
-        var api='https://sail-api.ibox.art/public-service/markets?pageNo=1&pageSize=1&segmentId=-1&sortField=2&sortType=0&timeRange=0';
+        var api='https://sail-api.ibox.art/public-service/v1/app-version';
         fetch('https://h5.ibox.art/version.json',{method:'GET',credentials:'omit',cache:'no-store'})
           .then(function(r){
             return fetch(api,{
@@ -337,7 +390,12 @@ extension OfficialH5Session: WKNavigationDelegate, WKUIDelegate {
         if let u = webView.url?.absoluteString, u.hasPrefix(SharedPrefsPack.h5Origin) {
             pageURL = u
         }
-        runVerify(on: webView)
+        // loadHTMLString 常停在 / 无 hash；对齐 APK launcher 入口
+        webView.evaluateJavaScript(
+            "(function(){ var h=location.hash||''; if(!h || h==='#' || h==='#/'){ location.replace('#/launcher'); return 'to-launcher'; } return h; })()"
+        ) { [weak self] _, _ in
+            Task { @MainActor in self?.runVerify(on: webView) }
+        }
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {

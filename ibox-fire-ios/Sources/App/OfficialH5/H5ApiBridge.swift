@@ -182,7 +182,13 @@ final class H5ApiBridge: NSObject, WKScriptMessageHandler {
               var bodyStr = '';
               if (body != null && body !== undefined) {
                 if (typeof body === 'string') bodyStr = body;
-                else {
+                else if (body && body.buffer && body.byteLength != null) {
+                  var u8 = body instanceof Uint8Array ? body : new Uint8Array(body);
+                  var s = '';
+                  for (var i = 0; i < u8.length; i++) s += String.fromCharCode(u8[i]);
+                  bodyStr = btoa(s);
+                  headers = Object.assign({}, headers, { 'X-Ibox-Body-B64': '1' });
+                } else {
                   try { bodyStr = String(body); } catch (e2) { bodyStr = ''; }
                 }
               }
@@ -200,8 +206,24 @@ final class H5ApiBridge: NSObject, WKScriptMessageHandler {
               Object.defineProperty(xhr, 'readyState', { configurable: true, get: function(){ return 4; } });
               Object.defineProperty(xhr, 'status', { configurable: true, get: function(){ return r.status|0; } });
               Object.defineProperty(xhr, 'statusText', { configurable: true, get: function(){ return (r.status|0) ? 'OK' : 'error'; } });
+              Object.defineProperty(xhr, 'responseURL', { configurable: true, get: function(){ return xhr.__iboxUrl || ''; } });
               Object.defineProperty(xhr, 'responseText', { configurable: true, get: function(){ return body; } });
-              Object.defineProperty(xhr, 'response', { configurable: true, get: function(){ return body; } });
+              var respVal = body;
+              var rt = xhr.responseType || '';
+              if (rt === 'arraybuffer' || rt === 'moz-chunked-arraybuffer') {
+                var buf = new ArrayBuffer(body.length);
+                var view = new Uint8Array(buf);
+                for (var i = 0; i < body.length; i++) view[i] = body.charCodeAt(i) & 0xff;
+                respVal = buf;
+              } else if (rt === 'json') {
+                try { respVal = body ? JSON.parse(body) : null; } catch (e0) { respVal = null; }
+              } else if (rt === 'blob') {
+                var ab = new ArrayBuffer(body.length);
+                var v2 = new Uint8Array(ab);
+                for (var j = 0; j < body.length; j++) v2[j] = body.charCodeAt(j) & 0xff;
+                respVal = new Blob([ab]);
+              }
+              Object.defineProperty(xhr, 'response', { configurable: true, get: function(){ return respVal; } });
               xhr.getAllResponseHeaders = function(){
                 var h = r.headers || {}, out = [];
                 for (var k in h) if (Object.prototype.hasOwnProperty.call(h, k)) out.push(k + ': ' + h[k]);
@@ -215,6 +237,10 @@ final class H5ApiBridge: NSObject, WKScriptMessageHandler {
             } catch (e) {}
             try { if (typeof xhr.onreadystatechange === 'function') xhr.onreadystatechange(); } catch (e1) {}
             try { if (typeof xhr.onload === 'function') xhr.onload(); } catch (e2) {}
+            // Flutter Dio/http 常走 addEventListener，仅设 onload 不够 → 首页骨架永不结束
+            try { xhr.dispatchEvent && xhr.dispatchEvent(new Event('readystatechange')); } catch (e3) {}
+            try { xhr.dispatchEvent && xhr.dispatchEvent(new Event('load')); } catch (e4) {}
+            try { xhr.dispatchEvent && xhr.dispatchEvent(new Event('loadend')); } catch (e5) {}
           }
           var xo = XMLHttpRequest.prototype.open;
           var xs = XMLHttpRequest.prototype.send;

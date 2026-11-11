@@ -79,7 +79,12 @@ final class QueryEngine: @unchecked Sendable {
             }
             let payload = JSONX.dataDict(fetched.data)
             if pages == 0 { apiTotal = payload["total"] as? Int ?? (payload["total"] as? NSNumber)?.intValue ?? 0 }
-            let list = payload["list"] as? [[String: Any]] ?? []
+            // JSONSerialization 常给出 [Any]，勿强转 [[String:Any]] 静默空列表
+            let list: [[String: Any]] = {
+                if let a = payload["list"] as? [[String: Any]] { return a }
+                if let a = payload["list"] as? [Any] { return a.compactMap { $0 as? [String: Any] } }
+                return []
+            }()
             if list.isEmpty { break }
             pages += 1
             for it in list {
@@ -95,17 +100,22 @@ final class QueryEngine: @unchecked Sendable {
             if pages % 5 == 0 || prices.count >= depth {
                 onLog("已扫 \(prices.count) / \(depth)")
             }
+            // 接口已声明总量：扫满即停，避免坏游标把首页乘翻
+            if apiTotal > 0 && prices.count >= apiTotal { break }
             if cfg.kind == "purchase" {
                 if list.count < 20 { break }
                 let hasMore = payload["hasMore"] as? Bool ?? (list.count >= 20)
                 if !hasMore { break }
                 pageNo += 1
             } else {
-                if let sv = payload["sortValues"] as? String { sortValues = sv }
-                else if let arr = payload["sortValues"] as? [Any] {
-                    sortValues = arr.map { "\($0)" }.joined(separator: ",")
-                }
-                if list.count < 20 { break }
+                // 对齐 APK：挂单必须用 sortValues 游标；pageNo++ 会反复首页 → 假 ×25
+                let nextSv = Self.formatSortValues(payload)
+                let hasMoreFlag = payload["hasMore"] as? Bool
+                    ?? (payload["hasMore"] as? NSNumber)?.boolValue
+                    ?? false
+                let hasMore = hasMoreFlag && !nextSv.isEmpty
+                if !hasMore { break }
+                sortValues = nextSv
             }
         }
 
@@ -114,6 +124,26 @@ final class QueryEngine: @unchecked Sendable {
         let tiers = map.keys.sorted().map { QueryTier(price: $0, count: map[$0]!) }
         onLog("完成 扫描\(prices.count) 档位\(tiers.count)")
         return QueryResult(scanned: prices.count, apiTotal: apiTotal, tiers: tiers, active: active, locked: locked, pages: pages)
+    }
+
+    /// 对齐 Android QueryEngine.formatSortValues：`{ values: [a,b,c] }` → `a,b,c`
+    private static func formatSortValues(_ payload: [String: Any]) -> String {
+        if let sv = payload["sortValues"] as? [String: Any] {
+            let vals: [Any]
+            if let a = sv["values"] as? [Any] { vals = a }
+            else if let a = sv["values"] as? [String] { vals = a }
+            else { return "" }
+            guard vals.count >= 3 else { return "" }
+            return vals.prefix(3).map { "\($0)" }.joined(separator: ",")
+        }
+        if let s = payload["sortValues"] as? String {
+            let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
+            return t
+        }
+        if let arr = payload["sortValues"] as? [Any], arr.count >= 3 {
+            return arr.prefix(3).map { "\($0)" }.joined(separator: ",")
+        }
+        return ""
     }
 
     private func fetchWithBackoff(_ client: IboxClient, _ path: String) async -> (data: [String: Any], hadLimit: Bool)? {
