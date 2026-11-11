@@ -9,7 +9,7 @@ struct QueryConfig {
 }
 
 struct QueryTier: Identifiable {
-    var id: String { "\(price)-\(count)" }
+    var id: String { String(format: "%.4f", price) }
     var price: Double
     var count: Int
 }
@@ -35,7 +35,7 @@ final class QueryEngine: @unchecked Sendable {
 
     func requestStop() { stop = true }
 
-    func run(onProgress: @escaping (Int, Int) -> Void = { _, _ in }) async throws -> QueryResult {
+    func run(onProgress: @escaping (QueryResult) -> Void = { _ in }) async throws -> QueryResult {
         guard let uid = JwtUtil.uid(cfg.token) else { throw NSError(domain: "query", code: 1, userInfo: [NSLocalizedDescriptionKey: "JWT 无 userId"]) }
         let depth = max(20, min(20_000, cfg.depth))
         let client = IboxClient(token: cfg.token, proxyLine: nil, connectMs: 8000, readMs: 15000, deviceIdMode: .stableMD5)
@@ -49,6 +49,18 @@ final class QueryEngine: @unchecked Sendable {
         let maxPages = (depth + 19) / 20
         var pageGapMs: UInt64 = 450
         var afterLimitBoost = 0
+
+        func emitProgress() {
+            let tiers = Self.buildTiers(prices)
+            onProgress(QueryResult(
+                scanned: prices.count,
+                apiTotal: apiTotal,
+                tiers: tiers,
+                active: active,
+                locked: locked,
+                pages: pages
+            ))
+        }
 
         while !stop && prices.count < depth && pages < maxPages {
             if pages > 0 {
@@ -96,7 +108,7 @@ final class QueryEngine: @unchecked Sendable {
                     if st == 3 { locked += 1 } else if st == 2 { active += 1 }
                 }
             }
-            onProgress(prices.count, depth)
+            emitProgress()
             if pages % 5 == 0 || prices.count >= depth {
                 onLog("已扫 \(prices.count) / \(depth)")
             }
@@ -119,11 +131,17 @@ final class QueryEngine: @unchecked Sendable {
             }
         }
 
+        let tiers = Self.buildTiers(prices)
+        onLog("完成 扫描\(prices.count) 档位\(tiers.count)")
+        let result = QueryResult(scanned: prices.count, apiTotal: apiTotal, tiers: tiers, active: active, locked: locked, pages: pages)
+        onProgress(result)
+        return result
+    }
+
+    private static func buildTiers(_ prices: [Double]) -> [QueryTier] {
         var map: [Double: Int] = [:]
         for p in prices { map[p, default: 0] += 1 }
-        let tiers = map.keys.sorted().map { QueryTier(price: $0, count: map[$0]!) }
-        onLog("完成 扫描\(prices.count) 档位\(tiers.count)")
-        return QueryResult(scanned: prices.count, apiTotal: apiTotal, tiers: tiers, active: active, locked: locked, pages: pages)
+        return map.keys.sorted().map { QueryTier(price: $0, count: map[$0]!) }
     }
 
     /// 对齐 Android QueryEngine.formatSortValues：`{ values: [a,b,c] }` → `a,b,c`

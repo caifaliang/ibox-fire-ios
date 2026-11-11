@@ -24,6 +24,25 @@ struct CollHit: Identifiable, Equatable {
     var name: String
 }
 
+struct TradeRecordRow: Identifiable, Equatable {
+    var id: String { tradeId.isEmpty ? "\(date)-\(time)-\(tokenId)-\(price)" : tradeId }
+    var tradeId: String = ""
+    var time: String = ""
+    var date: String = ""
+    var tokenId: String = ""
+    var price: String = ""
+    var qty: Int = 1
+}
+
+struct TradeRecordsPage: Equatable {
+    var records: [TradeRecordRow] = []
+    var qty24h: String = ""
+    var amount24h: String = ""
+    var lastPrice: String = ""
+    var updatedAt: String = ""
+    var hasMore: Bool = false
+}
+
 struct SynthActivity: Identifiable {
     var id: Int64
     var name: String
@@ -329,6 +348,79 @@ final class ApiRepository {
             throw NSError(domain: "quota", code: 403, userInfo: [NSLocalizedDescriptionKey: o["detail"] as? String ?? "需要月卡或年卡"])
         }
         return parseQuota(o)
+    }
+
+    /// 盯盒逐笔成交（经站点，勿直连 dinghe）— 对齐 APK ApiRepository.fetchTradeRecords
+    func fetchTradeRecords(
+        gid: Int64,
+        name: String = "",
+        page: Int = 1,
+        limit: Int = 20,
+        platformToken: String = ""
+    ) async throws -> TradeRecordsPage {
+        guard gid > 0 else { throw NSError(domain: "trade", code: 1, userInfo: [NSLocalizedDescriptionKey: "gid required"]) }
+        var qs = "hours=24&sample=0&limit=\(min(20, max(1, limit)))&page=\(max(1, page))"
+        let nm = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !nm.isEmpty, !nm.hasPrefix("藏品 #"), nm.range(of: #"^(?i)GID\s*\d+$"#, options: .regularExpression) == nil {
+            qs += "&name=\(nm.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? nm)"
+        }
+        var req = URLRequest(url: URL(string: "\(base())/snipe/trade-records/\(gid)?\(qs)")!)
+        req.httpMethod = "GET"
+        let pt = JwtUtil.normalize(platformToken)
+        if !pt.isEmpty {
+            req.setValue(JwtUtil.bearer(pt), forHTTPHeaderField: "Authorization")
+        }
+        let (data, resp) = try await siteSession(timeout: 25).data(for: req)
+        let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+        let o = jsonObject(data)
+        if code >= 400 {
+            throw NSError(domain: "trade", code: code, userInfo: [NSLocalizedDescriptionKey: o["detail"] as? String ?? o["message"] as? String ?? "HTTP \(code)"])
+        }
+        if (o["status"] as? String) != "ok" {
+            throw NSError(domain: "trade", code: -1, userInfo: [NSLocalizedDescriptionKey: o["message"] as? String ?? "加载失败"])
+        }
+        let sum = o["summary"] as? [String: Any] ?? [:]
+        func sumNum(_ keys: String...) -> String {
+            for k in keys {
+                if let v = sum[k], !(v is NSNull) {
+                    let s = "\(v)"
+                    if !s.isEmpty, s != "null" { return s }
+                }
+            }
+            return ""
+        }
+        let arr = (o["records"] as? [Any]) ?? []
+        var rows: [TradeRecordRow] = []
+        for raw in arr {
+            guard let a = raw as? [String: Any] else { continue }
+            let tid = (a["trade_id"] as? String) ?? (a["id"] as? String) ?? ""
+            let token: String = {
+                if let s = a["token_id"] as? String, s != "null" { return s }
+                if let n = a["token_id"] as? NSNumber { return n.stringValue }
+                return ""
+            }()
+            let price: String = {
+                if let s = a["price"] as? String, s != "null" { return s }
+                if let n = a["price"] as? NSNumber { return n.stringValue }
+                return ""
+            }()
+            rows.append(TradeRecordRow(
+                tradeId: tid,
+                time: a["time"] as? String ?? "",
+                date: a["date"] as? String ?? "",
+                tokenId: token,
+                price: price,
+                qty: max(1, (a["qty"] as? Int) ?? (a["qty"] as? NSNumber)?.intValue ?? 1)
+            ))
+        }
+        return TradeRecordsPage(
+            records: rows,
+            qty24h: sumNum("qty_24h", "today_qty"),
+            amount24h: sumNum("amount_24h", "today_amount"),
+            lastPrice: sumNum("last_price"),
+            updatedAt: o["updated_at"] as? String ?? "",
+            hasMore: o["has_more"] as? Bool ?? (o["has_more"] as? NSNumber)?.boolValue ?? false
+        )
     }
 
     func searchCollections(_ q: String) async throws -> [CollHit] {

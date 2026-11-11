@@ -150,6 +150,12 @@ struct OfficialH5View: View {
             case "query_consignment":
                 vm.queryGid = gid
                 vm.queryKind = "consignment"
+                if vm.queryCname.isEmpty { vm.queryCname = "GID \(gid)" }
+            case "records":
+                vm.tradeGid = gid
+                if vm.tradeCname.isEmpty || vm.tradeCname.hasPrefix("GID ") {
+                    vm.tradeCname = vm.queryCname.isEmpty ? "GID \(gid)" : vm.queryCname
+                }
             default: break
             }
         }
@@ -158,6 +164,9 @@ struct OfficialH5View: View {
             vm.onTechModeChanged(mode)
         }
         activeTool = key
+        if key == "records", vm.tradeGid > 0 {
+            vm.loadTradeRecords(reset: true)
+        }
     }
 
     private func parseGroupId(_ url: String) -> Int64? {
@@ -195,10 +204,9 @@ struct OfficialH5ToolOverlay: View {
                 Group {
                     switch tool {
                     case "records":
-                        Text("成交记录浮层后续对齐 APK TradeRecords；可先用查挂单/捡漏。")
-                            .font(Typo.caption)
-                            .foregroundStyle(Palette.textMuted)
-                            .padding()
+                        TradeRecordsPane()
+                            .padding(.horizontal, 12)
+                            .padding(.bottom, 12)
                     default:
                         ModePane()
                     }

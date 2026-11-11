@@ -1271,6 +1271,7 @@ struct QueryPane: View {
                 PickedBar(title: vm.queryCname, subtitle: "GID \(vm.queryGid)", onClear: {
                     vm.queryGid = 0; vm.queryCname = ""
                     vm.queryTiers = []; vm.queryScanned = 0; vm.queryApiTotal = 0
+                    vm.queryPages = 0; vm.queryActive = 0; vm.queryLocked = 0
                 })
                 if vm.techMode == .query {
                 HStack {
@@ -1284,22 +1285,27 @@ struct QueryPane: View {
                         ModeChip(title: "\(d)", selected: vm.queryDepth == d) { vm.queryDepth = d }
                     }
                 }
-                if !vm.queryProgressMsg.isEmpty {
-                    Text(vm.queryProgressMsg).font(.caption).foregroundStyle(.blue)
+                StopStartButton(
+                    running: runner.isRunning(.query),
+                    startTitle: "开始查询（本地）",
+                    stopTitle: "停止查询",
+                    enabled: vm.isVip,
+                    onStart: { vm.startQuery() },
+                    onStop: { vm.stopTask(.query) }
+                )
+                if runner.isRunning(.query) || vm.queryScanned > 0 || !vm.queryTiers.isEmpty {
+                    LadderResultView(
+                        kindLabel: vm.queryKind == "purchase" ? "求购" : "挂单",
+                        running: runner.isRunning(.query),
+                        scanned: vm.queryScanned,
+                        apiTotal: vm.queryApiTotal,
+                        pages: vm.queryPages,
+                        tiers: vm.queryTiers,
+                        active: vm.queryActive,
+                        locked: vm.queryLocked,
+                        progressMsg: vm.queryProgressMsg
+                    )
                 }
-                if vm.queryScanned > 0 || !vm.queryTiers.isEmpty {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("\(vm.queryKind == "purchase" ? "求购" : "挂单") \(vm.queryScanned) 单" +
-                             (vm.queryApiTotal > 0 ? " · 接口 total \(vm.queryApiTotal)" : "") +
-                             " · \(vm.queryTiers.count) 价位")
-                            .font(.subheadline.bold())
-                        ForEach(vm.queryTiers.prefix(30)) { t in
-                            Text(String(format: "¥%.2f × %d", t.price, t.count)).font(.caption.monospaced())
-                        }
-                    }
-                    .padding(10).background(Color(.systemGray6)).clipShape(RoundedRectangle(cornerRadius: 10))
-                }
-                StopStartButton(running: runner.isRunning(.query), startTitle: "开始查询（本地）", stopTitle: "停止查询", enabled: vm.isVip, onStart: { vm.startQuery() }, onStop: { vm.stopTask(.query) })
             }
         }
         .onAppear {

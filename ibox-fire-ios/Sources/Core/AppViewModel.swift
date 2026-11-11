@@ -303,6 +303,24 @@ final class AppViewModel: ObservableObject {
     @Published var queryScanned = 0
     @Published var queryApiTotal = 0
     @Published var queryProgressMsg = ""
+    @Published var queryPages = 0
+    @Published var queryActive = 0
+    @Published var queryLocked = 0
+
+    // 成交记录（官方 H5 第四芯片）
+    @Published var tradeGid: Int64 = 0
+    @Published var tradeCname = ""
+    @Published var tradeRecords: [TradeRecordRow] = []
+    @Published var tradeQty24h = ""
+    @Published var tradeAmount24h = ""
+    @Published var tradeLastPrice = ""
+    @Published var tradeUpdatedAt = ""
+    @Published var tradeHasMore = false
+    @Published var tradeLoading = false
+    @Published var tradeLoadingMore = false
+    @Published var tradeErr = ""
+    @Published var tradePage = 1
+    private var tradeLoadTask: Task<Void, Never>?
 
     @Published var consignPwd = ""
     @Published var fireH = 0
@@ -1087,7 +1105,8 @@ final class AppViewModel: ObservableObject {
         case "batch": batchGid = hit.id; batchCname = hit.name
         case "query":
             queryGid = hit.id; queryCname = hit.name
-            queryTiers = []; queryScanned = 0; queryApiTotal = 0; queryProgressMsg = ""
+            queryTiers = []; queryScanned = 0; queryApiTotal = 0; queryPages = 0
+            queryActive = 0; queryLocked = 0; queryProgressMsg = ""
         case "sweepMarker":
             sweepMarkerGid = hit.id
             sweepMarkerCname = hit.name
@@ -1552,16 +1571,30 @@ final class AppViewModel: ObservableObject {
             appendLog("请搜索并选择藏品", type: "error", mode: .query); return
         }
         guard guardNotRunning(.query, prepKey: "query") else { return }
-        queryTiers = []; queryScanned = 0; queryApiTotal = 0; queryProgressMsg = "查询中…"
-        let engine = QueryEngine(cfg: QueryConfig(token: iboxToken, groupId: queryGid, collectionName: queryCname, kind: queryKind, depth: queryDepth), onLog: { [weak self] m in
+        queryTiers = []
+        queryScanned = 0
+        queryApiTotal = 0
+        queryPages = 0
+        queryActive = 0
+        queryLocked = 0
+        queryProgressMsg = "查询中…"
+        let depth = queryDepth
+        let engine = QueryEngine(cfg: QueryConfig(token: iboxToken, groupId: queryGid, collectionName: queryCname, kind: queryKind, depth: depth), onLog: { [weak self] m in
             Task { @MainActor in self?.appendLog(m, mode: .query) }
         })
         runner.start(kind: .query, stop: { engine.requestStop() }) { [weak self] in
             do {
-                let r = try await engine.run(onProgress: { scanned, total in
+                let r = try await engine.run(onProgress: { partial in
                     Task { @MainActor in
-                        self?.queryScanned = scanned
-                        self?.queryProgressMsg = "已扫 \(scanned)/\(total)"
+                        guard let self else { return }
+                        self.queryTiers = partial.tiers
+                        self.queryScanned = partial.scanned
+                        self.queryApiTotal = partial.apiTotal
+                        self.queryPages = partial.pages
+                        self.queryActive = partial.active
+                        self.queryLocked = partial.locked
+                        let denom = partial.apiTotal > 0 ? partial.apiTotal : depth
+                        self.queryProgressMsg = "已拉取 \(partial.scanned)/\(denom) 单 · 第 \(max(partial.pages, 1)) 页"
                     }
                 })
                 await MainActor.run {
@@ -1569,6 +1602,9 @@ final class AppViewModel: ObservableObject {
                     self.queryTiers = r.tiers
                     self.queryScanned = r.scanned
                     self.queryApiTotal = r.apiTotal
+                    self.queryPages = r.pages
+                    self.queryActive = r.active
+                    self.queryLocked = r.locked
                     self.queryProgressMsg = ""
                     self.appendLog("查询完成 扫描\(r.scanned) 档位\(r.tiers.count)", type: "buy", mode: .query)
                 }
@@ -1576,6 +1612,66 @@ final class AppViewModel: ObservableObject {
                 await MainActor.run {
                     self?.queryProgressMsg = ""
                     self?.appendLog(error.localizedDescription, type: "error", mode: .query)
+                }
+            }
+        }
+    }
+
+    func loadTradeRecords(reset: Bool = false) {
+        if tradeGid <= 0 {
+            tradeErr = "请先打开某个藏品"
+            return
+        }
+        tradeLoadTask?.cancel()
+        if reset {
+            tradePage = 1
+            tradeRecords = []
+            tradeHasMore = false
+            tradeErr = ""
+            tradeLoading = true
+            tradeLoadingMore = false
+        } else {
+            guard tradeHasMore, !tradeLoadingMore, !tradeLoading else { return }
+            tradeLoadingMore = true
+        }
+        let gid = tradeGid
+        let name = tradeCname
+        let page = tradePage
+        let token = siteUser?.token ?? ""
+        tradeLoadTask = Task { [weak self] in
+            do {
+                let pageData = try await self?.api.fetchTradeRecords(
+                    gid: gid,
+                    name: name,
+                    page: page,
+                    limit: 20,
+                    platformToken: token
+                )
+                await MainActor.run {
+                    guard let self, let pageData else { return }
+                    if reset {
+                        self.tradeRecords = pageData.records
+                    } else {
+                        self.tradeRecords.append(contentsOf: pageData.records)
+                    }
+                    self.tradeQty24h = pageData.qty24h
+                    self.tradeAmount24h = pageData.amount24h
+                    self.tradeLastPrice = pageData.lastPrice
+                    self.tradeUpdatedAt = pageData.updatedAt
+                    self.tradeHasMore = pageData.hasMore
+                    if pageData.hasMore { self.tradePage = page + 1 }
+                    self.tradeLoading = false
+                    self.tradeLoadingMore = false
+                    self.tradeErr = ""
+                }
+            } catch {
+                await MainActor.run {
+                    guard let self else { return }
+                    self.tradeLoading = false
+                    self.tradeLoadingMore = false
+                    if self.tradeRecords.isEmpty {
+                        self.tradeErr = error.localizedDescription
+                    }
                 }
             }
         }
