@@ -44,8 +44,16 @@ function emptySlot() {
     mobile: '',
     nickname: '',
     avatarUrl: '',
+    /** 'sms' | 'token' | '' */
+    loginMethod: '',
     updatedAt: 0,
   }
+}
+
+function normalizeLoginMethod(value, fallback = '') {
+  const m = String(value || '').trim().toLowerCase()
+  if (m === 'sms' || m === 'token') return m
+  return fallback === 'sms' || fallback === 'token' ? fallback : ''
 }
 
 export function normalizeSlot(value) {
@@ -56,14 +64,19 @@ export function normalizeSlot(value) {
   if (!token) {
     return { ...emptySlot(), deviceId }
   }
+  const refreshToken = String(src.refreshToken || src.refresh_token || '').trim()
+  const mobile = String(src.mobile || src.phone || '').trim()
+  // 旧槽无 loginMethod：有手机号偏短信；否则按 Token 粘贴处理
+  const inferred = mobile ? 'sms' : 'token'
   return {
     token,
-    refreshToken: String(src.refreshToken || src.refresh_token || '').trim(),
+    refreshToken,
     deviceId,
     uid: src.uid != null && src.uid !== '' ? String(src.uid) : '',
-    mobile: String(src.mobile || src.phone || '').trim(),
+    mobile,
     nickname: String(src.nickname || src.userName || '').trim(),
     avatarUrl: String(src.avatarUrl || src.avatar || '').trim(),
+    loginMethod: normalizeLoginMethod(src.loginMethod || src.login_method, inferred),
     updatedAt: Number(src.updatedAt) || Date.now(),
   }
 }
@@ -433,24 +446,37 @@ export function ensureSlotDeviceId(index) {
   return did
 }
 
+export function loginMethodLabel(slot) {
+  const s = normalizeSlot(slot)
+  if (!s.token) return ''
+  if (s.loginMethod === 'sms') return '短信'
+  if (s.loginMethod === 'token') return 'Token'
+  return s.mobile ? '短信' : 'Token'
+}
+
 export function listSlotsForUi() {
   migrateLegacyIfNeeded()
   const active = getActiveIndex()
-  return loadSlots().map((slot, index) => ({
-    index,
-    ...normalizeSlot(slot),
-    active: index === active,
-    occupied: slotHasToken(slot),
-    fragile: slotIsFragile(slot),
-    label: slotLabel(slot),
-  }))
+  return loadSlots().map((slot, index) => {
+    const n = normalizeSlot(slot)
+    return {
+      index,
+      ...n,
+      active: index === active,
+      occupied: slotHasToken(slot),
+      fragile: slotIsFragile(slot),
+      label: slotLabel(slot),
+      methodLabel: loginMethodLabel(n),
+    }
+  })
 }
 
 export function slotLabel(slot) {
   const s = normalizeSlot(slot)
   if (!s.token) return '空槽'
-  if (s.nickname) return s.nickname
+  // 优先手机尾号 / UID，避免粘贴票时把奇怪 nickname 顶到槽面
   if (s.mobile && s.mobile.length >= 4) return '尾号' + s.mobile.slice(-4)
   if (s.uid) return 'UID ' + s.uid
+  if (s.nickname) return s.nickname
   return '已登录'
 }

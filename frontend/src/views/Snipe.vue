@@ -139,6 +139,71 @@ function anyTaskRunning() {
   )
 }
 
+/** 切号后：退出加号页，清本机任务 UI，按新票刷新科技任务列表 */
+function clearLocalTaskUiForSwitch() {
+  try { clearInterval(buyTimer) } catch {}
+  try { clearInterval(sellTimer) } catch {}
+  try { clearInterval(batchTimer) } catch {}
+  try { clearInterval(sweepTimer) } catch {}
+  try { clearInterval(swapTimer) } catch {}
+  try { clearInterval(rankTimer) } catch {}
+  try { clearInterval(quantTimer) } catch {}
+  try { clearInterval(announceTimer) } catch {}
+  buyTimer = null
+  sellTimer = null
+  batchTimer = null
+  sweepTimer = null
+  swapTimer = null
+  rankTimer = null
+  quantTimer = null
+  announceTimer = null
+  buyRunning.value = false
+  buyTaskId.value = ''
+  sellRunning.value = false
+  sellTaskId.value = ''
+  batchRunning.value = false
+  batchJobId.value = ''
+  sweepRunning.value = false
+  sweepJobId.value = ''
+  swapRunning.value = false
+  swapJobId.value = ''
+  rankRunning.value = false
+  rankJobId.value = ''
+  quantRunning.value = false
+  quantJobId.value = ''
+  announceRunning.value = false
+  announceJobId.value = ''
+  synthRunning.value = false
+  presaleRunning.value = false
+  ;[
+    'snipeTaskId',
+    'sellTaskId',
+    'batchJobId',
+    'sweepJobId',
+    'swapJobId',
+    'rankJobId',
+    'quantJobId',
+    'announceJobId',
+  ].forEach((k) => {
+    try {
+      localStorage.removeItem(k)
+    } catch {}
+  })
+  taskHistory.value = []
+  accountHealth.value = ''
+  stopAllMsg.value = ''
+}
+
+async function refreshTechAfterSlotSwitch() {
+  addingAccount.value = false
+  loginTargetSlot.value = getActiveIndex()
+  loginErr.value = ''
+  clearLocalTaskUiForSwitch()
+  applyActiveIboxSession()
+  await tryRefreshIboxSession()
+  await loadHistory()
+}
+
 function onSelectAccountSlot(index) {
   const slot = accountSlots.value.find((s) => s.index === index)
   if (!slot) return
@@ -146,7 +211,14 @@ function onSelectAccountSlot(index) {
     beginAddAccount(index)
     return
   }
-  if (slot.active) return
+  // 加号页点回已登录槽：关掉登录表单，回到该号科技页
+  if (slot.active) {
+    if (addingAccount.value) {
+      cancelAddAccount()
+      refreshTechAfterSlotSwitch()
+    }
+    return
+  }
   if (anyTaskRunning()) {
     store.showToast('任务仍用旧号运行，请先停再切（已切换登录态）', 'warn', 4000)
   }
@@ -155,9 +227,8 @@ function onSelectAccountSlot(index) {
     store.showToast(r.message || '切换失败', 'error', 2500)
     return
   }
-  applyActiveIboxSession()
   store.showToast(`已切换到 ${slot.label}`, 'success', 2000)
-  tryRefreshIboxSession()
+  refreshTechAfterSlotSwitch()
 }
 
 async function sendSms() {
@@ -1626,6 +1697,7 @@ async function doLogin() {
         uid: data.user_id,
         mobile: phoneInput.value,
         nickname: data.username || '',
+        loginMethod: 'sms',
       })
       if (!up.ok) {
         loginErr.value = up.message || '写入账号槽失败'
@@ -1679,6 +1751,7 @@ async function tokenLogin() {
         uid: data.user_id || 0,
         mobile: '',
         nickname: '',
+        loginMethod: 'token',
       })
       if (!up.ok) {
         loginErr.value = up.message || '写入账号槽失败'
@@ -3160,8 +3233,16 @@ function precisionNextPage() { if (precisionOrdersPage.value * 20 < precisionOrd
                 : 'border border-dashed border-slate-200 bg-slate-50 text-slate-400 hover:border-slate-300'"
         >
           <div class="truncate font-medium">{{ s.occupied ? s.label : ('+' + (s.index + 1)) }}</div>
-          <div v-if="s.fragile" class="mt-0.5 text-[9px] font-semibold text-amber-500">易掉</div>
-          <div v-else-if="s.active && s.occupied" class="mt-0.5 text-[9px] opacity-80">当前</div>
+          <div v-if="s.occupied" class="mt-0.5 truncate text-[9px] font-semibold leading-tight"
+            :class="s.active
+              ? 'text-white/85'
+              : s.fragile
+                ? 'text-amber-600'
+                : (s.methodLabel === '短信' ? 'text-emerald-600' : 'text-slate-500')">
+            <span>{{ s.methodLabel || 'Token' }}</span>
+            <span v-if="s.fragile"> · 易掉</span>
+            <span v-else-if="s.active"> · 当前</span>
+          </div>
         </button>
       </div>
       <div v-if="loggedIn" class="mt-2 flex flex-wrap gap-2">
