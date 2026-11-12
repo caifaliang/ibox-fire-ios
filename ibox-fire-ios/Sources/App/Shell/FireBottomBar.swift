@@ -1,10 +1,11 @@
 import SwiftUI
 
 enum ShellTab: String, CaseIterable, Identifiable {
-    case tech, running, officialH5, me
+    case pacang, tech, running, officialH5, me
     var id: String { rawValue }
     var label: String {
         switch self {
+        case .pacang: return "爬仓"
         case .tech: return "科技"
         case .running: return "进行中"
         case .officialH5: return "官方H5"

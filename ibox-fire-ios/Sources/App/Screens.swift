@@ -2072,7 +2072,7 @@ struct HoldingsPane: View {
             }
             ForEach(vm.holdingsItems) { g in
                 HStack(spacing: Space.m) {
-                    HoldingCoverThumb(url: g.coverPicUrl, name: g.name)
+                    HoldingCoverThumb(url: iboxThumb(g.coverPicUrl, size: 80), name: g.name)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(g.name.isEmpty ? "未命名" : g.name)
                             .font(Typo.label)

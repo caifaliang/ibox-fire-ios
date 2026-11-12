@@ -35,6 +35,8 @@ struct ShellHost: View {
 
                 Group {
                     switch shellTab {
+                    case .pacang:
+                        PacangHost()
                     case .tech:
                         techBody
                     case .running:
@@ -180,6 +182,8 @@ struct ShellHost: View {
 
     private func handleTab(_ tab: ShellTab) {
         switch tab {
+        case .pacang:
+            shellTab = .pacang
         case .tech:
             shellTab = .tech
             showHub = true

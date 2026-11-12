@@ -76,6 +76,95 @@ struct PresaleItem: Identifiable {
     var startTime: String = ""
 }
 
+struct IboxSegment: Identifiable, Equatable {
+    var id: Int64
+    var name: String
+}
+
+struct IboxMarketItem: Identifiable, Equatable {
+    var id: Int64
+    var name: String
+    var coverPicUrl: String = ""
+    var floorPrice: Double = 0
+    var issueNum: Int64 = 0
+    var circulationNum: Int64 = 0
+    var tradeVolume: Int64 = 0
+}
+
+struct IboxMarketPage: Equatable {
+    var items: [IboxMarketItem] = []
+    var hasMore: Bool = false
+    var total: Int = 0
+}
+
+struct IboxConsignRow: Identifiable, Equatable {
+    var id: String
+    var price: Double = 0
+    var tokenId: String = ""
+    var sellerName: String = ""
+}
+
+/// 列表缩略图：对齐网页 / Android `iboxThumb`
+func iboxThumb(_ url: String?, size: Int = 88) -> String {
+    let u = (url ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !u.isEmpty else { return "" }
+    if u.contains("x-oss-process=") { return u }
+    let lower = u.lowercased()
+    guard lower.contains("ibox.art") || lower.contains("aliyuncs.com") || lower.contains("iboxcdn") else { return u }
+    let w = max(16, min(512, size))
+    let process = "x-oss-process=image/resize,m_fill,w_\(w),h_\(w),limit_0"
+    return u.contains("?") ? "\(u)&\(process)" : "\(u)?\(process)"
+}
+
+struct PaperSummary: Equatable {
+    var cash: Double = 0
+    var marketValue: Double = 0
+    var equity: Double = 0
+    var pnl: Double = 0
+    var pnlRate: Double = 0
+    var initialBalance: Double = 100_000
+}
+
+struct PaperPosition: Identifiable, Equatable {
+    var id: Int64 { gid }
+    var gid: Int64
+    var name: String
+    var cover: String = ""
+    var qty: Int = 0
+    var avgCost: Double = 0
+    var floorPrice: Double = 0
+    var marketValue: Double = 0
+    var pnl: Double = 0
+    var stale: Bool = false
+}
+
+struct PaperBoardRow: Identifiable, Equatable {
+    var id: Int64 { userId }
+    var userId: Int64
+    var displayName: String
+    var pnlRate: Double
+    var equity: Double
+    var rank: Int
+}
+
+struct PaperTradeRow: Identifiable, Equatable {
+    var id: Int64
+    var name: String
+    var side: String
+    var qty: Int
+    var price: Double
+    var amount: Double
+    var createdAt: String
+}
+
+struct PaperWalletSnapshot: Equatable {
+    var opened: Bool
+    var displayName: String = ""
+    var summary: PaperSummary? = nil
+    var positions: [PaperPosition] = []
+    var sellFeeRate: Double = 0.045
+}
+
 struct AnnounceFeedItem: Identifiable {
     var id: String { noticeId }
     var noticeId: String
@@ -919,6 +1008,256 @@ final class ApiRepository {
         }
         if o["status"] as? String != "ok" {
             throw NSError(domain: "push", code: 2, userInfo: [NSLocalizedDescriptionKey: o["message"] as? String ?? o["detail"] as? String ?? "微信推送失败"])
+        }
+    }
+
+    // MARK: - 爬仓：活动市场（本机经站点代拉）+ 模拟仓
+
+    func fetchIboxSegments(iboxToken: String, timeRange: Int = 0) async throws -> [IboxSegment] {
+        let enc = iboxToken.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? iboxToken
+        let url = URL(string: "\(base())/snipe/ibox-segments?token=\(enc)&timeRange=\(timeRange)")!
+        let (data, _) = try await siteSession(timeout: 25).data(from: url)
+        let o = jsonObject(data)
+        guard o["status"] as? String == "ok" else {
+            throw NSError(domain: "market", code: 1, userInfo: [NSLocalizedDescriptionKey: o["message"] as? String ?? "segments fail"])
+        }
+        let arr = o["segments"] as? [[String: Any]] ?? (o["segments"] as? [Any])?.compactMap { $0 as? [String: Any] } ?? []
+        return arr.compactMap { s in
+            let name = JSONX.stringVal(s["name"])
+            guard !name.isEmpty else { return nil }
+            return IboxSegment(id: JSONX.int64Val(s["id"]) ?? 0, name: name)
+        }
+    }
+
+    func fetchIboxMarket(
+        token: String,
+        timeRange: Int = 0,
+        pageNo: Int = 1,
+        pageSize: Int = 20,
+        segmentId: Int = -1,
+        sortField: Int = 2,
+        sortType: Int = 0,
+        name: String = "",
+        /// 0=不展开 1=全量 2=轻量(App)
+        expandCollections: Int = 2
+    ) async throws -> IboxMarketPage {
+        let enc = { (s: String) in s.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? s }
+        var qs = "token=\(enc(token))&timeRange=\(timeRange)&pageNo=\(pageNo)&pageSize=\(pageSize)"
+            + "&segmentId=\(segmentId)&sortField=\(sortField)&sortType=\(sortType)"
+            + "&expandCollections=\(expandCollections)"
+        let kw = name.trimmingCharacters(in: .whitespaces)
+        if !kw.isEmpty { qs += "&name=\(enc(kw))" }
+        let url = URL(string: "\(base())/snipe/ibox-market?\(qs)")!
+        let (data, _) = try await siteSession(timeout: 45).data(from: url)
+        let o = jsonObject(data)
+        guard o["status"] as? String == "ok" else {
+            throw NSError(domain: "market", code: 1, userInfo: [NSLocalizedDescriptionKey: o["message"] as? String ?? "market fail"])
+        }
+        let arr = o["items"] as? [[String: Any]] ?? (o["items"] as? [Any])?.compactMap { $0 as? [String: Any] } ?? []
+        let items: [IboxMarketItem] = arr.compactMap { it in
+            let id = JSONX.int64Val(it["id"]) ?? 0
+            guard id > 0 else { return nil }
+            let cover = JSONX.stringVal(it["coverPicUrl"]).isEmpty
+                ? JSONX.stringVal(it["coverUrl"])
+                : JSONX.stringVal(it["coverPicUrl"])
+            return IboxMarketItem(
+                id: id,
+                name: JSONX.stringVal(it["name"]),
+                coverPicUrl: cover,
+                floorPrice: JSONX.doubleVal(it["floorPrice"]) ?? 0,
+                issueNum: JSONX.int64Val(it["issueNum"]) ?? 0,
+                circulationNum: JSONX.int64Val(it["circulationNum"]) ?? 0,
+                tradeVolume: JSONX.int64Val(it["tradeVolume"]) ?? 0
+            )
+        }
+        return IboxMarketPage(
+            items: items,
+            hasMore: o["hasMore"] as? Bool ?? false,
+            total: Int(JSONX.int64Val(o["total"]) ?? Int64(items.count))
+        )
+    }
+
+    func fetchIboxConsign(token: String, groupId: Int64) async throws -> [IboxConsignRow] {
+        guard groupId > 0 else {
+            throw NSError(domain: "consign", code: 1, userInfo: [NSLocalizedDescriptionKey: "groupId required"])
+        }
+        let enc = token.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? token
+        let url = URL(string: "\(base())/snipe/ibox-consign?token=\(enc)&group_id=\(groupId)")!
+        let (data, _) = try await siteSession(timeout: 25).data(from: url)
+        let o = jsonObject(data)
+        let ok = o["status"] as? String == "ok" || (o["code"] as? Int) == 0
+        if !ok {
+            throw NSError(domain: "consign", code: 2, userInfo: [NSLocalizedDescriptionKey: o["message"] as? String ?? "寄售加载失败"])
+        }
+        let arr: [[String: Any]] = {
+            if let a = o["list"] as? [[String: Any]] { return a }
+            if let a = o["items"] as? [[String: Any]] { return a }
+            if let d = o["data"] as? [String: Any], let a = d["list"] as? [[String: Any]] { return a }
+            if let raw = o["list"] as? [Any] { return raw.compactMap { $0 as? [String: Any] } }
+            return []
+        }()
+        return arr.map { it in
+            let price = JSONX.doubleVal(it["price"]) ?? 0
+            let id = JSONX.stringVal(it["id"]).isEmpty
+                ? "\(price)-\(JSONX.stringVal(it["tokenId"]))"
+                : JSONX.stringVal(it["id"])
+            let tokenId = JSONX.stringVal(it["tokenId"]).isEmpty
+                ? JSONX.stringVal(it["token_id"])
+                : JSONX.stringVal(it["tokenId"])
+            let seller = JSONX.stringVal(it["sellerName"]).isEmpty
+                ? JSONX.stringVal((it["seller"] as? [String: Any])?["name"])
+                : JSONX.stringVal(it["sellerName"])
+            return IboxConsignRow(id: id, price: price, tokenId: tokenId, sellerName: seller)
+        }
+    }
+
+    func paperWallet(platformToken: String, floorsHint: String = "") async throws -> PaperWalletSnapshot {
+        var urlStr = "\(base())/paper/wallet"
+        if !floorsHint.isEmpty {
+            let enc = floorsHint.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? floorsHint
+            urlStr += "?floors_hint=\(enc)"
+        }
+        var req = URLRequest(url: URL(string: urlStr)!)
+        req.setValue(JwtUtil.bearer(platformToken), forHTTPHeaderField: "Authorization")
+        let (data, resp) = try await siteSession(timeout: 20).data(for: req)
+        let o = jsonObject(data)
+        let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+        if code >= 400 {
+            throw NSError(domain: "paper", code: code, userInfo: [NSLocalizedDescriptionKey: o["detail"] as? String ?? "wallet fail"])
+        }
+        guard o["status"] as? String == "ok" else {
+            throw NSError(domain: "paper", code: 1, userInfo: [NSLocalizedDescriptionKey: o["detail"] as? String ?? "wallet fail"])
+        }
+        guard o["opened"] as? Bool == true else {
+            return PaperWalletSnapshot(opened: false)
+        }
+        var summary: PaperSummary?
+        if let sm = o["summary"] as? [String: Any] {
+            summary = PaperSummary(
+                cash: JSONX.doubleVal(sm["cash"]) ?? 0,
+                marketValue: JSONX.doubleVal(sm["market_value"]) ?? 0,
+                equity: JSONX.doubleVal(sm["equity"]) ?? 0,
+                pnl: JSONX.doubleVal(sm["pnl"]) ?? 0,
+                pnlRate: JSONX.doubleVal(sm["pnl_rate"]) ?? 0,
+                initialBalance: JSONX.doubleVal(sm["initial_balance"]) ?? 100_000
+            )
+        }
+        let arr = o["positions"] as? [[String: Any]] ?? (o["positions"] as? [Any])?.compactMap { $0 as? [String: Any] } ?? []
+        let positions: [PaperPosition] = arr.compactMap { p in
+            let gid = JSONX.int64Val(p["gid"]) ?? 0
+            guard gid > 0 else { return nil }
+            return PaperPosition(
+                gid: gid,
+                name: JSONX.stringVal(p["name"]),
+                cover: JSONX.stringVal(p["cover"]),
+                qty: Int(JSONX.int64Val(p["qty"]) ?? 0),
+                avgCost: JSONX.doubleVal(p["avg_cost"]) ?? 0,
+                floorPrice: JSONX.doubleVal(p["floor_price"]) ?? 0,
+                marketValue: JSONX.doubleVal(p["market_value"]) ?? 0,
+                pnl: JSONX.doubleVal(p["pnl"]) ?? 0,
+                stale: p["stale"] as? Bool ?? false
+            )
+        }
+        return PaperWalletSnapshot(
+            opened: true,
+            displayName: JSONX.stringVal(o["display_name"]),
+            summary: summary,
+            positions: positions,
+            sellFeeRate: JSONX.doubleVal(o["sell_fee_rate"]) ?? 0.045
+        )
+    }
+
+    func paperOpen(platformToken: String, displayName: String) async throws {
+        let body = try JSONSerialization.data(withJSONObject: ["display_name": displayName])
+        var req = URLRequest(url: URL(string: "\(base())/paper/open")!)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue(JwtUtil.bearer(platformToken), forHTTPHeaderField: "Authorization")
+        req.httpBody = body
+        let (data, resp) = try await siteSession().data(for: req)
+        let o = jsonObject(data)
+        let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+        if code >= 400 || o["status"] as? String != "ok" {
+            throw NSError(domain: "paper", code: code, userInfo: [NSLocalizedDescriptionKey: o["detail"] as? String ?? "开仓失败"])
+        }
+    }
+
+    func paperBuy(platformToken: String, gid: Int64, qty: Int, name: String, cover: String, floorPrice: Double) async throws -> [String: Any] {
+        try await paperTrade(platformToken: platformToken, side: "buy", gid: gid, qty: qty, name: name, cover: cover, floorPrice: floorPrice)
+    }
+
+    func paperSell(platformToken: String, gid: Int64, qty: Int, name: String, cover: String, floorPrice: Double) async throws -> [String: Any] {
+        try await paperTrade(platformToken: platformToken, side: "sell", gid: gid, qty: qty, name: name, cover: cover, floorPrice: floorPrice)
+    }
+
+    private func paperTrade(platformToken: String, side: String, gid: Int64, qty: Int, name: String, cover: String, floorPrice: Double) async throws -> [String: Any] {
+        let body = try JSONSerialization.data(withJSONObject: [
+            "gid": gid, "qty": qty, "name": name, "cover": cover, "floor_price": floorPrice
+        ])
+        var req = URLRequest(url: URL(string: "\(base())/paper/\(side)")!)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue(JwtUtil.bearer(platformToken), forHTTPHeaderField: "Authorization")
+        req.httpBody = body
+        let (data, resp) = try await siteSession(timeout: 20).data(for: req)
+        let o = jsonObject(data)
+        let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+        if code >= 400 || o["status"] as? String != "ok" {
+            throw NSError(domain: "paper", code: code, userInfo: [NSLocalizedDescriptionKey: o["detail"] as? String ?? "下单失败"])
+        }
+        return o
+    }
+
+    func paperLeaderboard(platformToken: String, floorsHint: String = "", limit: Int = 50) async throws -> [PaperBoardRow] {
+        var urlStr = "\(base())/paper/leaderboard?limit=\(limit)"
+        if !floorsHint.isEmpty {
+            let enc = floorsHint.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? floorsHint
+            urlStr += "&floors_hint=\(enc)"
+        }
+        var req = URLRequest(url: URL(string: urlStr)!)
+        req.setValue(JwtUtil.bearer(platformToken), forHTTPHeaderField: "Authorization")
+        let (data, resp) = try await siteSession(timeout: 20).data(for: req)
+        let o = jsonObject(data)
+        let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+        if code >= 400 {
+            throw NSError(domain: "paper", code: code, userInfo: [NSLocalizedDescriptionKey: o["detail"] as? String ?? "榜单失败"])
+        }
+        let arr = o["items"] as? [[String: Any]] ?? (o["items"] as? [Any])?.compactMap { $0 as? [String: Any] } ?? []
+        return arr.compactMap { r in
+            let uid = JSONX.int64Val(r["user_id"]) ?? 0
+            guard uid > 0 else { return nil }
+            return PaperBoardRow(
+                userId: uid,
+                displayName: JSONX.stringVal(r["display_name"]),
+                pnlRate: JSONX.doubleVal(r["pnl_rate"]) ?? 0,
+                equity: JSONX.doubleVal(r["equity"]) ?? 0,
+                rank: Int(JSONX.int64Val(r["rank"]) ?? 0)
+            )
+        }
+    }
+
+    func paperTrades(platformToken: String, page: Int = 1, pageSize: Int = 40) async throws -> [PaperTradeRow] {
+        var req = URLRequest(url: URL(string: "\(base())/paper/trades?page=\(page)&page_size=\(pageSize)")!)
+        req.setValue(JwtUtil.bearer(platformToken), forHTTPHeaderField: "Authorization")
+        let (data, resp) = try await siteSession().data(for: req)
+        let o = jsonObject(data)
+        let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+        if code >= 400 {
+            throw NSError(domain: "paper", code: code, userInfo: [NSLocalizedDescriptionKey: o["detail"] as? String ?? "流水失败"])
+        }
+        let arr = o["items"] as? [[String: Any]] ?? (o["items"] as? [Any])?.compactMap { $0 as? [String: Any] } ?? []
+        return arr.compactMap { t in
+            let id = JSONX.int64Val(t["id"]) ?? 0
+            guard id > 0 else { return nil }
+            return PaperTradeRow(
+                id: id,
+                name: JSONX.stringVal(t["name"]),
+                side: JSONX.stringVal(t["side"]),
+                qty: Int(JSONX.int64Val(t["qty"]) ?? 0),
+                price: JSONX.doubleVal(t["price"]) ?? 0,
+                amount: JSONX.doubleVal(t["amount"]) ?? 0,
+                createdAt: JSONX.stringVal(t["created_at"])
+            )
         }
     }
 

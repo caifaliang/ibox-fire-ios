@@ -393,7 +393,8 @@ final class AppViewModel: ObservableObject {
     @Published var vipPreviewBanner = true
 
     private let prefs = UserDefaults.standard
-    private let api = ApiRepository()
+    /// 爬仓等 UI 直调；站点 base 随 prefs 可变时请只改这一份
+    let api = ApiRepository()
     let runner = TaskRunner.shared
 
     private let kSite = "ibox.site.token"
@@ -1605,16 +1606,38 @@ final class AppViewModel: ObservableObject {
                     self.queryPages = r.pages
                     self.queryActive = r.active
                     self.queryLocked = r.locked
-                    self.queryProgressMsg = ""
+                    self.queryProgressMsg = "完成 \(r.scanned) 单 · \(r.tiers.count) 价位"
                     self.appendLog("查询完成 扫描\(r.scanned) 档位\(r.tiers.count)", type: "buy", mode: .query)
                 }
             } catch {
                 await MainActor.run {
-                    self?.queryProgressMsg = ""
+                    self?.queryProgressMsg = error.localizedDescription
                     self?.appendLog(error.localizedDescription, type: "error", mode: .query)
                 }
             }
         }
+    }
+
+    /// 爬仓详情内嵌查挂单/查求购：不切科技页。
+    func startQueryInPlace(kind: String, groupId: Int64, groupName: String, depth: Int = 500) {
+        guard requireVip() else { return }
+        guard iboxLoggedIn else {
+            appendLog("请先登录 iBox", type: "error", mode: .query); return
+        }
+        guard groupId > 0 else {
+            appendLog("无效藏品", type: "error", mode: .query); return
+        }
+        queryGid = groupId
+        queryCname = groupName
+        queryKind = kind == "purchase" ? "purchase" : "consignment"
+        queryDepth = Self.queryDepths.contains(depth) ? depth : 500
+        startQuery()
+    }
+
+    func prepareTradeRecords(groupId: Int64, groupName: String) {
+        tradeGid = groupId
+        tradeCname = groupName
+        loadTradeRecords(reset: true)
     }
 
     func loadTradeRecords(reset: Bool = false) {
