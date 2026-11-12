@@ -146,7 +146,7 @@ struct PaperTradingPane: View {
             Text("买入 · 按地板价").font(.system(size: 13, weight: .semibold))
             TextField("搜索藏品名称", text: $buyKw)
                 .textFieldStyle(.roundedBorder)
-                .onChange(of: buyKw) { _, _ in
+                .onChange(of: buyKw) { _ in
                     searchTask?.cancel()
                     searchTask = Task {
                         try? await Task.sleep(nanoseconds: 350_000_000)

@@ -44,7 +44,7 @@ struct ActivityMarketPane: View {
                 }
                 TextField("输入藏品关键词", text: $kw)
                     .textFieldStyle(.roundedBorder)
-                    .onChange(of: kw) { _, _ in
+                    .onChange(of: kw) { _ in
                         searchTask?.cancel()
                         searchTask = Task {
                             try? await Task.sleep(nanoseconds: 400_000_000)
