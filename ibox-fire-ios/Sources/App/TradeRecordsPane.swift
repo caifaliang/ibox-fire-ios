@@ -85,15 +85,18 @@ struct TradeRecordsPane: View {
                                 HStack(alignment: .center) {
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(row.time.isEmpty ? "—" : row.time)
-                                            .font(.subheadline.weight(.medium))
+                                            .font(.system(size: 12, weight: .medium).monospacedDigit())
                                             .foregroundStyle(Color(red: 0.06, green: 0.09, blue: 0.16))
+                                            .lineLimit(1)
+                                            .minimumScaleFactor(0.75)
                                         if !row.date.isEmpty {
                                             Text(row.date)
                                                 .font(.system(size: 10))
                                                 .foregroundStyle(Color(red: 0.58, green: 0.64, blue: 0.72))
+                                                .lineLimit(1)
                                         }
                                     }
-                                    .frame(width: 72, alignment: .leading)
+                                    .frame(width: 78, alignment: .leading)
                                     Text(row.tokenId.isEmpty ? "\(row.qty) 笔" : "#\(row.tokenId)")
                                         .font(.subheadline)
                                         .foregroundStyle(Color(red: 0.20, green: 0.25, blue: 0.33))

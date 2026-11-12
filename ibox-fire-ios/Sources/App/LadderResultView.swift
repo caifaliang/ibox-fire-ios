@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// 对齐网站 Detail.vue 查挂单价格分布：进度 + 四格统计 + 占比条
+/// 对齐网站 Detail.vue 查挂单价格分布：进度 + 四格统计 + 占比条（Lazy 列表，避免主线程卡死）
 struct LadderResultView: View {
     var kindLabel: String
     var running: Bool
@@ -35,6 +35,12 @@ struct LadderResultView: View {
         apiTotal > scanned ? "已采样" : "\(kindLabel)总数"
     }
 
+    private var visibleTiers: [QueryTier] { Array(tiers.prefix(80)) }
+
+    private var totalCount: Int {
+        max(1, tiers.reduce(0) { $0 + $1.count })
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top) {
@@ -67,25 +73,8 @@ struct LadderResultView: View {
                             .font(.system(size: 11).monospacedDigit())
                             .foregroundStyle(Color(red: 0.85, green: 0.47, blue: 0.02))
                     }
-                    GeometryReader { geo in
-                        ZStack(alignment: .leading) {
-                            Capsule().fill(Color.white.opacity(0.8))
-                            Capsule()
-                                .fill(
-                                    LinearGradient(
-                                        colors: [
-                                            Color(red: 0.98, green: 0.75, blue: 0.35),
-                                            Color(red: 0.96, green: 0.62, blue: 0.04),
-                                            Color(red: 0.96, green: 0.55, blue: 0.0),
-                                        ],
-                                        startPoint: .leading,
-                                        endPoint: .trailing
-                                    )
-                                )
-                                .frame(width: max(geo.size.width * CGFloat(max(pct, 4)) / 100, 8))
-                        }
-                    }
-                    .frame(height: 10)
+                    ProgressView(value: Double(max(pct, 1)), total: 100)
+                        .tint(Color(red: 0.96, green: 0.55, blue: 0.0))
                 }
                 .padding(12)
                 .background(
@@ -121,48 +110,33 @@ struct LadderResultView: View {
 
                     Divider().opacity(0.4)
 
-                    let totalCount = max(1, tiers.reduce(0) { $0 + $1.count })
-                    ForEach(tiers.prefix(80)) { t in
-                        let share = Double(t.count) / Double(totalCount)
-                        let barPct = share * 100
-                        HStack(spacing: 8) {
-                            Text("¥\(fmtPrice(t.price))")
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(Palette.textPrimary)
-                                .frame(width: 56, alignment: .leading)
-                            VStack(alignment: .leading, spacing: 2) {
-                                GeometryReader { geo in
-                                    ZStack(alignment: .leading) {
-                                        Capsule().fill(Color(red: 0.95, green: 0.96, blue: 0.97))
-                                        Capsule()
-                                            .fill(
-                                                LinearGradient(
-                                                    colors: [
-                                                        Color(red: 0.98, green: 0.75, blue: 0.35),
-                                                        Color(red: 0.96, green: 0.55, blue: 0.0),
-                                                    ],
-                                                    startPoint: .leading,
-                                                    endPoint: .trailing
-                                                )
-                                            )
-                                            .frame(width: max(geo.size.width * CGFloat(barPct) / 100, t.count > 0 ? 4 : 0))
+                    // Lazy：只画可视行；占比条用 ProgressView，避免每行 GeometryReader
+                    ScrollView {
+                        LazyVStack(spacing: 0) {
+                            ForEach(visibleTiers) { t in
+                                let share = Double(t.count) / Double(totalCount)
+                                HStack(spacing: 8) {
+                                    Text("¥\(fmtPrice(t.price))")
+                                        .font(.subheadline.weight(.semibold))
+                                        .foregroundStyle(Palette.textPrimary)
+                                        .frame(width: 56, alignment: .leading)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        ProgressView(value: min(max(share, 0), 1))
+                                            .tint(Color(red: 0.96, green: 0.55, blue: 0.0))
+                                        Text(String(format: "%.0f%%", share * 100))
+                                            .font(.system(size: 10))
+                                            .foregroundStyle(Palette.textMuted)
                                     }
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    Text("\(t.count)")
+                                        .font(.subheadline.weight(.bold))
+                                        .foregroundStyle(Palette.textPrimary)
+                                        .frame(width: 40, alignment: .trailing)
                                 }
-                                .frame(height: 8)
-                                Text(String(format: "%.0f%%", barPct))
-                                    .font(.system(size: 10))
-                                    .foregroundStyle(Palette.textMuted)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 10)
+                                Divider().opacity(0.25).padding(.leading, 12)
                             }
-                            .frame(maxWidth: .infinity)
-                            Text("\(t.count)")
-                                .font(.subheadline.weight(.bold))
-                                .foregroundStyle(Palette.textPrimary)
-                                .frame(width: 40, alignment: .trailing)
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 10)
-                        if t.id != tiers.prefix(80).last?.id {
-                            Divider().opacity(0.25).padding(.leading, 12)
                         }
                     }
                 }

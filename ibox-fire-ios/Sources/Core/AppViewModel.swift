@@ -1583,12 +1583,25 @@ final class AppViewModel: ObservableObject {
         let engine = QueryEngine(cfg: QueryConfig(token: iboxToken, groupId: queryGid, collectionName: queryCname, kind: queryKind, depth: depth), onLog: { [weak self] m in
             Task { @MainActor in self?.appendLog(m, mode: .query) }
         })
+        // 节流：价位表全量刷新太频会卡死 UI；进度数字可更勤
+        actor TierUIThrottle {
+            var lastTiersAt: ContinuousClock.Instant = .now.advanced(by: .seconds(-1))
+            func shouldPushTiers(force: Bool) -> Bool {
+                if force { lastTiersAt = .now; return true }
+                let now = ContinuousClock.now
+                if now - lastTiersAt >= .milliseconds(450) {
+                    lastTiersAt = now
+                    return true
+                }
+                return false
+            }
+        }
+        let throttle = TierUIThrottle()
         runner.start(kind: .query, stop: { engine.requestStop() }) { [weak self] in
             do {
                 let r = try await engine.run(onProgress: { partial in
                     Task { @MainActor in
                         guard let self else { return }
-                        self.queryTiers = partial.tiers
                         self.queryScanned = partial.scanned
                         self.queryApiTotal = partial.apiTotal
                         self.queryPages = partial.pages
@@ -1596,6 +1609,8 @@ final class AppViewModel: ObservableObject {
                         self.queryLocked = partial.locked
                         let denom = partial.apiTotal > 0 ? partial.apiTotal : depth
                         self.queryProgressMsg = "已拉取 \(partial.scanned)/\(denom) 单 · 第 \(max(partial.pages, 1)) 页"
+                        let push = await throttle.shouldPushTiers(force: false)
+                        if push { self.queryTiers = partial.tiers }
                     }
                 })
                 await MainActor.run {
@@ -1608,6 +1623,10 @@ final class AppViewModel: ObservableObject {
                     self.queryLocked = r.locked
                     self.queryProgressMsg = "完成 \(r.scanned) 单 · \(r.tiers.count) 价位"
                     self.appendLog("查询完成 扫描\(r.scanned) 档位\(r.tiers.count)", type: "buy", mode: .query)
+                }
+            } catch is CancellationError {
+                await MainActor.run {
+                    self?.queryProgressMsg = "已停止"
                 }
             } catch {
                 await MainActor.run {
@@ -1635,6 +1654,11 @@ final class AppViewModel: ObservableObject {
     }
 
     func prepareTradeRecords(groupId: Int64, groupName: String) {
+        // 同 GID 已在加载/已有数据时不重复拉，避免 cancel→「已取消」闪错
+        if tradeGid == groupId, (tradeLoading || !tradeRecords.isEmpty) {
+            if !groupName.isEmpty { tradeCname = groupName }
+            return
+        }
         tradeGid = groupId
         tradeCname = groupName
         loadTradeRecords(reset: true)
@@ -1670,6 +1694,7 @@ final class AppViewModel: ObservableObject {
                     limit: 20,
                     platformToken: token
                 )
+                try Task.checkCancellation()
                 await MainActor.run {
                     guard let self, let pageData else { return }
                     if reset {
@@ -1687,13 +1712,20 @@ final class AppViewModel: ObservableObject {
                     self.tradeLoadingMore = false
                     self.tradeErr = ""
                 }
+            } catch is CancellationError {
+                // 被新的一次加载顶替：不写错误文案
             } catch {
+                if Task.isCancelled { return }
+                let ns = error as NSError
+                if ns.domain == NSURLErrorDomain && ns.code == NSURLErrorCancelled { return }
+                let msg = error.localizedDescription
+                if msg.contains("已取消") || msg.lowercased().contains("cancel") { return }
                 await MainActor.run {
                     guard let self else { return }
                     self.tradeLoading = false
                     self.tradeLoadingMore = false
                     if self.tradeRecords.isEmpty {
-                        self.tradeErr = error.localizedDescription
+                        self.tradeErr = msg
                     }
                 }
             }

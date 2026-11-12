@@ -21,10 +21,17 @@ struct PacangDetailPane: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Button(action: onBack) {
+                Button {
+                    // 查挂单扫描中返回：先停引擎，避免主线程被进度刷新拖死
+                    if runner.isRunning(.query) { runner.stop(.query) }
+                    onBack()
+                } label: {
                     Text("← 返回")
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(Palette.textPrimary)
+                        .padding(.vertical, 6)
+                        .padding(.trailing, 8)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 Spacer()
@@ -32,6 +39,7 @@ struct PacangDetailPane: View {
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(gold)
             }
+            .zIndex(2)
 
             HStack(spacing: 12) {
                 AsyncImage(url: URL(string: iboxThumb(item.coverPicUrl, size: 128))) { img in
@@ -77,11 +85,11 @@ struct PacangDetailPane: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .onAppear {
-            vm.prepareTradeRecords(groupId: item.id, groupName: item.name)
-        }
         .task(id: "\(item.id)-\(tab)-\(consignTick)") {
             await onTabChange()
+        }
+        .onDisappear {
+            if runner.isRunning(.query) { runner.stop(.query) }
         }
     }
 

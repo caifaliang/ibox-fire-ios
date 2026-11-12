@@ -80,6 +80,7 @@ final class OfficialH5Session: NSObject, ObservableObject {
         wv.isOpaque = false
         wv.backgroundColor = .black
         wv.scrollView.backgroundColor = .black
+        wv.allowsBackForwardNavigationGestures = true
         wv.navigationDelegate = self
         wv.uiDelegate = self
         let b = H5ApiBridge(webView: wv)
@@ -171,6 +172,43 @@ final class OfficialH5Session: NSObject, ObservableObject {
         verifyStarted = false
         status = "未启动"
         progress = 0
+    }
+
+    /// 藏品详情等 Flutter 路由优先页内后退；无法后退时回调 false。
+    func goBackInPage(completion: @escaping (Bool) -> Void) {
+        guard let wv = webView else {
+            completion(false)
+            return
+        }
+        if wv.canGoBack {
+            wv.goBack()
+            completion(true)
+            return
+        }
+        // Flutter Web 常用 hash 路由，WK 历史可能为空，改走 history.back / 注入 pop
+        let js = """
+        (function(){
+          try {
+            var h = location.hash || '';
+            var path = (h.indexOf('#')===0 ? h.slice(1) : h) || '/';
+            // 已在 launcher / 首页：视为无法再退
+            if (!path || path==='/' || path==='/launcher' || path.indexOf('/launcher')===0) return 'root';
+            if (window.history && history.length > 1) {
+              history.back();
+              return 'history';
+            }
+            // 兜底：回到 launcher
+            location.hash = '#/launcher';
+            return 'launcher';
+          } catch(e) { return 'err'; }
+        })()
+        """
+        wv.evaluateJavaScript(js) { result, _ in
+            let s = (result as? String) ?? ""
+            DispatchQueue.main.async {
+                completion(s == "history" || s == "launcher")
+            }
+        }
     }
 
     private func bindObservers(_ wv: WKWebView) {

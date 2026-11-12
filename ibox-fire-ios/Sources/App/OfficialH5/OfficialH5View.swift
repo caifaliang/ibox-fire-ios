@@ -26,14 +26,16 @@ struct OfficialH5View: View {
             HStack(spacing: 8) {
                 Button {
                     Haptics.selection()
-                    if activeTool != nil { activeTool = nil } else { onBackToTech() }
+                    handleBack()
                 } label: {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(Palette.textPrimary)
-                        .frame(width: 36, height: 36)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .zIndex(5)
                 Text("官方 H5")
                     .font(.system(size: 17, weight: .bold))
                     .foregroundStyle(Palette.textPrimary)
@@ -132,6 +134,17 @@ struct OfficialH5View: View {
             deviceId: deviceId,
             uid: uid
         )
+    }
+
+    /// 浮层优先关；否则先让 Flutter/H5 页内后退，退无可退再回科技。
+    private func handleBack() {
+        if activeTool != nil {
+            activeTool = nil
+            return
+        }
+        session.goBackInPage { didGoBack in
+            if !didGoBack { onBackToTech() }
+        }
     }
 
     private func openTool(_ key: String) {

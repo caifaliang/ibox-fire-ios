@@ -1,7 +1,7 @@
 {
-  "versionName": "1.0.6",
-  "build": "15",
-  "ipaUrl": "https://ai.iboxai.top/downloads/ibox-fire.ipa?v=15",
-  "notes": "爬仓：市场翻页/骨架/详情成交·查挂单·查求购·寄售；持仓自滚动",
+  "versionName": "1.0.7",
+  "build": "16",
+  "ipaUrl": "https://ai.iboxai.top/downloads/ibox-fire.ipa?v=16",
+  "notes": "修查挂单卡顿/返回；成交记录取消误报；官方H5页内返回",
   "force": false
 }
