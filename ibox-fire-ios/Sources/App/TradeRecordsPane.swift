@@ -3,6 +3,8 @@ import SwiftUI
 /// 对齐 APK OfficialH5Tools.TradeRecordsPane
 struct TradeRecordsPane: View {
     @EnvironmentObject var vm: AppViewModel
+    /// nil = 占满剩余高度（爬仓详情）；有值则固定上限（科技浮层）
+    var listMaxHeight: CGFloat? = 360
 
     var body: some View {
         VStack(spacing: 10) {
@@ -127,7 +129,7 @@ struct TradeRecordsPane: View {
                             }
                         }
                     }
-                    .frame(maxHeight: 360)
+                    .frame(maxHeight: listMaxHeight)
                 }
             }
             .background(

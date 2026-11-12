@@ -68,7 +68,7 @@ struct PacangDetailPane: View {
             Group {
                 switch tab {
                 case "records":
-                    TradeRecordsPane()
+                    TradeRecordsPane(listMaxHeight: nil)
                 case "ladder", "purchase":
                     ladderBody(isPurchase: tab == "purchase")
                 default:

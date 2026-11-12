@@ -557,7 +557,7 @@ struct ModePane: View {
                     case .batch: BatchPane()
                     case .sweep: SweepPane()
                     case .query, .query_purchase, .query_consignment: QueryPane()
-                    case .holdings: HoldingsPane()
+                    case .holdings: HoldingsPane(scrollsSelf: false)
                     case .market_push: MarketPushPane()
                     case .price_alert: PriceAlertPane()
                     case .announce_push: AnnouncePushPane()
@@ -2050,26 +2050,42 @@ private struct HoldingCoverThumb: View {
 
 struct HoldingsPane: View {
     @EnvironmentObject var vm: AppViewModel
+    /// 爬仓整页 true；科技 ModePane 外层已有 ScrollView 时传 false
+    var scrollsSelf: Bool = true
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("个人持仓 · 本地直连计价（max地板/求购）").font(.caption).foregroundStyle(.secondary)
             if !vm.iboxLoggedIn {
                 IboxLoginCard()
+                Spacer(minLength: 0)
             } else {
-            TextField("搜索分组名", text: $vm.holdingsKeyword).fieldStyle()
-            HStack {
-                Button("刷新") { Task { await vm.loadHoldings(reset: true) } }
-                    .buttonStyle(.bordered).disabled(vm.holdingsLoading)
-                if vm.holdingsHasMore {
-                    Button("加载更多") { Task { await vm.loadHoldings(reset: false) } }
+                TextField("搜索分组名", text: $vm.holdingsKeyword).fieldStyle()
+                HStack {
+                    Button("刷新") { Task { await vm.loadHoldings(reset: true) } }
                         .buttonStyle(.bordered).disabled(vm.holdingsLoading)
+                    if vm.holdingsHasMore {
+                        Button("加载更多") { Task { await vm.loadHoldings(reset: false) } }
+                            .buttonStyle(.bordered).disabled(vm.holdingsLoading)
+                    }
+                    Spacer()
+                    if vm.holdingsLoading { ProgressView().scaleEffect(0.8) }
                 }
-                Spacer()
-                if vm.holdingsLoading { ProgressView().scaleEffect(0.8) }
+                if !vm.holdingsError.isEmpty {
+                    Text(vm.holdingsError).font(.caption).foregroundStyle(.red)
+                }
+                if scrollsSelf {
+                    ScrollView { holdingsList }
+                } else {
+                    holdingsList
+                }
             }
-            if !vm.holdingsError.isEmpty {
-                Text(vm.holdingsError).font(.caption).foregroundStyle(.red)
-            }
+        }
+        .onAppear { if vm.holdingsItems.isEmpty { Task { await vm.loadHoldings(reset: true) } } }
+    }
+
+    private var holdingsList: some View {
+        LazyVStack(alignment: .leading, spacing: 0) {
             ForEach(vm.holdingsItems) { g in
                 HStack(spacing: Space.m) {
                     HoldingCoverThumb(url: iboxThumb(g.coverPicUrl, size: 80), name: g.name)
@@ -2097,10 +2113,8 @@ struct HoldingsPane: View {
                 Rectangle().fill(Palette.hairline).frame(height: 0.5)
             }
             if vm.holdingsItems.isEmpty && !vm.holdingsLoading {
-                Text("暂无持仓").font(.caption).foregroundStyle(.secondary)
-            }
+                Text("暂无持仓").font(.caption).foregroundStyle(.secondary).padding(.top, 12)
             }
         }
-        .onAppear { if vm.holdingsItems.isEmpty { Task { await vm.loadHoldings(reset: true) } } }
     }
 }

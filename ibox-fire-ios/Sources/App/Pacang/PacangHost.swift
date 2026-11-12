@@ -26,7 +26,9 @@ struct PacangHost: View {
                 }
                 Group {
                     if primary == "holdings" {
-                        ScrollView { HoldingsPane().padding(.horizontal, 4) }
+                        // 勿外包 ScrollView：HoldingsPane 自带列表，嵌套会卡顿/手势抢滚动
+                        HoldingsPane()
+                            .padding(.horizontal, 4)
                     } else if marketSub == "paper" {
                         PaperTradingPane()
                     } else {
