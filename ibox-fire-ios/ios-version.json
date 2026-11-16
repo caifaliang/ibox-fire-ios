@@ -1,7 +1,7 @@
 {
   "versionName": "1.0.10",
-  "build": "19",
-  "ipaUrl": "https://ai.iboxai.top/downloads/ibox-fire.ipa?v=19",
+  "build": "20",
+  "ipaUrl": "https://ai.iboxai.top/downloads/ibox-fire.ipa?v=20",
   "notes": "iBox抢合：抽20全活上·全路同步预热·到点只开火·task轮询50ms·confirm∥submit流水线",
   "force": false
 }

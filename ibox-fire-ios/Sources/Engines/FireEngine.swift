@@ -298,18 +298,16 @@ final class FireEngine: @unchecked Sendable {
             ]
             await log("→ [\(label)] submit#\(n) x\(shot)")
             let t0 = Date().timeIntervalSince1970 * 1000
-            let subResult: Result<[String: Any], Error> = await {
-                do { return .success(try await client.postJsonThrowing("\(prefix)/synthetic/center/submit", body: body)) }
-                catch { return .failure(error) }
-            }()
-            let ms = Int(Date().timeIntervalSince1970 * 1000 - t0)
-            if boughtGet() >= target || stopped { break }
-
-            if case .failure(let err) = subResult {
-                let kind = classifyTransport(err)
+            let sub: [String: Any]
+            do {
+                sub = try await client.postJsonThrowing("\(prefix)/synthetic/center/submit", body: body)
+            } catch {
+                let ms = Int(Date().timeIntervalSince1970 * 1000 - t0)
+                if boughtGet() >= target || stopped { break }
+                let kind = classifyTransport(error)
                 if kind == .hard {
                     hardStreak += 1
-                    let em = err.localizedDescription
+                    let em = error.localizedDescription
                     let emShort = em.count > 50 ? String(em.prefix(50)) : em
                     await log("← [\(label)] submit#\(n) 硬挂 \(ms)ms \(emShort) streak=\(hardStreak)")
                     if hardStreak >= deadHardStreak {
@@ -324,7 +322,8 @@ final class FireEngine: @unchecked Sendable {
                 try? await Task.sleep(nanoseconds: 50_000_000)
                 continue
             }
-            guard case .success(let sub) = subResult else { continue }
+            let ms = Int(Date().timeIntervalSince1970 * 1000 - t0)
+            if boughtGet() >= target || stopped { break }
             hardStreak = 0
 
             let code = JSONX.code(sub)
@@ -351,12 +350,11 @@ final class FireEngine: @unchecked Sendable {
             {
                 try? await Task.sleep(nanoseconds: 50_000_000) // task 快轮询：原 150ms → 50ms
                 polls += 1
-                let polledResult: Result<[String: Any], Error> = await {
-                    do { return .success(try await client.getThrowing("\(prefix)/synthetic/center/task/\(tid)")) }
-                    catch { return .failure(error) }
-                }()
-                if case .failure(let err) = polledResult {
-                    let kind = classifyTransport(err)
+                let polled: [String: Any]
+                do {
+                    polled = try await client.getThrowing("\(prefix)/synthetic/center/task/\(tid)")
+                } catch {
+                    let kind = classifyTransport(error)
                     if kind == .hard {
                         hardStreak += 1
                         await log("← [\(label)] poll#\(polls) 硬挂 streak=\(hardStreak)")
@@ -371,7 +369,6 @@ final class FireEngine: @unchecked Sendable {
                     }
                     break
                 }
-                guard case .success(let polled) = polledResult else { break }
                 hardStreak = 0
                 if JSONX.code(polled) != 0 {
                     let pmsg = JSONX.message(polled)
@@ -404,33 +401,28 @@ final class FireEngine: @unchecked Sendable {
                 await self.log("→ [\(label)] confirm task=\(tidShort)（流水线）")
                 let c0 = Date().timeIntervalSince1970 * 1000
                 let confBody: [String: Any] = ["syntheticId": NSNumber(value: cid), "taskId": tid]
-                let confResult: Result<[String: Any], Error] = await {
-                    do {
-                        return .success(try await client.postJsonThrowing(
-                            "\(self.prefix)/synthetic/center/confirm?uid=\(uid)",
-                            body: confBody
-                        ))
-                    } catch {
-                        return .failure(error)
+                // Avoid Result<[String: Any], Error> — Swift misparses Any>
+                do {
+                    let conf = try await client.postJsonThrowing(
+                        "\(self.prefix)/synthetic/center/confirm?uid=\(uid)",
+                        body: confBody
+                    )
+                    let cms = Int(Date().timeIntervalSince1970 * 1000 - c0)
+                    let ccode = JSONX.code(conf)
+                    if ccode == 0 {
+                        let got = self.confirmedQty(JSONX.dataDict(conf), requested: shotN)
+                        let total = self.boughtAdd(got)
+                        await self.log("← [\(label)] confirm OK \(cms)ms x\(got) 累计\(min(total, target))/\(target)")
+                    } else {
+                        let cmsg = JSONX.message(conf)
+                        let cShort = cmsg.count > 80 ? String(cmsg.prefix(80)) : cmsg
+                        await self.log("← [\(label)] confirm 失败 \(cms)ms code=\(ccode) \(cShort)")
                     }
-                }()
-                let cms = Int(Date().timeIntervalSince1970 * 1000 - c0)
-                if case .failure(let err) = confResult {
-                    let em = err.localizedDescription
+                } catch {
+                    let cms = Int(Date().timeIntervalSince1970 * 1000 - c0)
+                    let em = error.localizedDescription
                     let short = em.count > 50 ? String(em.prefix(50)) : em
                     await self.log("← [\(label)] confirm 失败/超时 \(cms)ms \(short)（流水线）")
-                    return
-                }
-                guard case .success(let conf) = confResult else { return }
-                let ccode = JSONX.code(conf)
-                if ccode == 0 {
-                    let got = self.confirmedQty(JSONX.dataDict(conf), requested: shotN)
-                    let total = self.boughtAdd(got)
-                    await self.log("← [\(label)] confirm OK \(cms)ms x\(got) 累计\(min(total, target))/\(target)")
-                } else {
-                    let cmsg = JSONX.message(conf)
-                    let cShort = cmsg.count > 80 ? String(cmsg.prefix(80)) : cmsg
-                    await self.log("← [\(label)] confirm 失败 \(cms)ms code=\(ccode) \(cShort)")
                 }
             }
             // 立刻下一发
