@@ -22,7 +22,7 @@ enum TechMode: String, CaseIterable, Identifiable {
     case seg_snipe, recommend_lock, announce, synth, presale, buy, sell, precision, batch, sweep
     case query_purchase, query_consignment, holdings, query
     case price_alert, market_push, announce_push, discover_push
-    case nb_presale, nb_snipe
+    case nb_presale, nb_synth, nb_snipe
     case ts_market, ts_snipe
     case ib_presale, ib_snipe, ib_sell, ib_query
     case profile
@@ -48,6 +48,7 @@ enum TechMode: String, CaseIterable, Identifiable {
         case .announce_push: return "公告推送"
         case .discover_push: return "发现趋势推送"
         case .nb_presale: return "抢购"
+        case .nb_synth: return "抢合"
         case .nb_snipe: return "捡漏"
         case .ts_market: return "市场"
         case .ts_snipe: return "捡漏"
@@ -82,6 +83,7 @@ enum TechMode: String, CaseIterable, Identifiable {
         case .synth: return .synth
         case .presale: return .presale
         case .nb_presale: return .nbPresale
+        case .nb_synth: return .nbSynth
         case .nb_snipe: return .nbSnipe
         case .ts_snipe: return .tsSnipe
         case .ib_presale: return .ibPresale
@@ -362,6 +364,13 @@ final class AppViewModel: ObservableObject {
     @Published var nbPresalePayPwd = ""
     @Published var nbPresaleQty = "1"
 
+    @Published var nbSynthItems: [NbMergeItem] = []
+    @Published var nbSynthSelected: NbMergeItem?
+    @Published var nbSynthMaterials: [NbMergeMaterial] = []
+    @Published var nbSynthBfType = 0
+    @Published var nbSynthSearch = ""
+    @Published var nbSynthQty = "1"
+
     @Published var nbSnipeSearch = ""
     @Published var nbSnipeHits: [NbMarketHit] = []
     @Published var nbSnipePid: Int64 = 0
@@ -527,7 +536,7 @@ final class AppViewModel: ObservableObject {
         case .push_cat: return Self.pushTabs
         }
     }
-    var nbTabs: [TechMode] { [.nb_presale, .nb_snipe] }
+    var nbTabs: [TechMode] { [.nb_presale, .nb_synth, .nb_snipe] }
     var tsTabs: [TechMode] { [.ts_market, .ts_snipe] }
     var ibTabs: [TechMode] { [.ib_presale, .ib_snipe, .ib_sell, .ib_query] }
 
@@ -722,6 +731,8 @@ final class AppViewModel: ObservableObject {
                 if iboxLoggedIn { await refreshPresaleList(silent: true) }
             case .nb_presale:
                 if nbLoggedIn { await refreshNbPresaleList(silent: true) }
+            case .nb_synth:
+                if nbLoggedIn { await refreshNbSynthList(silent: true) }
             case .seg_snipe:
                 if iboxLoggedIn && segSnipeSegments.isEmpty { await loadSegSnipeSegments(silent: true) }
             case .market_push, .price_alert, .announce_push, .discover_push:
@@ -846,6 +857,9 @@ final class AppViewModel: ObservableObject {
         nbToken = ""
         nbPresaleSelected = nil
         nbPresaleItems = []
+        nbSynthSelected = nil
+        nbSynthItems = []
+        nbSynthMaterials = []
         nbSnipePid = 0
         prefs.removeObject(forKey: kNb)
     }
@@ -2298,6 +2312,90 @@ final class AppViewModel: ObservableObject {
                 runner.start(kind: .presale, stop: { engine.requestStop() }, keepAlive: true) { await engine.run() }
             } catch {
                 appendLog("代理失败 \(error.localizedDescription)", type: "error", mode: .presale)
+            }
+        }
+    }
+
+
+    func refreshNbSynthList(silent: Bool = false) async {
+        guard nbLoggedIn, !nbToken.isEmpty else {
+            if !silent { appendLog("请先登录 NewBee", type: "error", mode: .nb_synth) }
+            return
+        }
+        let list = await NewbeeClient(token: nbToken).mergeList(bfType: nbSynthBfType, subject: nbSynthSearch)
+        nbSynthItems = list
+        if !silent { appendLog("NB合成活动 \(list.count) 条", mode: .nb_synth) }
+    }
+
+    func selectNbSynth(_ item: NbMergeItem) {
+        nbSynthSelected = item
+        nbSynthMaterials = []
+        if let (h, m, s) = parseStartToHms(item.startTime) {
+            fireH = h; fireM = m; fireS = s
+            appendLog(String(format: "已自动填入开火时间 %02d:%02d:%02d", h, m, s), mode: .nb_synth)
+        }
+        Task {
+            let mats = await NewbeeClient(token: nbToken).getMaterial(mergeId: item.id)
+            guard nbSynthSelected?.id == item.id else { return }
+            nbSynthMaterials = mats
+            if mats.isEmpty {
+                appendLog("材料列表空，开火时自动拼 item_ids", mode: .nb_synth)
+            } else {
+                appendLog("材料 \(mats.count) 组 · 开火时自动选取", mode: .nb_synth)
+            }
+        }
+    }
+
+    func clearNbSynthSelection() {
+        guard !runner.isRunning(.nbSynth), activePrep != "nb_synth" else { return }
+        nbSynthSelected = nil
+        nbSynthMaterials = []
+    }
+
+    func startNbSynth(immediate: Bool = false) {
+        guard requireVip(), nbLoggedIn else { return }
+        guard let item = nbSynthSelected else {
+            appendLog("请选择合成活动", type: "error", mode: .nb_synth); return
+        }
+        if !immediate {
+            guard fireTimeNotTooLate() else { return }
+        }
+        guard guardNotRunning(.nbSynth, prepKey: "nb_synth") else { return }
+        guard prepBusy("nb_synth", "提取易代理…") else { return }
+        Task { [weak self] in
+            guard let self else { return }
+            defer { if activePrep == "nb_synth" { clearPrep() } }
+            appendLog(
+                "启动NB抢合 \(item.name)(\(item.code.isEmpty ? "\(item.id)" : item.code)) · 提前0.8s · 抽\(ProxyPool.synthExtractN)" +
+                (immediate ? " · 立即" : ""),
+                mode: .nb_synth
+            )
+            appendLog("易代理抽取 \(ProxyPool.synthExtractN) 条…", mode: .nb_synth)
+            let pool = await ProxyPool.extractAliveForSynth(resolveProxyUrl())
+            appendLog("代理就绪 \(pool.proxies.count) | \(pool.detail)", mode: .nb_synth)
+            if pool.proxies.isEmpty {
+                appendLog("无存活代理，仅本机一路", mode: .nb_synth)
+            }
+            let fireAt: Int64 = immediate ? 0 : todayFireAtEpochSec(h: fireH, m: fireM, s: fireS)
+            let workers = max(1, 1 + pool.proxies.count)
+            busyMsg = pool.proxies.isEmpty ? "本机直连开火中" : "本机+易代理开火中"
+            let engine = NbSynthEngine(cfg: NbSynthConfig(
+                token: nbToken,
+                mergeId: item.id,
+                mergeCode: item.code,
+                mergeName: item.name,
+                quantity: Int(nbSynthQty) ?? 1,
+                fireAtEpochSec: fireAt,
+                proxies: pool.proxies,
+                workers: workers,
+                earlyS: 0.8,
+                durationS: 0.0
+            ), onLog: { [weak self] m in
+                Task { @MainActor in self?.appendLog(m, mode: .nb_synth) }
+            })
+            clearPrep()
+            runner.start(kind: .nbSynth, stop: { engine.requestStop() }, keepAlive: true) {
+                _ = await engine.run()
             }
         }
     }

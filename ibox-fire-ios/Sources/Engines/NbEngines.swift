@@ -417,6 +417,117 @@ final class NbSnipeEngine: @unchecked Sendable {
     }
 }
 
+struct NbSynthConfig {
+    var token: String
+    var mergeId: Int64
+    var mergeCode: String
+    var mergeName: String
+    var quantity: Int
+    var fireAtEpochSec: Int64
+    var proxies: [String] = []
+    var workers: Int = 1
+    var earlyS: Double = 0.8
+    var durationS: Double = 0.0
+}
+
+/// 对齐 Android NbSynthEngine：本机+易代理多路 · 提前0.8s · 材料自动选取。
+final class NbSynthEngine: @unchecked Sendable {
+    private let cfg: NbSynthConfig
+    private let onLog: (String) -> Void
+    private var stop = false
+    private var success = 0
+    private let lock = NSLock()
+
+    init(cfg: NbSynthConfig, onLog: @escaping (String) -> Void) {
+        self.cfg = cfg
+        self.onLog = onLog
+    }
+
+    func requestStop() { stop = true }
+
+    @discardableResult
+    func run() async -> Int {
+        let code = cfg.mergeCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? "\(cfg.mergeId)" : cfg.mergeCode
+        let target = max(1, cfg.quantity)
+        var lanes: [String?] = [nil]
+        for p in cfg.proxies {
+            let t = p.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !t.isEmpty, !lanes.contains(where: { $0 == t }) { lanes.append(t) }
+        }
+        let nWorkers = max(1, min(max(1, cfg.workers), lanes.count))
+        if cfg.proxies.isEmpty {
+            onLog("本机直连 NB抢合 \(cfg.mergeName)(\(code)) x\(target) · 提前\(cfg.earlyS)s")
+        } else {
+            onLog("本机+易代理 NB抢合 \(cfg.mergeName)(\(code)) x\(target) · 路数=\(nWorkers) · 提前\(cfg.earlyS)s")
+        }
+        onLog("材料自动选取 · newmerge 明文")
+
+        let fireAt: Double = cfg.fireAtEpochSec > 0
+            ? Double(cfg.fireAtEpochSec)
+            : Date().timeIntervalSince1970
+        let fireStart = fireAt - max(0, cfg.earlyS)
+        let deadline: Double = cfg.durationS > 0 ? fireAt + cfg.durationS : .greatestFiniteMagnitude
+        if cfg.fireAtEpochSec > 0 {
+            while !stop {
+                let left = fireStart - Date().timeIntervalSince1970
+                if left <= 0 { break }
+                onLog(String(format: "等待开火 T-%.1fs", left))
+                try? await Task.sleep(nanoseconds: UInt64(min(left, 0.2) * 1_000_000_000))
+            }
+        }
+        if stop { return 0 }
+        onLog("到点开火!")
+
+        await withTaskGroup(of: Void.self) { group in
+            for (i, px) in lanes.prefix(nWorkers).enumerated() {
+                let label = (i == 0 && px == nil) ? "本机" : "代理#\(i)"
+                let token = cfg.token
+                let mergeId = cfg.mergeId
+                group.addTask { [weak self] in
+                    guard let self else { return }
+                    let client = NewbeeClient(token: token, proxyUrl: px ?? "")
+                    var hardFail = 0
+                    while !self.stop {
+                        let cur = self.lock.withLock { self.success }
+                        if cur >= target { break }
+                        if Date().timeIntervalSince1970 * 1000 >= deadline * 1000 { break }
+                        let mats = await client.getMaterial(mergeId: mergeId)
+                        let (itemIds, err) = NewbeeClient.buildItemIds(mats)
+                        if !err.isEmpty || itemIds.isEmpty {
+                            self.onLog("\(label) \(err.isEmpty ? "材料空" : err)")
+                            try? await Task.sleep(nanoseconds: 400_000_000)
+                            continue
+                        }
+                        let (ok, msg) = await client.newMerge(code: code, itemIds: itemIds)
+                        if ok {
+                            let n = self.lock.withLock { () -> Int in
+                                self.success += 1
+                                return self.success
+                            }
+                            hardFail = 0
+                            self.onLog("\(label) 合成成功 (\(n)/\(target)) \(msg)")
+                            if n >= target {
+                                self.stop = true
+                                break
+                            }
+                        } else {
+                            hardFail += 1
+                            self.onLog("\(label) 失败: \(String(msg.prefix(80)))")
+                            try? await Task.sleep(nanoseconds: 300_000_000)
+                        }
+                        if hardFail >= 12 {
+                            self.onLog("\(label) 连续失败过多，弃路")
+                            break
+                        }
+                    }
+                }
+            }
+        }
+        return lock.withLock { success }
+    }
+}
+
 private extension NSLock {
     func withLock<T>(_ body: () throws -> T) rethrows -> T {
         lock()

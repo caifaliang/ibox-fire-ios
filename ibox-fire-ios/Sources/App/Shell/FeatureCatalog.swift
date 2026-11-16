@@ -52,6 +52,7 @@ enum FeatureCatalog {
 
     static let nbTabs: [ShellTechTab] = [
         .init(key: "nb_presale", label: "抢购", localReady: true, isNew: true),
+        .init(key: "nb_synth", label: "抢合", localReady: true, isNew: true),
         .init(key: "nb_snipe", label: "捡漏", localReady: true, isNew: true),
     ]
 

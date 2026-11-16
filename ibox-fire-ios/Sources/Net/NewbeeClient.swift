@@ -23,6 +23,24 @@ struct NbBuyResult {
     var batch: Bool = false
 }
 
+struct NbMergeItem: Identifiable, Equatable {
+    var id: Int64
+    var code: String
+    var name: String
+    var image: String = ""
+    var startTime: String = ""
+    var bfType: Int = 0
+}
+
+struct NbMergeMaterial: Equatable {
+    var need: Int
+    var owned: Int
+    var name: String
+    var productId: Int64 = 0
+    var itemIds: [Int64] = []
+    var image: String = ""
+}
+
 /// NewBee 官方直连（x-token 签名，对齐 Android NewbeeClient）。
 final class NewbeeClient: @unchecked Sendable {
     private static let xTokenKey = "6RNRDpjjV6wZ2ssPxqeIBeSoV1ITXDdC"
@@ -241,5 +259,121 @@ final class NewbeeClient: @unchecked Sendable {
 
     func warmUpCalendar() async {
         _ = await getAllowFail("api/product/getCalendarList", params: ["page": "1", "per_page": "1"])
+    }
+
+    /// GET api/product_merge — bf_type 0限时 / 1常驻
+    func mergeList(bfType: Int = 0, page: Int = 1, subject: String = "") async -> [NbMergeItem] {
+        let (code, data, _) = await getAllowFail("api/product_merge", params: [
+            "per_page": "20",
+            "merge_type": "2",
+            "subject": subject,
+            "bf_type": "\(bfType)",
+            "page": "\(page)",
+        ])
+        guard code == 1 else { return [] }
+        let imgHost = "https://file.newbee.net.cn"
+        return extractList(data).compactMap { it in
+            let id = JSONX.int64Val(it["id"]) ?? 0
+            guard id > 0 else { return nil }
+            let cov = (it["cover"] as? String) ?? (it["image"] as? String) ?? ""
+            let image: String = {
+                if cov.hasPrefix("http") { return cov }
+                if cov.hasPrefix("/") { return imgHost + cov }
+                if !cov.isEmpty { return "\(imgHost)/\(cov)" }
+                return ""
+            }()
+            let start: String = {
+                if let s = it["starttime"] as? String { return s }
+                if let s = it["start_time"] as? String { return s }
+                if let n = JSONX.int64Val(it["starttime"]) ?? JSONX.int64Val(it["start_time"]) { return "\(n)" }
+                return ""
+            }()
+            return NbMergeItem(
+                id: id,
+                code: (it["code"] as? String) ?? "",
+                name: (it["subject"] as? String) ?? (it["name"] as? String) ?? "活动 \(id)",
+                image: image,
+                startTime: start,
+                bfType: Int(JSONX.int64Val(it["bf_type"]) ?? Int64(bfType))
+            )
+        }
+    }
+
+    /// GET api/v2/product_merge_material/getMaterial
+    func getMaterial(mergeId: Int64) async -> [NbMergeMaterial] {
+        let (code, data, _) = await getAllowFail(
+            "api/v2/product_merge_material/getMaterial",
+            params: ["id": "\(mergeId)"]
+        )
+        guard code == 1, let obj = data as? [String: Any] else { return [] }
+        let list = obj["product_list"] as? [[String: Any]] ?? []
+        let imgHost = "https://file.newbee.net.cn"
+        return list.map { m in
+            let need = Int(JSONX.int64Val(m["quantity"]) ?? JSONX.int64Val(m["num"]) ?? JSONX.int64Val(m["need"]) ?? 1)
+            var owned = Int(JSONX.int64Val(m["user_has"]) ?? JSONX.int64Val(m["owned"]) ?? 0)
+            var name = (m["subject"] as? String) ?? (m["name"] as? String) ?? ""
+            var productId = JSONX.int64Val(m["product_id"]) ?? JSONX.int64Val(m["id"]) ?? 0
+            var itemIds: [Int64] = []
+            var image = ""
+            let products = m["product"] as? [[String: Any]] ?? []
+            for p in products {
+                if name.isEmpty {
+                    name = (p["subject"] as? String) ?? (p["name"] as? String) ?? ""
+                }
+                if productId <= 0 {
+                    productId = JSONX.int64Val(p["id"]) ?? JSONX.int64Val(p["product_id"]) ?? 0
+                }
+                if image.isEmpty {
+                    let cov = (p["image"] as? String) ?? (p["cover"] as? String) ?? ""
+                    if cov.hasPrefix("http") { image = cov }
+                    else if cov.hasPrefix("/") { image = imgHost + cov }
+                    else if !cov.isEmpty { image = "\(imgHost)/\(cov)" }
+                }
+                if let uh = JSONX.int64Val(p["user_has"]), Int(uh) > owned { owned = Int(uh) }
+                let col = (p["user_collet"] as? [[String: Any]]) ?? (p["user_collect"] as? [[String: Any]]) ?? []
+                for c in col {
+                    if let iid = JSONX.int64Val(c["item_id"]) ?? JSONX.int64Val(c["id"]), iid > 0 {
+                        itemIds.append(iid)
+                    }
+                }
+            }
+            return NbMergeMaterial(
+                need: max(1, need),
+                owned: owned,
+                name: name.isEmpty ? "材料" : name,
+                productId: productId,
+                itemIds: itemIds,
+                image: image
+            )
+        }
+    }
+
+    static func buildItemIds(_ mats: [NbMergeMaterial]) -> (String, String) {
+        if mats.isEmpty { return ("", "材料列表空") }
+        var picked: [String] = []
+        for g in mats {
+            let need = max(1, g.need)
+            if g.itemIds.count < need {
+                return ("", "材料不足: \(g.name.isEmpty ? "?" : g.name) 需\(need)持有\(g.itemIds.count)")
+            }
+            for id in g.itemIds.prefix(need) { picked.append("\(id)") }
+        }
+        if picked.isEmpty { return ("", "无可用 item_id") }
+        return (picked.joined(separator: ","), "")
+    }
+
+    /// POST api/product_merge_material/newmerge — id=code
+    func newMerge(code: String, itemIds: String) async -> (Bool, String) {
+        do {
+            let r = try await post("api/product_merge_material/newmerge", body: [
+                "id": code,
+                "item_ids": itemIds,
+            ])
+            let c = (r["code"] as? NSNumber)?.intValue ?? (r["code"] as? Int) ?? -1
+            let msg = (r["msg"] as? String) ?? (r["message"] as? String) ?? ""
+            return (c == 1, msg.isEmpty ? (c == 1 ? "合成成功" : "请求失败") : msg)
+        } catch {
+            return (false, error.localizedDescription)
+        }
     }
 }

@@ -563,6 +563,7 @@ struct ModePane: View {
                     case .announce_push: AnnouncePushPane()
                     case .discover_push: DiscoverPushPane()
                     case .nb_presale: NbPresalePane()
+                    case .nb_synth: NbSynthPane()
                     case .nb_snipe: NbSnipePane()
                     case .ts_market: TsMarketPane()
                     case .ts_snipe: TsSnipePane()
@@ -1315,7 +1316,92 @@ struct QueryPane: View {
     }
 }
 
+
+struct NbSynthPane: View {
+    @EnvironmentObject var vm: AppViewModel
+    @EnvironmentObject var runner: TaskRunner
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("提前0.8s · 本机+易代理抽10 · 材料自动选取（对齐 HAR newmerge）")
+                .font(.caption).foregroundStyle(.secondary)
+            if !vm.nbLoggedIn {
+                Text("请先在账号页登录 NewBee").font(.caption).foregroundStyle(.secondary)
+            } else if let item = vm.nbSynthSelected {
+                PickedBar(
+                    title: item.name,
+                    subtitle: "ID \(item.id)" + (item.code.isEmpty ? "" : " · \(item.code)"),
+                    onClear: { vm.clearNbSynthSelection() }
+                )
+                if !vm.nbSynthMaterials.isEmpty {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("材料（开火时自动选取）").font(.caption2).foregroundStyle(.secondary)
+                        ForEach(Array(vm.nbSynthMaterials.enumerated()), id: \.offset) { _, m in
+                            Text("\(m.name) · 需\(m.need) · 持有\(m.owned)")
+                                .font(.caption2).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                TimeFields(h: $vm.fireH, m: $vm.fireM, s: $vm.fireS)
+                TextField("数量", text: $vm.nbSynthQty).keyboardType(.numberPad).fieldStyle()
+                if runner.isRunning(.nbSynth) {
+                    Button(role: .destructive) { runner.stop(.nbSynth) } label: {
+                        Text("停止 NB 抢合").frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                } else {
+                    Button { vm.startNbSynth(immediate: false) } label: {
+                        Text("定时抢合（提前0.8s · 本机+易代理）").frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(!vm.isVip)
+                    Button { vm.startNbSynth(immediate: true) } label: {
+                        Text("立即开火").frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(!vm.isVip)
+                }
+            } else {
+                HStack {
+                    ModeChip(title: "限时", selected: vm.nbSynthBfType == 0) {
+                        vm.nbSynthBfType = 0
+                        Task { await vm.refreshNbSynthList() }
+                    }
+                    ModeChip(title: "常驻", selected: vm.nbSynthBfType == 1) {
+                        vm.nbSynthBfType = 1
+                        Task { await vm.refreshNbSynthList() }
+                    }
+                }
+                HStack {
+                    TextField("搜索", text: $vm.nbSynthSearch).fieldStyle()
+                    Button { Task { await vm.refreshNbSynthList() } } label: {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                }
+                Text("\(vm.nbSynthItems.count) 条活动").font(.caption)
+                ForEach(vm.nbSynthItems) { p in
+                    Button { vm.selectNbSynth(p) } label: {
+                        HStack {
+                            VStack(alignment: .leading) {
+                                Text(p.name).font(.subheadline)
+                                Text("ID \(p.id) · \(p.startTime)").font(.caption2).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                        }
+                    }
+                    Divider()
+                }
+            }
+        }
+        .onAppear {
+            if vm.nbLoggedIn && vm.nbSynthItems.isEmpty {
+                Task { await vm.refreshNbSynthList(silent: true) }
+            }
+        }
+    }
+}
+
 struct NbPresalePane: View {
+
     @EnvironmentObject var vm: AppViewModel
     @EnvironmentObject var runner: TaskRunner
     var body: some View {

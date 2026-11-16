@@ -104,6 +104,9 @@ enum SuccessNotifier {
         if kind == "synth" && (msg.hasPrefix("OK #") || msg.contains("confirm OK")) {
             return "抢合成功"
         }
+        if kind == "nb_synth" && msg.contains("合成成功") {
+            return "NB抢合成功"
+        }
         if (kind == "nb_presale" || kind == "presale") && msg.hasPrefix("OK #") {
             return "抢购成功"
         }
@@ -118,6 +121,7 @@ enum SuccessNotifier {
         case "synth": return "抢合"
         case "presale": return "抢购"
         case "nb_presale": return "NB抢购"
+        case "nb_synth": return "NB抢合"
         case "nb_snipe": return "NB捡漏"
         case "ts_snipe": return "矩星捡漏"
         case "ib_presale": return "ibPro抢购"
