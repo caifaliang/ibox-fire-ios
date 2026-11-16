@@ -746,7 +746,7 @@ struct SynthPane: View {
                                 }
                             }
                             if vm.synthRoute == "proxy" {
-                                Text("到点前抽\(ProxyPool.synthExtractN)条易代理，本机+存活代理并发 submit")
+                                Text("先抽\(ProxyPool.synthExtractN)条易代理，存活全上+本机并发；到点只开火不抽")
                                     .font(Typo.caption2)
                                     .foregroundStyle(Palette.textSecondary)
                             }

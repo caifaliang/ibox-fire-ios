@@ -4,13 +4,13 @@ enum ProxyPool {
     static let extractN = 50
     static let fireCap = 50
     static let minAlive = 12
-    /** 抢合抽代理默认条数（Android SYNTH_EXTRACT_N）；存活为 0 也可纯本机 */
-    static let synthExtractN = 10
+    /** 抢合抽代理默认条数（Android SYNTH_EXTRACT_N=20）；存活全部上阵 */
+    static let synthExtractN = 20
     /** APP 默认易代理订单（与 Android DEFAULT_EXTRACT_URL 一致） */
     static let defaultExtractURL =
         "http://api3.ydaili.cn/tools/MeasureApi.ashx?action=EAPI" +
         "&secret=2F21B68F8C7AE20EBDF57ADC90CD07F857D73FA8F2FD2C79" +
-        "&number=10&orderId=SH20260819103610448&format=txt&type=1&split=3"
+        "&number=20&orderId=SH20260819103610448&format=txt&type=1&split=3"
 
     private static let legacyOrder = "SH20260814213448412"
     private static let legacySecret = "65FD05455A5E3E7E1EFDAEDCA23C835F04472EAEA0853CE6"
