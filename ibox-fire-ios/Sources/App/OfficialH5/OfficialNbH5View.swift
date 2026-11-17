@@ -88,7 +88,7 @@ struct OfficialNbH5View: View {
                 OfficialNbH5WebViewHost(webView: wv)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                Color(Palette.bg)
+                Palette.bg
                     .overlay(Text("加载中…").foregroundStyle(Palette.textMuted))
             }
         }
