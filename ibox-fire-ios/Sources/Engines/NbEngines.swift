@@ -430,13 +430,16 @@ struct NbSynthConfig {
     var durationS: Double = 0.0
 }
 
-/// 对齐 Android NbSynthEngine：本机+易代理多路 · 提前0.8s · 材料自动选取。
+/// 对齐 Android NbSynthEngine：本机+易代理多路 · 提前0.8s · **0间隔连打** · 材料自动选取。
 final class NbSynthEngine: @unchecked Sendable {
     private let cfg: NbSynthConfig
     private let onLog: (String) -> Void
     private var stop = false
     private var success = 0
     private let lock = NSLock()
+    private var cachedIds = ""
+    private var cacheAt: Date = .distantPast
+    private var lastMatLog: Date = .distantPast
 
     init(cfg: NbSynthConfig, onLog: @escaping (String) -> Void) {
         self.cfg = cfg
@@ -457,11 +460,26 @@ final class NbSynthEngine: @unchecked Sendable {
         }
         let nWorkers = max(1, min(max(1, cfg.workers), lanes.count))
         if cfg.proxies.isEmpty {
-            onLog("本机直连 NB抢合 \(cfg.mergeName)(\(code)) x\(target) · 提前\(cfg.earlyS)s")
+            onLog("本机直连 NB抢合 \(cfg.mergeName)(\(code)) x\(target) · 提前\(cfg.earlyS)s · 0间隔")
         } else {
-            onLog("本机+易代理 NB抢合 \(cfg.mergeName)(\(code)) x\(target) · 路数=\(nWorkers) · 提前\(cfg.earlyS)s")
+            onLog("本机+易代理 NB抢合 \(cfg.mergeName)(\(code)) x\(target) · \(nWorkers)路并发0间隔(本机1+代理\(nWorkers - 1)) · 提前\(cfg.earlyS)s")
         }
-        onLog("材料自动选取 · newmerge 明文")
+
+        // 预检只提示，没材料也继续到点刷
+        do {
+            let pre = NewbeeClient(token: cfg.token)
+            let mats = await pre.getMaterial(mergeId: cfg.mergeId)
+            let (ids, err) = NewbeeClient.buildItemIds(mats)
+            if !err.isEmpty || ids.isEmpty {
+                onLog("材料暂不可用: \(err.isEmpty ? "无 item_ids" : err) · 到点后持续刷，不停")
+            } else {
+                lock.withLock {
+                    cachedIds = ids
+                    cacheAt = Date()
+                }
+                onLog("材料预检通过 · 自动选取 · newmerge 明文")
+            }
+        }
 
         let fireAt: Double = cfg.fireAtEpochSec > 0
             ? Double(cfg.fireAtEpochSec)
@@ -469,15 +487,21 @@ final class NbSynthEngine: @unchecked Sendable {
         let fireStart = fireAt - max(0, cfg.earlyS)
         let deadline: Double = cfg.durationS > 0 ? fireAt + cfg.durationS : .greatestFiniteMagnitude
         if cfg.fireAtEpochSec > 0 {
-            while !stop {
-                let left = fireStart - Date().timeIntervalSince1970
-                if left <= 0 { break }
-                onLog(String(format: "等待开火 T-%.1fs", left))
-                try? await Task.sleep(nanoseconds: UInt64(min(left, 0.2) * 1_000_000_000))
+            let now = Date().timeIntervalSince1970
+            let late = now - fireAt
+            if now < fireStart {
+                while !stop {
+                    let left = fireStart - Date().timeIntervalSince1970
+                    if left <= 0 { break }
+                    onLog(String(format: "等待开火 T-%.1fs（北京时间）", left))
+                    try? await Task.sleep(nanoseconds: UInt64(min(left, 0.2) * 1_000_000_000))
+                }
+            } else if late > 1 {
+                onLog(String(format: "已过开火点 %.0fs · 立即连打（不放弃）", late))
             }
         }
         if stop { return 0 }
-        onLog("到点开火!")
+        onLog("到点开火 · \(nWorkers)路×0间隔连打 · 无材料不停")
 
         await withTaskGroup(of: Void.self) { group in
             for (i, px) in lanes.prefix(nWorkers).enumerated() {
@@ -487,44 +511,80 @@ final class NbSynthEngine: @unchecked Sendable {
                 group.addTask { [weak self] in
                     guard let self else { return }
                     let client = NewbeeClient(token: token, proxyUrl: px ?? "")
-                    var hardFail = 0
+                    var lastFailLog = Date.distantPast
                     while !self.stop {
                         let cur = self.lock.withLock { self.success }
                         if cur >= target { break }
-                        if Date().timeIntervalSince1970 * 1000 >= deadline * 1000 { break }
-                        let mats = await client.getMaterial(mergeId: mergeId)
-                        let (itemIds, err) = NewbeeClient.buildItemIds(mats)
-                        if !err.isEmpty || itemIds.isEmpty {
-                            self.onLog("\(label) \(err.isEmpty ? "材料空" : err)")
-                            try? await Task.sleep(nanoseconds: 400_000_000)
+                        if Date().timeIntervalSince1970 >= deadline { break }
+
+                        let itemIds: String? = await self.resolveItemIds(client: client, label: label, mergeId: mergeId)
+                        guard let itemIds, !itemIds.isEmpty else {
+                            try? await Task.sleep(nanoseconds: 120_000_000)
                             continue
                         }
+
                         let (ok, msg) = await client.newMerge(code: code, itemIds: itemIds)
                         if ok {
                             let n = self.lock.withLock { () -> Int in
                                 self.success += 1
+                                self.cachedIds = ""
+                                self.cacheAt = .distantPast
                                 return self.success
                             }
-                            hardFail = 0
                             self.onLog("\(label) 合成成功 (\(n)/\(target)) \(msg)")
                             if n >= target {
                                 self.stop = true
                                 break
                             }
                         } else {
-                            hardFail += 1
-                            self.onLog("\(label) 失败: \(String(msg.prefix(80)))")
-                            try? await Task.sleep(nanoseconds: 300_000_000)
-                        }
-                        if hardFail >= 12 {
-                            self.onLog("\(label) 连续失败过多，弃路")
-                            break
+                            let low = msg.lowercased()
+                            if msg.contains("材料") || msg.contains("不足") || msg.contains("持有") || low.contains("item") {
+                                self.lock.withLock {
+                                    self.cachedIds = ""
+                                    self.cacheAt = .distantPast
+                                }
+                            }
+                            if Date().timeIntervalSince(lastFailLog) >= 0.4 {
+                                lastFailLog = Date()
+                                self.onLog("\(label) 失败: \(String(msg.prefix(80)))")
+                            }
+                            if msg.contains("登录") || low.contains("token") {
+                                try? await Task.sleep(nanoseconds: 400_000_000)
+                            }
                         }
                     }
                 }
             }
         }
         return lock.withLock { success }
+    }
+
+    private func resolveItemIds(client: NewbeeClient, label: String, mergeId: Int64) async -> String? {
+        let cached: String? = lock.withLock {
+            if !cachedIds.isEmpty, Date().timeIntervalSince(cacheAt) < 4.0 {
+                return cachedIds
+            }
+            return nil
+        }
+        if let cached { return cached }
+        let mats = await client.getMaterial(mergeId: mergeId)
+        let (ids, err) = NewbeeClient.buildItemIds(mats)
+        if !err.isEmpty || ids.isEmpty {
+            let shouldLog = lock.withLock { () -> Bool in
+                if Date().timeIntervalSince(lastMatLog) > 1.5 {
+                    lastMatLog = Date()
+                    return true
+                }
+                return false
+            }
+            if shouldLog { onLog("\(label) \(err.isEmpty ? "材料不足" : err) · 继续刷不停") }
+            return nil
+        }
+        lock.withLock {
+            cachedIds = ids
+            cacheAt = Date()
+        }
+        return ids
     }
 }
 

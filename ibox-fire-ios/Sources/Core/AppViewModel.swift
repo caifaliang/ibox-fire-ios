@@ -1564,9 +1564,13 @@ final class AppViewModel: ObservableObject {
     private func fireTimeNotTooLate() -> Bool {
         let fireAt = todayFireAtEpochSec(h: fireH, m: fireM, s: fireS)
         let late = Int64(Date().timeIntervalSince1970) - fireAt
-        if late > 10 {
-            appendLog("开火时间已过 \(late)s，请改时间后再启动", type: "error")
+        // 仅极晚（>1h）才拒；抽代理拖过开火点由引擎立即开火
+        if late > 3600 {
+            appendLog("开火时间已过 \(late)s（>1小时），请改时间后再启动", type: "error")
             return false
+        }
+        if late > 1 {
+            appendLog("已过开火点 \(late)s · 将立即连打（北京时间）", type: "info")
         }
         return true
     }

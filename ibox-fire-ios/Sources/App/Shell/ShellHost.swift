@@ -6,12 +6,15 @@ struct ShellHost: View {
     @EnvironmentObject var vm: AppViewModel
     @EnvironmentObject var runner: TaskRunner
     @ObservedObject private var h5Session = OfficialH5Session.shared
+    @ObservedObject private var nbH5Session = OfficialNbH5Session.shared
 
     @State private var shellTab: ShellTab = .tech
     @State private var showHub = true
     @State private var platformKey = "ibox"
     @State private var h5Visible = false
+    @State private var nbH5Visible = false
     @State private var h5MissingToken = false
+    @State private var nbH5MissingToken = false
 
     var body: some View {
         ZStack {
@@ -46,17 +49,20 @@ struct ShellHost: View {
                         }
                     case .officialH5:
                         OfficialH5ParkPage(
-                            loggedIn: vm.iboxLoggedIn,
-                            hasCache: h5Session.hasCache,
-                            status: h5Session.status,
-                            onOpen: { openOfficialH5() },
+                            iboxLoggedIn: vm.iboxLoggedIn,
+                            nbLoggedIn: vm.nbLoggedIn && !vm.nbToken.isEmpty,
+                            iboxHasCache: h5Session.hasCache,
+                            nbHasCache: nbH5Session.hasCache,
+                            iboxStatus: h5Session.status,
+                            nbStatus: nbH5Session.status,
+                            onOpenIbox: { openOfficialH5() },
+                            onOpenNewbee: { openOfficialNbH5() },
                             onGoTech: {
                                 shellTab = .tech
                                 showHub = true
                             },
-                            onClearCache: {
-                                h5Session.tearDown()
-                            }
+                            onClearIboxCache: { h5Session.tearDown() },
+                            onClearNbCache: { nbH5Session.tearDown() }
                         )
                     case .me:
                         ProfileScreen()
@@ -64,14 +70,14 @@ struct ShellHost: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                if !h5Visible {
+                if !h5Visible && !nbH5Visible {
                     FireBottomBar(selected: $shellTab) { tab in
                         handleTab(tab)
                     }
                 }
             }
 
-            if !h5Visible, shellTab == .tech || shellTab == .running, let dock = primaryRunningLabel() {
+            if !h5Visible && !nbH5Visible, shellTab == .tech || shellTab == .running, let dock = primaryRunningLabel() {
                 VStack {
                     Spacer()
                     LiveJobDock(
@@ -88,7 +94,7 @@ struct ShellHost: View {
                 }
             }
 
-            if !h5Visible, shellTab != .officialH5 {
+            if !h5Visible && !nbH5Visible, shellTab != .officialH5 {
                 VStack {
                     Spacer()
                     HStack {
@@ -122,6 +128,18 @@ struct ShellHost: View {
                 .transition(.move(edge: .trailing))
                 .zIndex(10)
             }
+
+            if nbH5Visible {
+                OfficialNbH5View(
+                    onBackToTech: {
+                        nbH5Visible = false
+                        shellTab = .tech
+                        showHub = true
+                    }
+                )
+                .transition(.move(edge: .trailing))
+                .zIndex(11)
+            }
         }
         .appScreenBackground()
         .onAppear {
@@ -135,6 +153,15 @@ struct ShellHost: View {
             Button("取消", role: .cancel) {}
         } message: {
             Text("官方 H5 需要 iBox 登录票，请先在「我的」里登录 iBox。")
+        }
+        .alert("请先登录 NewBee", isPresented: $nbH5MissingToken) {
+            Button("去科技") {
+                shellTab = .tech
+                applyPlatform("newbee")
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("NewBee 官方 H5 需要 NewBee Token，请先登录 NewBee。")
         }
     }
 
@@ -191,9 +218,13 @@ struct ShellHost: View {
             shellTab = .running
         case .officialH5:
             shellTab = .officialH5
-            // 有缓存则直接回前台
+            // 有缓存则直接回前台（iBox / NewBee 互斥叠层）
             if h5Session.hasCache, vm.iboxLoggedIn {
+                nbH5Visible = false
                 h5Visible = true
+            } else if nbH5Session.hasCache, vm.nbLoggedIn, !vm.nbToken.isEmpty {
+                h5Visible = false
+                nbH5Visible = true
             }
         case .me:
             shellTab = .me
@@ -207,8 +238,22 @@ struct ShellHost: View {
             h5MissingToken = true
             return
         }
+        nbH5Visible = false
         withAnimation(.easeInOut(duration: 0.2)) {
             h5Visible = true
+        }
+    }
+
+    private func openOfficialNbH5() {
+        let t = vm.nbToken.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard vm.nbLoggedIn, !t.isEmpty else {
+            nbH5MissingToken = true
+            return
+        }
+        h5Visible = false
+        nbH5Session.open(token: t, uid: "")
+        withAnimation(.easeInOut(duration: 0.2)) {
+            nbH5Visible = true
         }
     }
 
@@ -236,45 +281,60 @@ struct ShellHost: View {
     }
 }
 
-/// 底栏「官方H5」驻留页：有缓存时对齐 APK Park
+/// 底栏「官方H5」驻留页：对齐 APK OfficialH5ParkPage（iBox + NewBee）
 struct OfficialH5ParkPage: View {
-    var loggedIn: Bool
-    var hasCache: Bool
-    var status: String
-    var onOpen: () -> Void
+    var iboxLoggedIn: Bool
+    var nbLoggedIn: Bool
+    var iboxHasCache: Bool
+    var nbHasCache: Bool
+    var iboxStatus: String
+    var nbStatus: String
+    var onOpenIbox: () -> Void
+    var onOpenNewbee: () -> Void
     var onGoTech: () -> Void
-    var onClearCache: () -> Void
+    var onClearIboxCache: () -> Void
+    var onClearNbCache: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("官方H5")
                 .font(.system(size: 28, weight: .heavy))
                 .foregroundStyle(Palette.textPrimary)
-            Text(
-                hasCache
-                    ? "页面在后台保活 · 切换「科技」不会销毁缓存 · 再次进入不重复注入"
-                    : (loggedIn ? "已登录 iBox，可免登进入官方页" : "需要先登录 iBox")
-            )
-            .font(Typo.caption)
-            .foregroundStyle(Palette.textMuted)
+            Text("页面在后台保活 · 切换「科技」不销毁缓存 · NewBee 请用壳顶栏「市场」芯片回程")
+                .font(Typo.caption)
+                .foregroundStyle(Palette.textMuted)
 
             VStack(alignment: .leading, spacing: 10) {
-                Text(hasCache ? "H5 会话已保留" : "尚未打开官方页")
+                Text("H5 会话")
                     .font(.system(size: 16, weight: .bold))
-                if hasCache {
-                    Text(status)
-                        .font(Typo.caption2)
-                        .foregroundStyle(Palette.textSecondary)
-                        .lineLimit(2)
+                if iboxLoggedIn {
+                    Button(iboxHasCache ? "回到 iBox 官方H5" : "打开 iBox 官方H5", action: onOpenIbox)
+                        .buttonStyle(PrimaryButtonStyle())
+                    if iboxHasCache {
+                        Text(iboxStatus)
+                            .font(Typo.caption2)
+                            .foregroundStyle(Palette.textSecondary)
+                            .lineLimit(2)
+                        Button("清除 iBox H5 缓存", action: onClearIboxCache)
+                            .buttonStyle(SecondaryButtonStyle())
+                    }
                 }
-                Text("可先去「科技」开火/捡漏；需要看官方页时再点下方按钮回前台。")
-                    .font(Typo.caption2)
-                    .foregroundStyle(Palette.textSecondary)
-                Button(hasCache ? "回到官方H5" : "打开官方 H5", action: onOpen)
-                    .buttonStyle(PrimaryButtonStyle())
-                if hasCache {
-                    Button("清除 H5 缓存", action: onClearCache)
+                if nbLoggedIn {
+                    Button(nbHasCache ? "回到 NewBee 官方H5" : "打开 NewBee 官方H5（默认市场）", action: onOpenNewbee)
                         .buttonStyle(SecondaryButtonStyle())
+                    if nbHasCache {
+                        Text(nbStatus)
+                            .font(Typo.caption2)
+                            .foregroundStyle(Palette.textSecondary)
+                            .lineLimit(2)
+                        Button("清除 NewBee H5 缓存", action: onClearNbCache)
+                            .buttonStyle(SecondaryButtonStyle())
+                    }
+                }
+                if !iboxLoggedIn && !nbLoggedIn {
+                    Text("请先登录 iBox 或 NewBee")
+                        .font(Typo.caption2)
+                        .foregroundStyle(Palette.textMuted)
                 }
                 Button("去科技", action: onGoTech)
                     .buttonStyle(SecondaryButtonStyle())

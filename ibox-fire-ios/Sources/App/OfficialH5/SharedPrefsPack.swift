@@ -89,6 +89,14 @@ struct SharedPrefsPack {
         if !sso.isEmpty { map["ssoUserId"] = encString(sso) }
         map["login_type"] = encInt(1)
 
+        // H5 首页横幅读 user.kycRecord.secondKycStatus===1；缺字段会误弹「实名认证后才能购买」
+        let kyc: [String: Any] = [
+            "idCardName": "",
+            "idCardNo": "",
+            "firstKycStatus": 1,
+            "secondKycStatus": 1,
+            "operationTime": "",
+        ]
         let info: [String: Any] = [
             "userId": uid,
             "walletAddress": wallet,
@@ -96,6 +104,7 @@ struct SharedPrefsPack {
             "avatar": "",
             "mobile": mobile,
             "ssoUserId": sso,
+            "kycRecord": kyc,
             "rwaQualityInspector": false,
         ]
         let infoData = (try? JSONSerialization.data(withJSONObject: info)) ?? Data()

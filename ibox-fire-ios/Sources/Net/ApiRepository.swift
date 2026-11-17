@@ -43,6 +43,36 @@ struct TradeRecordsPage: Equatable {
     var hasMore: Bool = false
 }
 
+struct PlatformTradeRow: Identifiable, Equatable {
+    var id: String { tradeId.isEmpty ? "\(tradeTime)-\(tokenId)-\(price)" : tradeId }
+    var tradeId: String = ""
+    var tokenId: String = ""
+    var albumId: String = ""
+    var albumName: String = ""
+    var imageUrl: String = ""
+    var price: String = ""
+    var tradeTime: String = ""
+}
+
+struct PlatformTradesPage: Equatable {
+    var items: [PlatformTradeRow] = []
+    var page: Int = 1
+    var hasMore: Bool = false
+    var dingheOffline: Bool = false
+    var message: String = ""
+}
+
+struct AlbumTradesPage: Equatable {
+    var records: [TradeRecordRow] = []
+    var albumId: String = ""
+    var name: String = ""
+    var cover: String = ""
+    var page: Int = 1
+    var hasMore: Bool = false
+    var dingheOffline: Bool = false
+    var message: String = ""
+}
+
 struct SynthActivity: Identifiable {
     var id: Int64
     var name: String
@@ -508,6 +538,124 @@ final class ApiRepository {
             amount24h: sumNum("amount_24h", "today_amount"),
             lastPrice: sumNum("last_price"),
             updatedAt: o["updated_at"] as? String ?? "",
+            hasMore: o["has_more"] as? Bool ?? (o["has_more"] as? NSNumber)?.boolValue ?? false
+        )
+    }
+
+    /// 盯盒大盘成交（站点代理，无需 iBox Token）
+    func fetchPlatformTrades(page: Int = 1, pageSize: Int = 20) async throws -> PlatformTradesPage {
+        let p = max(1, page)
+        let ps = min(20, max(1, pageSize))
+        let url = URL(string: "\(base())/snipe/dinghe/platform-trades?page=\(p)&pageSize=\(ps)")!
+        let (data, resp) = try await siteSession(timeout: 25).data(from: url)
+        let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+        let o = jsonObject(data)
+        if code >= 400 {
+            throw NSError(domain: "platform", code: code, userInfo: [NSLocalizedDescriptionKey: o["message"] as? String ?? "HTTP \(code)"])
+        }
+        if (o["status"] as? String) != "ok" {
+            return PlatformTradesPage(
+                page: p,
+                dingheOffline: o["dinghe_offline"] as? Bool ?? false,
+                message: o["message"] as? String ?? "加载失败"
+            )
+        }
+        let arr = (o["items"] as? [[String: Any]]) ?? []
+        let rows: [PlatformTradeRow] = arr.map { a in
+            let token: String = {
+                if let s = a["token_id"] as? String, s != "null" { return s }
+                if let n = a["token_id"] as? NSNumber { return n.stringValue }
+                return ""
+            }()
+            let price: String = {
+                if let s = a["price"] as? String, s != "null" { return s }
+                if let n = a["price"] as? NSNumber { return n.stringValue }
+                return ""
+            }()
+            return PlatformTradeRow(
+                tradeId: a["trade_id"] as? String ?? "",
+                tokenId: token,
+                albumId: a["album_id"] as? String ?? "",
+                albumName: a["album_name"] as? String ?? "",
+                imageUrl: a["image_url"] as? String ?? "",
+                price: price,
+                tradeTime: a["trade_time"] as? String ?? ""
+            )
+        }
+        return PlatformTradesPage(
+            items: rows,
+            page: (o["page"] as? Int) ?? (o["page"] as? NSNumber)?.intValue ?? p,
+            hasMore: o["has_more"] as? Bool ?? (o["has_more"] as? NSNumber)?.boolValue ?? false
+        )
+    }
+
+    /// 盯盒单专辑历史成交
+    func fetchAlbumTrades(
+        albumId: String,
+        page: Int = 1,
+        pageSize: Int = 20,
+        name: String = "",
+        cover: String = ""
+    ) async throws -> AlbumTradesPage {
+        let aid = albumId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !aid.isEmpty else {
+            throw NSError(domain: "album", code: 1, userInfo: [NSLocalizedDescriptionKey: "albumId required"])
+        }
+        let p = max(1, page)
+        let ps = min(20, max(1, pageSize))
+        var qs = "albumId=\(aid.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? aid)&page=\(p)&pageSize=\(ps)"
+        let nm = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !nm.isEmpty {
+            qs += "&name=\(nm.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? nm)"
+        }
+        let cv = cover.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !cv.isEmpty {
+            qs += "&cover=\(cv.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? cv)"
+        }
+        let url = URL(string: "\(base())/snipe/dinghe/album-trades?\(qs)")!
+        let (data, resp) = try await siteSession(timeout: 25).data(from: url)
+        let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+        let o = jsonObject(data)
+        if code >= 400 {
+            throw NSError(domain: "album", code: code, userInfo: [NSLocalizedDescriptionKey: o["message"] as? String ?? "HTTP \(code)"])
+        }
+        if (o["status"] as? String) != "ok" {
+            return AlbumTradesPage(
+                albumId: aid,
+                page: p,
+                dingheOffline: o["dinghe_offline"] as? Bool ?? false,
+                message: o["message"] as? String ?? "加载失败"
+            )
+        }
+        let sum = o["summary"] as? [String: Any] ?? [:]
+        let arr = (o["records"] as? [[String: Any]]) ?? []
+        var rows: [TradeRecordRow] = []
+        for a in arr {
+            let token: String = {
+                if let s = a["token_id"] as? String, s != "null" { return s }
+                if let n = a["token_id"] as? NSNumber { return n.stringValue }
+                return ""
+            }()
+            let price: String = {
+                if let s = a["price"] as? String, s != "null" { return s }
+                if let n = a["price"] as? NSNumber { return n.stringValue }
+                return ""
+            }()
+            rows.append(TradeRecordRow(
+                tradeId: (a["trade_id"] as? String) ?? (a["id"] as? String) ?? "",
+                time: a["time"] as? String ?? "",
+                date: a["date"] as? String ?? "",
+                tokenId: token,
+                price: price,
+                qty: max(1, (a["qty"] as? Int) ?? (a["qty"] as? NSNumber)?.intValue ?? 1)
+            ))
+        }
+        return AlbumTradesPage(
+            records: rows,
+            albumId: (o["album_id"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? aid,
+            name: (sum["name"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? name,
+            cover: (sum["cover"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? cover,
+            page: (o["page"] as? Int) ?? (o["page"] as? NSNumber)?.intValue ?? p,
             hasMore: o["has_more"] as? Bool ?? (o["has_more"] as? NSNumber)?.boolValue ?? false
         )
     }

@@ -21,6 +21,9 @@ final class SharedPrefsPackTests: XCTestCase {
         XCTAssertNotNil(pack.encodedEntries["user_info"])
         XCTAssertNotNil(pack.encodedEntries["device_id"])
         XCTAssertTrue(pack.encodedEntries["access_token"]?.hasPrefix("\"") == true)
+        // user_info 是 jsonEncode(jsonString)：内层应含 kycRecord.secondKycStatus
+        let uiEnc = pack.encodedEntries["user_info"] ?? ""
+        XCTAssertTrue(uiEnc.contains("secondKycStatus") || uiEnc.contains("kycRecord"), uiEnc)
         XCTAssertTrue(pack.toBootHeadScript().contains("serviceWorker"))
         XCTAssertTrue(pack.toBootHeadScript().contains("flutter."))
     }
